@@ -308,6 +308,8 @@ struct Cel<'a> {
     y: i32,
     z: f32,
     mirror: bool,
+    /// 0..=255 opacity (colourised draw in the original).
+    alpha: u8,
 }
 
 impl Cel<'_> {
@@ -326,6 +328,7 @@ impl Cel<'_> {
                     (cy + size.y) as f32,
                 )),
                 flip_x: self.mirror,
+                color: Color::srgba_u8(255, 255, 255, self.alpha),
                 ..default()
             },
             Anchor::TOP_LEFT,
@@ -336,7 +339,11 @@ impl Cel<'_> {
 
 /// Guppy sheet, cel, row and mirroring (fish-guppy.md#animation-and-drawing).
 fn guppy_cel(f: &Fish) -> (&'static str, i32, i32, bool) {
-    let hungry = f.looks_hungry();
+    guppy_cel_as(f, f.looks_hungry())
+}
+
+/// As [`guppy_cel`], but with the hungry/fed sheet forced.
+fn guppy_cel_as(f: &Fish, hungry: bool) -> (&'static str, i32, i32, bool) {
     let sheet = match (
         f.turn_timer != 0,
         f.eat_timer >= 1 || f.timer_108 >= 101,
@@ -421,6 +428,7 @@ fn draw(
         y: 0,
         z: 0.0,
         mirror: false,
+        alpha: 255,
     }];
     // Back to front as in Board::RebuildZOrder: food, guppies, coins.
     for f in &b.foods {
@@ -432,6 +440,7 @@ fn draw(
             y: f.widget_y - 4,
             z: 1.0,
             mirror: false,
+            alpha: 255,
         });
     }
     for (i, f) in b.guppies.iter().enumerate() {
@@ -444,7 +453,23 @@ fn draw(
             y: f.widget_y,
             z: 2.0 + i as f32 * 0.001,
             mirror,
+            alpha: 255,
         });
+        // Hungry↔fed colour fade: the hungry sheet over the fed one at
+        // fade·255/5 (fish-guppy.md#animation-and-drawing).
+        if f.fade > 0 {
+            let (sheet, col, row, mirror) = guppy_cel_as(f, true);
+            cels.push(Cel {
+                sheet,
+                col,
+                row,
+                x: f.widget_x,
+                y: f.widget_y,
+                z: 2.0005 + i as f32 * 0.001,
+                mirror,
+                alpha: (f.fade.clamp(0, 5) * 255 / 5) as u8,
+            });
+        }
     }
     for (i, c) in b.coins.iter().enumerate() {
         // Silver row 0, gold row 1 (coin.md); other kinds not drawn yet.
@@ -461,6 +486,7 @@ fn draw(
             y: c.widget_y,
             z: 3.0 + i as f32 * 0.001,
             mirror: false,
+            alpha: 255,
         });
     }
     cels.push(Cel {
@@ -471,6 +497,7 @@ fn draw(
         y: 0,
         z: 10.0,
         mirror: false,
+        alpha: 255,
     });
     commands.spawn_batch(
         cels.iter()
