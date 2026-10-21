@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use insaniquarium_sim::{Board, Fish};
+use insaniquarium_sim::board::Input;
+use insaniquarium_sim::{Board, Fish, Food};
 use serde_json::{Value, json};
 use sexy_core::rand::MtRand;
 
@@ -43,7 +44,14 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         max_x: rd_i32(b, 0x19c),
         hunger: rd_i32(b, 0x9c),
         stage: rd_i32(b, 0x1a0),
-        unk_1a8: rd_i32(b, 0x1a8),
+        growth: rd_i32(b, 0x1a4),
+        growth_needed: rd_i32(b, 0x1a8),
+        hungry_at: rd_i32(b, 0xa4),
+        fade_to_hungry: b[0xa8] != 0,
+        announces: b[0x228] != 0,
+        state_ac: rd_i32(b, 0xac),
+        link_11c: rd_i32(b, 0x11c),
+        dead: false,
         mode: rd_i32(b, 0x1ac),
         mode_timer: rd_i32(b, 0x1b0),
         reroll_timer: rd_i32(b, 0x1b4),
@@ -66,6 +74,39 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
+}
+
+/// A food object from its raw bytes (offsets: docs/re/objects/food.md).
+pub fn food_from_raw(b: &[u8]) -> Food {
+    Food {
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x168),
+        vy: rd_f64(b, 0x170),
+        anim: rd_i32(b, 0x178),
+        anim_speed: rd_i32(b, 0x17c),
+        fade: rd_i32(b, 0x180),
+        carried: b[0x185] != 0,
+        level: rd_i32(b, 0x188),
+        motion: rd_i32(b, 0x18c),
+        kind: rd_i32(b, 0x194),
+        delay: rd_i32(b, 0x198),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
+fn raw_list(s: &Snapshot, list: &str) -> Vec<Vec<u8>> {
+    s.state
+        .get("raw")
+        .and_then(|r| r.get(list))
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().and_then(hex_bytes))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn rng_from(state: &RngState) -> MtRand {
@@ -117,6 +158,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
             .ok_or(ReplayError::Missing("guppy raw bytes"))?;
         board.guppies.push(fish_from_raw(&raw));
     }
+    board.foods = raw_list(first, "food")
+        .iter()
+        .map(|b| food_from_raw(b))
+        .collect();
     Ok(board)
 }
 
@@ -126,13 +171,21 @@ fn fish_json(f: &Fish) -> Value {
         "x": f.x, "y": f.y, "vx": f.vx, "vy": f.vy, "div": f.divisor,
         "facing": f.facing, "patrol_dir": f.patrol_dir,
         "bounds": [f.min_x, f.ceil_y, f.max_x, f.floor_y],
-        "hunger": f.hunger, "stage": f.stage, "unk_1a8": f.unk_1a8,
+        "hunger": f.hunger, "stage": f.stage,
+        "growth": [f.growth, f.growth_needed], "fade_to_hungry": f.fade_to_hungry,
         "mode": f.mode, "mode_t": f.mode_timer, "reroll_t": f.reroll_timer,
         "anim": [f.anim_frame, f.swim_cycle, f.cel, f.turn_timer, f.eat_timer, f.pulse_timer],
         "timers": [f.timer_108, f.timer_10c, f.timer_f8, f.fade, f.vy_damp_timer,
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y],
+    })
+}
+
+fn food_json(f: &Food) -> Value {
+    json!({
+        "x": f.x, "y": f.y, "anim": [f.anim, f.anim_speed], "fade": f.fade,
+        "level": f.level, "delay": f.delay, "widget": [f.widget_x, f.widget_y],
     })
 }
 
@@ -145,9 +198,12 @@ pub fn snapshot(board: &Board) -> Snapshot {
         Value::Array(board.guppies.iter().map(fish_json).collect()),
     );
     state.insert(
-        "rng_mti".into(),
-        json!({ "app": board.rng.state().1, "global": board.global_rng.state().1 }),
+        "foods".into(),
+        Value::Array(board.foods.iter().map(food_json).collect()),
     );
+    // The global stream's `mti` isn't compared: the board's cosmetic bubble
+    // systems draw from it and aren't modelled yet (board.md, open questions).
+    state.insert("rng_mti".into(), json!({ "app": board.rng.state().1 }));
     Snapshot {
         tick: board.tick,
         state,
@@ -172,6 +228,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
             if let Some(f) = fish {
                 s.state.insert("fish".into(), Value::Array(f));
             }
+            let foods = raw_list(&s, "food")
+                .iter()
+                .map(|b| food_json(&food_from_raw(b)))
+                .collect();
+            s.state.insert("foods".into(), Value::Array(foods));
             s
         })
         .collect();
@@ -181,17 +242,50 @@ pub fn decode_capture(t: &Trace) -> Trace {
     }
 }
 
-/// Replay a capture with no input: start from its first snapshot and step
-/// once per captured tick.
-pub fn replay_idle(t: &Trace) -> Result<Trace, ReplayError> {
+/// Player clicks recovered from a capture: a pellet that appears on tick
+/// `t` at `(x, y)` was dropped by a click at `(x + 10, trunc(y − 1.5) + 10)`
+/// processed just before tick `t` (it has fallen once by the snapshot).
+/// Clicks the original refused (food limit) leave no trace and cost no RNG.
+pub fn inferred_food_clicks(t: &Trace) -> BTreeMap<u32, Vec<Input>> {
+    let mut out: BTreeMap<u32, Vec<Input>> = BTreeMap::new();
+    let mut prev: Vec<Vec<u8>> = Vec::new();
+    for s in &t.snapshots {
+        let now = raw_list(s, "food");
+        // New pellets are appended; anything past the survivors is new.
+        let survivors = now.len().min(prev.len());
+        let fresh = now.iter().skip(survivors).filter(|b| {
+            let f = food_from_raw(b);
+            f.anim == 1 && f.fade == 0
+        });
+        for b in fresh {
+            let f = food_from_raw(b);
+            out.entry(s.tick).or_default().push(Input::Click {
+                x: f.x as i32 + 10,
+                y: (f.y - 1.5) as i32 + 10,
+            });
+        }
+        prev = now;
+    }
+    out
+}
+
+/// Replay a capture: start from its first snapshot and step once per
+/// captured tick, feeding `inputs[tick]` before that tick's update.
+pub fn replay(t: &Trace, inputs: &BTreeMap<u32, Vec<Input>>) -> Result<Trace, ReplayError> {
     let mut board = board_from_capture(t)?;
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
     while board.tick < last {
-        board.update();
+        let next = board.tick + 1;
+        board.step(inputs.get(&next).map_or(&[][..], Vec::as_slice));
         snapshots.push(snapshot(&board));
     }
     let mut header = Header::new("sim", &t.header.build, t.header.start_tick);
     header.rng = t.header.rng.clone();
     Ok(Trace { header, snapshots })
+}
+
+/// Replay a capture with no input.
+pub fn replay_idle(t: &Trace) -> Result<Trace, ReplayError> {
+    replay(t, &BTreeMap::new())
 }

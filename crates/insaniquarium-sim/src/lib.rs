@@ -3,6 +3,8 @@
 
 pub mod board;
 pub mod fish;
+pub mod food;
 
 pub use board::Board;
 pub use fish::Fish;
+pub use food::Food;

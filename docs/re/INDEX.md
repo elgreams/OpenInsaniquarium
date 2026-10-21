@@ -11,7 +11,8 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | framework | `framework/rng.md` | confirmed (algorithm/seeding) | MT19937 (31-bit output); app stream + global stream + store stream. Implemented: `sexy_core::rand::MtRand` |
 | meta | `dynamic-analysis.md` | — | How to attach CE to the Proton game; known crash hazard |
 | framework | `framework/demo-recording.md` | draft | `-record`/`-play` functional; tick-indexed input bitstream |
-| objects | `objects/fish-guppy.md` | draft | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, hunger countdown/death at −500, coin timer |
+| objects | `objects/fish-guppy.md` | confirmed (idle swim + animation) | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, animation/turn/cel rules, draw-sheet selection. Replays bit-exact vs original |
+| objects | `objects/food.md` | confirmed (tank 1-1 pellets) | Food drop (click bounds, price, limit, 1 RNG draw), pellet fall/fade, guppy hunger, chase, nearest-food, bite boxes, eat (+700, cap 800, growth), slurp RNG throttle. Replays bit-exact vs original |
 | sim | `sim/board.md` | draft | Type codes → typed vectors; update order = z-order rebuild sequence |
 | assets | `assets/images.md` | draft | Extension probe order, `_x`/`x_` mask lookup, alphaimage/alphagrid, GIF transparency, AnimInfo cel math. Implemented: `sexy_core::image` |
 | assets | `assets/music.md` | draft | MO3 via libopenmpt; one module, songs selected by order; tank/alien selection + fades. Implemented: `sexy_core::music` |

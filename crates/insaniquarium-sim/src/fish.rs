@@ -5,6 +5,8 @@
 
 use sexy_core::rand::MtRand;
 
+use crate::food::Food;
+
 /// Guppy state. All positions/velocities are `f64` (x87 doubles in the
 /// original); timers and bounds are `i32`.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,8 +35,21 @@ pub struct Fish {
     pub hunger: i32,
     /// `+0x1a0`: 0 small, 1 medium, 2 large, 3/4 king/star.
     pub stage: i32,
-    /// `+0x1a8`
-    pub unk_1a8: i32,
+    /// `+0x1a4`: pellets eaten toward the next stage.
+    pub growth: i32,
+    /// `+0x1a8`: pellets needed per stage (4..=6).
+    pub growth_needed: i32,
+    /// `+0xa4`: hunger at which the hungry colours fade in (300).
+    pub hungry_at: i32,
+    /// `+0xa8`: the colour fade runs toward hungry (true) or fed.
+    pub fade_to_hungry: bool,
+    /// `+0x228`: shows hunger messages; starving fish without it die at 0.
+    pub announces: bool,
+    /// `+0xac`, `+0x11c`: −1 for ordinary guppies.
+    pub state_ac: i32,
+    pub link_11c: i32,
+    /// Set when the fish dies this tick; the board removes it.
+    pub dead: bool,
     /// `+0x1ac`: swim mode 0..=9, or 123 (startled).
     pub mode: i32,
     /// `+0x1b0`: ticks in current mode.
@@ -85,6 +100,28 @@ pub struct FishEnv {
     pub has_aliens: bool,
 }
 
+/// Board state a guppy update reads and writes.
+pub struct World<'a> {
+    pub foods: &'a mut Vec<Food>,
+    pub rng: &'a mut MtRand,
+    pub global: &'a mut MtRand,
+    /// Board update counter (`board+0x28`), the sound-throttle clock.
+    pub clock: i32,
+    /// Clock value when the slurp sample last played (`board+0x26c`).
+    pub slurp_last: &'a mut i32,
+}
+
+impl World<'_> {
+    /// `0x005384c0`: the slurp sample is throttled to once per 3 ticks; when
+    /// it plays, one draw picks the variant.
+    fn play_slurp(&mut self) {
+        if self.clock.wrapping_sub(*self.slurp_last) >= 3 {
+            *self.slurp_last = self.clock;
+            self.rng.next_range(5);
+        }
+    }
+}
+
 impl Fish {
     /// `Fish::Init` (`0x004de370`): 6 app-RNG draws, in this order.
     pub fn new(x: i32, y: i32, rng: &mut MtRand) -> Self {
@@ -102,7 +139,14 @@ impl Fish {
             ceil_y: 95,
             hunger: 0,
             stage: 0,
-            unk_1a8: 0,
+            growth: 0,
+            growth_needed: 0,
+            hungry_at: 300,
+            fade_to_hungry: false,
+            announces: true,
+            state_ac: -1,
+            link_11c: -1,
+            dead: false,
             mode: 0,
             mode_timer: 40,
             reroll_timer: 0,
@@ -131,32 +175,28 @@ impl Fish {
         }
         f.divisor = [2.0, 1.6, 1.8][rng.next_range(3) as usize];
         f.hunger = rng.next_range(200) as i32 + 400;
-        f.unk_1a8 = rng.next_range(3) as i32 + 4;
+        f.growth_needed = rng.next_range(3) as i32 + 4;
         f.mode = rng.next_range(10) as i32;
         f.coin_interval = rng.next_range(200) as i32 + 150;
         f
     }
 
-    /// `Fish::Update` (`0x004f6970`) for a guppy that isn't chasing food
-    /// (hunger ≥ 500) on a board without aliens.
+    /// `Fish::Update` (`0x004f6970`).
     ///
-    /// TODO(spec): food chase (`UpdateHunger` → slot 84/87), the cursor-follow
-    /// branch, coin drop, and alien-present behaviour are not yet modelled;
-    /// see docs/re/objects/fish-feeding.md once written.
-    pub fn update(&mut self, env: FishEnv, rng: &mut MtRand, global: &mut MtRand) {
+    /// TODO(spec): the cursor-follow branch, coin drop and alien-present
+    /// behaviour are not modelled yet.
+    pub fn update(&mut self, env: FishEnv, w: &mut World<'_>) {
         if env.paused {
             return;
         }
         self.pre_update();
-        // UpdateHunger (0x004f15c0): hunger countdown when no aliens.
-        if !env.has_aliens {
-            self.hunger -= 1;
-            if self.hunger < -1000 {
-                self.hunger = -1000;
-            }
+        if self.dead {
+            return;
         }
-        // Hunger < 500 → food chase (not yet modelled); otherwise swim modes.
-        self.swim_modes(rng, global);
+        if !self.update_hunger(env, w) {
+            self.swim_modes(w.rng, w.global);
+        }
+        let rng = &mut *w.rng;
         self.mode_timer += 1;
         self.reroll_timer += 1;
         if self.reroll_timer > 20 {
@@ -180,6 +220,224 @@ impl Fish {
         self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
+    }
+
+    /// `Fish::UpdateHunger` (`0x004f15c0`). Returns true while chasing food,
+    /// which suppresses the swim modes. Spec: food.md#guppy-hunger-and-feeding.
+    fn update_hunger(&mut self, env: FishEnv, w: &mut World<'_>) -> bool {
+        // Colour fade step.
+        if self.fade > 0 {
+            if self.fade_to_hungry {
+                self.fade += 1;
+                if self.fade > 5 {
+                    self.fade = 0;
+                }
+            } else {
+                self.fade -= 1;
+            }
+        }
+        if !env.has_aliens {
+            if self.link_11c == -1 {
+                self.hunger -= 1;
+            }
+            if self.hunger == self.hungry_at + 4 {
+                self.start_fade(true);
+            } else if self.hunger < -1000 {
+                self.hunger = -1000;
+            }
+        }
+        let starving = self.state_ac < 0 && self.hunger <= 0;
+        if starving && !self.announces {
+            self.dead = true;
+            return false;
+        }
+        if self.announces {
+            // Message ticks (−1, −200, −400) skip the chase for that tick.
+            if matches!(self.hunger, -1 | -200 | -400) {
+                return false;
+            }
+            if self.hunger < -499 {
+                // TODO(spec): DeadFish spawn and the mercy-fish rule.
+                self.dead = true;
+                return false;
+            }
+        }
+        if self.hunger < 500 {
+            // TODO(spec): with aliens present only alien type ≠ 4 allows it.
+            return self.chase_food(w);
+        }
+        false
+    }
+
+    /// `0x004d6920`: start the hungry (true) or fed (false) colour fade.
+    fn start_fade(&mut self, to_hungry: bool) {
+        self.fade_to_hungry = to_hungry;
+        self.fade = if to_hungry { 1 } else { 5 };
+    }
+
+    /// `0x004d6f30`: drawn with the hungry sheet.
+    pub fn looks_hungry(&self) -> bool {
+        self.hunger < 301 && self.fade == 0
+    }
+
+    /// Food chase (slot 84 @ `0x004d5b20`).
+    fn chase_food(&mut self, w: &mut World<'_>) -> bool {
+        let target = self.find_food(w.foods);
+        let fx = (self.x + 40.0) as i32;
+        let fy = (self.y + 40.0) as i32;
+        let Some(ti) = target else {
+            return false;
+        };
+        if self.mode_timer >= 3 {
+            self.mode_timer = 0;
+            let f = &w.foods[ti];
+            let (tx, ty) = (f.widget_x + 20, f.widget_y + 20);
+            self.steer_to(fx, fy, tx, ty);
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        self.eat_check(w);
+        true
+    }
+
+    fn steer_to(&mut self, fx: i32, fy: i32, tx: i32, ty: i32) {
+        // (big, mid, cap) for x; (far_down, near_down, down_cap,
+        // far_up, near_up, up_cap) for y.
+        let hungry = self.hunger <= 300;
+        let (big, mid, cap) = if hungry {
+            (1.3, 0.2, 4.0)
+        } else {
+            (1.0, 0.1, 3.0)
+        };
+        let (fd, nd, dcap, fu, nu, ucap) = if hungry {
+            (1.0, 0.5, -3.0, 1.3, 0.7, 4.0)
+        } else {
+            (0.6, 0.3, -2.0, 1.0, 0.5, 3.0)
+        };
+        let (dec, inc) = if fx > tx + 8 {
+            (Some(big), None)
+        } else if fx < tx - 8 {
+            (None, Some(big))
+        } else if fx > tx + 4 {
+            (Some(mid), None)
+        } else if fx < tx - 4 {
+            (None, Some(mid))
+        } else if fx > tx {
+            (Some(0.05), None)
+        } else if fx < tx {
+            (None, Some(0.05))
+        } else {
+            (None, None)
+        };
+        if let Some(d) = dec
+            && -cap < self.vx
+        {
+            self.vx -= d;
+        }
+        if let Some(i) = inc
+            && cap > self.vx
+        {
+            self.vx += i;
+        }
+        if fy > ty + 6 {
+            if dcap < self.vy {
+                self.vy -= fd;
+            }
+        } else if fy < ty - 6 {
+            if ucap > self.vy {
+                self.vy += fu;
+            }
+        } else if fy > ty {
+            if dcap < self.vy {
+                self.vy -= nd;
+            }
+        } else if fy < ty && ucap > self.vy {
+            self.vy += nu;
+        }
+    }
+
+    /// Find food (slot 85 @ `0x004ef050`): the first nearest edible pellet.
+    fn find_food(&mut self, foods: &[Food]) -> Option<usize> {
+        let mut best = 100_000_000;
+        let mut found = None;
+        for (i, f) in foods.iter().enumerate() {
+            let dx = (f64::from(f.widget_x + 20) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(f.widget_y + 20) - (self.y + 40.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if f.edible() && d < best {
+                best = d;
+                found = Some(i);
+            }
+        }
+        if best < 10_000 {
+            self.timer_f8 = 100;
+        }
+        found
+    }
+
+    /// Eat check (slot 86 @ `0x004ef1b0`).
+    fn eat_check(&mut self, w: &mut World<'_>) {
+        let cx = self.x + 40.0;
+        let cy = self.y + 40.0;
+        let mut i = 0;
+        while i < w.foods.len() {
+            let f = &w.foods[i];
+            let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
+            let bite = wx + 35.0 > cx && wx + 5.0 < cx && wy + 35.0 > cy && wy < cy;
+            if bite && f.edible() {
+                let food = w.foods.remove(i);
+                self.eat(&food, w);
+                if self.eat_timer == 0 {
+                    self.eat_timer = 8;
+                }
+                return;
+            }
+            if self.eat_timer == 0
+                && wx + 50.0 > cx
+                && wx - 10.0 < cx
+                && wy + 40.0 > cy
+                && wy - 5.0 < cy
+                && f.edible()
+            {
+                self.eat_timer = 20;
+            }
+            i += 1;
+        }
+    }
+
+    /// Eat (slot 77 @ `0x004f1ba0`), pellet outside Virtual Tank.
+    fn eat(&mut self, food: &Food, w: &mut World<'_>) {
+        let was_hungry = self.looks_hungry();
+        w.play_slurp();
+        self.timer_f8 = 0;
+        // TODO(spec): food levels ≥ 2 and potions.
+        let (gain, cap, growth) = if food.level == 1 {
+            (700, 1000, 2)
+        } else {
+            (500, 800, 1)
+        };
+        self.hunger += gain;
+        if food.level == 0 && self.announces {
+            self.hunger += 200;
+        }
+        if self.hunger > cap {
+            self.hunger = cap;
+        }
+        self.growth += growth;
+        if self.growth >= self.growth_needed {
+            if self.stage < 2 {
+                self.stage += 1;
+                self.growth = 0;
+                self.pulse_timer = 10;
+            }
+            if self.growth >= 15 * self.growth_needed && self.stage >= 2 && self.stage != 4 {
+                self.stage = 4;
+            }
+        }
+        if was_hungry && !self.looks_hungry() {
+            self.start_fade(false);
+        }
     }
 
     /// `Fish::PreUpdate`: countdowns. (Its emote-bubble branch needs
