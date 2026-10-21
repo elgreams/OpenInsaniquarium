@@ -16,7 +16,7 @@ Answer the questions that shape everything else.
 - [x] Ghidra: import `Insaniquarium.exe`, apply RTTI class names, recover vtables for `GameObject` and its subclasses. *(The exe is a DRM stub; the inner PE was extracted, see `framework/drm-wrapper.md`.)*
 - [x] **Timing:** find the main loop / `SexyAppBase::UpdateApp`; confirm tick rate and how many updates run per frame. → `docs/re/framework/timing.md` *(28 ms, confirmed live)*
 - [x] **RNG:** identify the algorithm (MSVC `rand()` vs. `MTRand`), seeding, number of streams, where the state lives. → `docs/re/framework/rng.md`
-- [~] **Demo recording:** test whether `-record` / `-demofile` work in this build. If yes, document the file format — it may give us free input capture and replay on the original. *(Format documented statically; live test pending.)*
+- [x] **Demo recording:** `-record` works and the format is parsed (`harness::demo`). Original `-play` is broken in this build (`framework/demo-recording.md`); capture uses CE polling instead.
 - [x] **Object model:** map `Board` and its object lists (fish, coins, food, aliens, pets, shots); find `Board::Update` and record the update order. → `docs/re/sim/board.md`
 - [x] Survey of the asset formats in `resources.xml`, the fonts in `data/*.txt`, `fishsongs/*.txt`, the save/profile files, and `.mo3`. → `docs/re/assets/`
 
@@ -39,10 +39,10 @@ Load the user's install and show things on screen. Mostly framework, no gameplay
 
 Build the proof machinery before the gameplay it will prove.
 
-- [ ] Versioned trace format (initial state, input events, per-tick snapshots).
-- [ ] Capture tool: CE-driven field polling per tick (struct layouts from M0), and/or demo-file based.
-- [ ] Replay runner and field-by-field diff that reports the first divergent tick and field.
-- [ ] RNG unit tests: our RNG reproduces sequences captured from the original.
+- [x] Versioned trace format (initial state, input events, per-tick snapshots). *(`crates/harness/README.md`; inputs are inferred from captured state.)*
+- [x] Capture tool: CE-driven field polling per tick (`tools/ce_capture.lua`, raw object bytes + RNG state).
+- [x] Replay runner and field-by-field diff that reports the first divergent tick and field.
+- [x] RNG unit tests: our RNG reproduces sequences captured from the original.
 
 **Exit:** a capture of the original's RNG/state can be replayed and diffed by our sim, even if all that's in the sim so far is the RNG and the clock.
 
@@ -50,10 +50,10 @@ Build the proof machinery before the gameplay it will prove.
 
 The smallest real game, provably 1:1.
 
-- [ ] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink, upgrades), coins (types, fall, collect), money.
+- [~] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink, upgrades), coins (types, fall, collect), money. *(Done and trace-verified: swim, animation, hunger, feeding, growth 0→2, silver/gold drops, fall/expiry/collect/bank, ambient RNG. Remaining: death → DeadFish + mercy guppy, food upgrades, shop.)*
 - [ ] Sim: the first alien (Sylvester): spawn timing, targeting, health, click damage.
-- [ ] App: tank render, cursor, click-to-feed/collect, the minimal shop bar for this level, win condition (egg pieces).
-- [ ] Trace-based tests for all of the above.
+- [~] App: tank render, cursor, click-to-feed/collect, the minimal shop bar for this level, win condition (egg pieces). *(`cargo run --bin tank`: render + click-to-feed/collect. Remaining: HUD/shop bar, egg pieces.)*
+- [~] Trace-based tests for all of the above. *(`crates/harness/tests/tank1_1.rs`: ~11k ticks across 4 captures.)*
 
 **Exit:** a recorded play of Tank 1-1 on the original replays in our sim with zero divergence for its full length.
 
