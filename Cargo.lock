@@ -2941,6 +2941,7 @@ name = "harness"
 version = "0.0.0"
 dependencies = [
  "insaniquarium-sim",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
