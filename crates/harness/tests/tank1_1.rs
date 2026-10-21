@@ -73,3 +73,28 @@ fn feeding_replay_is_sensitive() {
     board.tutorial = true;
     assert!(diff(&expected, &replay_from(board, &expected, &fewer).unwrap()).is_some());
 }
+
+#[test]
+fn coin_collection_capture_is_covered() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-1_coin_04.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let capture = until_pause(&Trace::read(BufReader::new(f)).unwrap());
+    let inferred = inferred_clicks(&capture);
+    let expected = inferred.clean(&decode_capture(&capture));
+    let ticks = expected.snapshots.len();
+    let money: Vec<i64> = expected
+        .snapshots
+        .iter()
+        .map(|s| s.state["board"]["money"].as_i64().unwrap())
+        .collect();
+    let banked = money.windows(2).filter(|w| w[1] > w[0]).count();
+    eprintln!(
+        "{ticks} ticks compared, {} masked, {} clicks, {banked} coins banked",
+        inferred.dirty.len(),
+        inferred.inputs.values().map(Vec::len).sum::<usize>()
+    );
+    assert!(ticks > 5000);
+    assert!(banked >= 10);
+    assert!(inferred.dirty.len() < 20);
+}

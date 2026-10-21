@@ -131,7 +131,16 @@ while captured < max_ticks and polls < max_ticks * 40 do
       local g = vec_ptrs(u32(board + 0xa0))[1]
       if g then
         local gf = io.open(CAPTURE_GPOS, "w")
-        if gf then gf:write(string.format("%d %d\n", i32(g + 0x30), i32(g + 0x34))); gf:close() end
+        if gf then
+          gf:write(string.format("%d %d %d\n", i32(g + 0x30), i32(g + 0x34), readBytes(board + 0x94, 1) or 0))
+          -- Uncollected coins, one "x y" per line, for a collecting clicker.
+          for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
+            if (readBytes(c + 0x198, 1) or 1) == 0 then
+              gf:write(string.format("%d %d\n", i32(c + 0x30), i32(c + 0x34)))
+            end
+          end
+          gf:close()
+        end
       end
     end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))

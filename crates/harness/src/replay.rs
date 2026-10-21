@@ -306,6 +306,30 @@ pub fn decode_capture(t: &Trace) -> Trace {
 /// guppy's hunger doesn't move is taken as the pause.
 pub fn until_pause(t: &Trace) -> Trace {
     let mut out = t.clone();
+    // Skip a paused lead-in (captures may start while a dialog is up).
+    let is_paused = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("paused"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    // Keep the last paused snapshot as the start: nothing (RNG included)
+    // changes while paused, so it still matches the header's RNG state.
+    let lead = t.snapshots.iter().take_while(|s| is_paused(s)).count();
+    if lead > 1 {
+        out.snapshots.drain(..lead - 1);
+    }
+    if let Some(first) = out.snapshots.first_mut()
+        && let Some(Value::Object(b)) = first.state.get_mut("board")
+    {
+        b.insert("paused".into(), Value::Bool(false));
+    }
+    until_pause_inner(out)
+}
+
+fn until_pause_inner(t: Trace) -> Trace {
+    let mut out = t.clone();
     let mut prev: Option<Option<Value>> = None;
     let cut = t.snapshots.iter().position(|s| {
         let paused = s
@@ -371,6 +395,13 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
         };
         out.inputs.entry(at).or_default().push(input);
     };
+    let money_of = |s: Option<&Snapshot>| {
+        s.and_then(|s| s.state.get("board"))
+            .and_then(|b| b.get("money"))
+            .and_then(Value::as_i64)
+    };
+    let mut prev_snap: Option<&Snapshot> = None;
+    let mut prev_prev_snap: Option<&Snapshot> = None;
     let mut prev_food = 0;
     let mut prev_coins: Vec<Coin> = Vec::new();
     for s in &t.snapshots {
@@ -385,6 +416,11 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             }
             let mid = f.anim == 0;
             let y = if mid { f.y } else { f.y - 1.5 };
+            // The capture reads money before the lists, so a click landing
+            // mid-read shows the price paid one snapshot before the pellet.
+            if !mid && money_of(prev_snap) != money_of(prev_prev_snap) {
+                out.dirty.push(s.tick - 1);
+            }
             let click = Input::Click {
                 x: f.x as i32 + 10,
                 y: y as i32 + 10,
@@ -411,6 +447,8 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             }
         }
         prev_coins = coins;
+        prev_prev_snap = prev_snap;
+        prev_snap = Some(s);
     }
     out
 }

@@ -1,6 +1,6 @@
 # Coins (`Sexy::Coin`, type `0x19`)
 
-Status: `draft`. Drop, fall, floor rest and expiry are **confirmed** by replaying `tank1-1_coin_01` bit-exact (4800 ticks; silver and gold coins from one guppy growing 0 → 2). Collection and banking are `static` only, since that capture never clicked a coin.
+Status: `draft`, **confirmed** for guppy coins. Replays bit-exact against `tank1-1_coin_01` (4800 ticks: silver and gold drops from one guppy growing 0 → 2, fall, rest, expiry) and `tank1-1_coin_04` (5332 ticks: 17 gold coins clicked, glided and banked, with feeding in between).
 
 Only the coin kinds a guppy drops in the normal game are covered. Pet, star, treasure, Virtual Tank shells and "drop from above" behaviour are only noted.
 
