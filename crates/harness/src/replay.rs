@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use insaniquarium_sim::board::Input;
-use insaniquarium_sim::{Board, Fish, Food};
+use insaniquarium_sim::{Board, Coin, Fish, Food};
 use serde_json::{Value, json};
 use sexy_core::rand::MtRand;
 
@@ -96,6 +96,28 @@ pub fn food_from_raw(b: &[u8]) -> Food {
     }
 }
 
+/// A coin from its raw bytes (offsets: docs/re/objects/coin.md).
+pub fn coin_from_raw(b: &[u8]) -> Coin {
+    Coin {
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        anim: rd_i32(b, 0x16c),
+        age: rd_i32(b, 0x170),
+        cel: rd_i32(b, 0x174),
+        expire: rd_i32(b, 0x178),
+        flight: rd_i32(b, 0x17c),
+        from_x: rd_i32(b, 0x180),
+        from_y: rd_i32(b, 0x184),
+        vy: rd_f64(b, 0x188),
+        kind: rd_i32(b, 0x194),
+        collected: b[0x198] != 0,
+        floor_time: rd_i32(b, 0x19c),
+        multiplier: rd_i32(b, 0x1c0),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
 fn raw_list(s: &Snapshot, list: &str) -> Vec<Vec<u8>> {
     s.state
         .get("raw")
@@ -162,6 +184,26 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| food_from_raw(b))
         .collect();
+    board.coins = raw_list(first, "coin")
+        .iter()
+        .map(|b| coin_from_raw(b))
+        .collect();
+    if let Some(b) = first.state.get("board") {
+        if let (Some(tank), Some(level)) = (
+            b.get("tank").and_then(Value::as_i64),
+            b.get("level").and_then(Value::as_i64),
+        ) {
+            board.tutorial = tank == 1 && level == 1;
+        }
+        if let Some(c) = b.get("clock").and_then(Value::as_i64) {
+            board.clock = c as i32;
+        }
+        if let Some(raw) = b.get("samples").and_then(Value::as_str).and_then(hex_bytes) {
+            for (slot, w) in board.sample_last.iter_mut().zip(raw.as_chunks::<4>().0) {
+                *slot = i32::from_le_bytes(*w);
+            }
+        }
+    }
     Ok(board)
 }
 
@@ -179,6 +221,14 @@ fn fish_json(f: &Fish) -> Value {
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y],
+    })
+}
+
+fn coin_json(c: &Coin) -> Value {
+    json!({
+        "x": c.x, "y": c.y, "anim": [c.anim, c.age, c.cel], "expire": c.expire,
+        "kind": c.kind, "collected": c.collected, "floor_time": c.floor_time,
+        "widget": [c.widget_x, c.widget_y],
     })
 }
 
@@ -200,6 +250,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "foods".into(),
         Value::Array(board.foods.iter().map(food_json).collect()),
+    );
+    state.insert(
+        "coins".into(),
+        Value::Array(board.coins.iter().map(coin_json).collect()),
     );
     // The global stream's `mti` isn't compared: the board's cosmetic bubble
     // systems draw from it and aren't modelled yet (board.md, open questions).
@@ -233,6 +287,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| food_json(&food_from_raw(b)))
                 .collect();
             s.state.insert("foods".into(), Value::Array(foods));
+            let coins = raw_list(&s, "coin")
+                .iter()
+                .map(|b| coin_json(&coin_from_raw(b)))
+                .collect();
+            s.state.insert("coins".into(), Value::Array(coins));
             s
         })
         .collect();
@@ -242,29 +301,116 @@ pub fn decode_capture(t: &Trace) -> Trace {
     }
 }
 
-/// Player clicks recovered from a capture: a pellet that appears on tick
-/// `t` at `(x, y)` was dropped by a click at `(x + 10, trunc(y − 1.5) + 10)`
-/// processed just before tick `t` (it has fallen once by the snapshot).
+/// `t` cut before the first snapshot where the board was paused. Captures
+/// record `board.paused`; older ones don't, so a tick where the first
+/// guppy's hunger doesn't move is taken as the pause.
+pub fn until_pause(t: &Trace) -> Trace {
+    let mut out = t.clone();
+    let mut prev: Option<Option<Value>> = None;
+    let cut = t.snapshots.iter().position(|s| {
+        let paused = s
+            .state
+            .get("board")
+            .and_then(|b| b.get("paused"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        // Hunger falls every running tick (no aliens on tank 1-1 captures).
+        let h = s
+            .state
+            .get("guppies")
+            .and_then(|g| g.get(0))
+            .and_then(|g| g.get("hunger"))
+            .cloned();
+        let frozen = h.is_some() && prev.as_ref() == Some(&h);
+        prev = Some(h);
+        paused || frozen
+    });
+    if let Some(i) = cut {
+        out.snapshots.truncate(i);
+    }
+    out
+}
+
+/// Inputs recovered from a capture, plus snapshot ticks that caught a click
+/// mid-frame (processed after that tick's update but before the capture
+/// read it) and so match no whole-tick sim state.
+#[derive(Debug, Default, Clone)]
+pub struct Inferred {
+    pub inputs: BTreeMap<u32, Vec<Input>>,
+    pub dirty: Vec<u32>,
+}
+
+impl Inferred {
+    /// `expected` without the dirty snapshots.
+    pub fn clean(&self, expected: &Trace) -> Trace {
+        let mut t = expected.clone();
+        t.snapshots.retain(|s| !self.dirty.contains(&s.tick));
+        t
+    }
+}
+
+/// Player clicks recovered from a capture.
+///
+/// - Food: a new pellet at `(x, y)` came from a click at `(x + 10, y + 10)`
+///   before it was first updated. If the snapshot shows it already updated
+///   once (`anim == 1`, fallen 1.5) the click preceded that tick; if not
+///   (`anim == 0`) the click came after that tick's update.
+/// - Coins: a coin newly marked collected was clicked at its centre as of
+///   collection (`from_x/from_y + 36`); if it hasn't glided yet, the click
+///   came after that tick's update.
+///
 /// Clicks the original refused (food limit) leave no trace and cost no RNG.
-pub fn inferred_food_clicks(t: &Trace) -> BTreeMap<u32, Vec<Input>> {
-    let mut out: BTreeMap<u32, Vec<Input>> = BTreeMap::new();
-    let mut prev: Vec<Vec<u8>> = Vec::new();
+pub fn inferred_clicks(t: &Trace) -> Inferred {
+    let mut out = Inferred::default();
+    let push = |tick: u32, mid_frame: bool, input: Input, out: &mut Inferred| {
+        let at = if mid_frame {
+            out.dirty.push(tick);
+            tick + 1
+        } else {
+            tick
+        };
+        out.inputs.entry(at).or_default().push(input);
+    };
+    let mut prev_food = 0;
+    let mut prev_coins: Vec<Coin> = Vec::new();
     for s in &t.snapshots {
-        let now = raw_list(s, "food");
+        let foods: Vec<Food> = raw_list(s, "food")
+            .iter()
+            .map(|b| food_from_raw(b))
+            .collect();
         // New pellets are appended; anything past the survivors is new.
-        let survivors = now.len().min(prev.len());
-        let fresh = now.iter().skip(survivors).filter(|b| {
-            let f = food_from_raw(b);
-            f.anim == 1 && f.fade == 0
-        });
-        for b in fresh {
-            let f = food_from_raw(b);
-            out.entry(s.tick).or_default().push(Input::Click {
+        for f in foods.iter().skip(prev_food.min(foods.len())) {
+            if f.fade != 0 || f.anim > 1 {
+                continue;
+            }
+            let mid = f.anim == 0;
+            let y = if mid { f.y } else { f.y - 1.5 };
+            let click = Input::Click {
                 x: f.x as i32 + 10,
-                y: (f.y - 1.5) as i32 + 10,
-            });
+                y: y as i32 + 10,
+            };
+            push(s.tick, mid, click, &mut out);
         }
-        prev = now;
+        prev_food = foods.len();
+        let coins: Vec<Coin> = raw_list(s, "coin")
+            .iter()
+            .map(|b| coin_from_raw(b))
+            .collect();
+        for c in coins.iter().filter(|c| c.collected) {
+            let was_free = prev_coins
+                .iter()
+                .any(|p| !p.collected && p.kind == c.kind && p.age + 1 == c.age);
+            if was_free {
+                #[allow(clippy::float_cmp)]
+                let mid = c.x == f64::from(c.from_x) && c.y == f64::from(c.from_y);
+                let click = Input::Click {
+                    x: c.from_x + 36,
+                    y: c.from_y + 36,
+                };
+                push(s.tick, mid, click, &mut out);
+            }
+        }
+        prev_coins = coins;
     }
     out
 }
@@ -272,7 +418,15 @@ pub fn inferred_food_clicks(t: &Trace) -> BTreeMap<u32, Vec<Input>> {
 /// Replay a capture: start from its first snapshot and step once per
 /// captured tick, feeding `inputs[tick]` before that tick's update.
 pub fn replay(t: &Trace, inputs: &BTreeMap<u32, Vec<Input>>) -> Result<Trace, ReplayError> {
-    let mut board = board_from_capture(t)?;
+    replay_from(board_from_capture(t)?, t, inputs)
+}
+
+/// [`replay`] from a prepared board (e.g. with level settings applied).
+pub fn replay_from(
+    mut board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
     while board.tick < last {

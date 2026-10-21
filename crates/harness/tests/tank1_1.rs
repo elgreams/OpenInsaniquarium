@@ -6,7 +6,9 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use harness::replay::{decode_capture, inferred_food_clicks, replay};
+use harness::replay::{
+    board_from_capture, decode_capture, inferred_clicks, replay_from, until_pause,
+};
 use harness::trace::{Trace, diff};
 
 fn captures() -> Vec<PathBuf> {
@@ -18,7 +20,8 @@ fn captures() -> Vec<PathBuf> {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                (n.contains("_raw_") || n.contains("_feed_")) && n.ends_with(".trace.jsonl")
+                ["_raw_", "_feed_", "_coin_"].iter().any(|k| n.contains(k))
+                    && n.ends_with(".trace.jsonl")
             })
         })
         .collect();
@@ -34,9 +37,14 @@ fn tank1_1_matches_original() {
         return;
     }
     for path in files {
-        let capture = Trace::read(BufReader::new(File::open(&path).unwrap())).unwrap();
-        let expected = decode_capture(&capture);
-        let actual = replay(&expected, &inferred_food_clicks(&capture)).unwrap();
+        let capture =
+            until_pause(&Trace::read(BufReader::new(File::open(&path).unwrap())).unwrap());
+        let inferred = inferred_clicks(&capture);
+        let expected = inferred.clean(&decode_capture(&capture));
+        // All captures here are tank 1-1, the tutorial level.
+        let mut board = board_from_capture(&expected).unwrap();
+        board.tutorial = true;
+        let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
         if let Some(d) = diff(&expected, &actual) {
             panic!("{}: {d}", path.display());
         }
@@ -50,7 +58,7 @@ fn feeding_replay_is_sensitive() {
     let Ok(f) = File::open(&path) else { return };
     let capture = Trace::read(BufReader::new(f)).unwrap();
     let expected = decode_capture(&capture);
-    let clicks = inferred_food_clicks(&capture);
+    let clicks = inferred_clicks(&capture).inputs;
     assert_eq!(clicks.len(), 4, "{clicks:?}");
     let eaten: usize = expected
         .snapshots
@@ -61,5 +69,7 @@ fn feeding_replay_is_sensitive() {
     // Dropping one click must make the replay diverge.
     let mut fewer = clicks.clone();
     fewer.pop_first();
-    assert!(diff(&expected, &replay(&expected, &fewer).unwrap()).is_some());
+    let mut board = board_from_capture(&expected).unwrap();
+    board.tutorial = true;
+    assert!(diff(&expected, &replay_from(board, &expected, &fewer).unwrap()).is_some());
 }

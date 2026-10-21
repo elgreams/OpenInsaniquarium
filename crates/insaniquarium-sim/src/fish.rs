@@ -5,6 +5,7 @@
 
 use sexy_core::rand::MtRand;
 
+use crate::coin::Coin;
 use crate::food::Food;
 
 /// Guppy state. All positions/velocities are `f64` (x87 doubles in the
@@ -103,20 +104,31 @@ pub struct FishEnv {
 /// Board state a guppy update reads and writes.
 pub struct World<'a> {
     pub foods: &'a mut Vec<Food>,
+    pub coins: &'a mut Vec<Coin>,
     pub rng: &'a mut MtRand,
     pub global: &'a mut MtRand,
     /// Board update counter (`board+0x28`), the sound-throttle clock.
     pub clock: i32,
-    /// Clock value when the slurp sample last played (`board+0x26c`).
-    pub slurp_last: &'a mut i32,
+    /// Per-sample last-played clock (`board+0x1a4`, indexed by id − 0x106).
+    pub sample_last: &'a mut [i32; 64],
 }
 
 impl World<'_> {
-    /// `0x005384c0`: the slurp sample is throttled to once per 3 ticks; when
-    /// it plays, one draw picks the variant.
+    /// `0x005381f0`: may sample `id` play now (≥ `gap` ticks since last)?
+    /// Records the play when it may.
+    pub fn sample_ready(&mut self, id: usize, gap: i32) -> bool {
+        let slot = &mut self.sample_last[id - 0x106];
+        if self.clock.wrapping_sub(*slot) >= gap {
+            *slot = self.clock;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `0x005384c0`: slurp (sample 0x138), variant picked by one draw.
     fn play_slurp(&mut self) {
-        if self.clock.wrapping_sub(*self.slurp_last) >= 3 {
-            *self.slurp_last = self.clock;
+        if self.sample_ready(0x138, 3) {
             self.rng.next_range(5);
         }
     }
@@ -197,6 +209,7 @@ impl Fish {
             self.swim_modes(w.rng, w.global);
         }
         let rng = &mut *w.rng;
+        // Mode reroll, then the coin drop (slot 81) when there are no aliens.
         self.mode_timer += 1;
         self.reroll_timer += 1;
         if self.reroll_timer > 20 {
@@ -205,9 +218,9 @@ impl Fish {
                 self.mode = rng.next_range(9) as i32 + 1;
             }
         }
-        // Coin drop (slot 81) runs only when there are no aliens.
-        // TODO(spec): coin_timer advance + drop needs coin.md; stage 0 guppies
-        // only advance the timer when stage > 0 or state ≥ 0.
+        if !env.has_aliens {
+            self.update_coin(w.coins);
+        }
         self.damping_timers();
         self.drift_by_vx_bucket();
         if self.floor_y <= 320 {
@@ -267,6 +280,24 @@ impl Fish {
             return self.chase_food(w);
         }
         false
+    }
+
+    /// `Fish::UpdateCoin` (slot 81 @ `0x004f1400`), normal game.
+    fn update_coin(&mut self, coins: &mut Vec<Coin>) {
+        if self.stage <= 0 && self.state_ac < 0 {
+            return;
+        }
+        self.coin_timer += 1;
+        if self.coin_timer < self.coin_interval {
+            return;
+        }
+        self.coin_timer = 0;
+        // TODO(spec): `+0x22a` (gold-capable) and pet-linked `+0x124` tables.
+        let kind = match self.stage {
+            s if s > 0 => s,
+            _ => return,
+        };
+        coins.push(Coin::new(self.widget_x + 5, self.widget_y + 10, kind));
     }
 
     /// `0x004d6920`: start the hungry (true) or fed (false) colour fade.

@@ -5,6 +5,7 @@
 
 use sexy_core::rand::MtRand;
 
+use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
 
@@ -19,6 +20,7 @@ pub enum Input {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickResult {
     Ignored,
+    CoinCollected,
     FoodDropped,
     TooPoor,
     FoodLimit,
@@ -40,6 +42,11 @@ pub struct Board {
     pub guppies: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
     pub foods: Vec<Food>,
+    /// `board+0xa8`: coins in insertion order.
+    pub coins: Vec<Coin>,
+    /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
+    /// 150 ticks instead of 20.
+    pub tutorial: bool,
     /// Aliens present (`board+0xb8`/`+0xf4` non-empty). Aliens aren't
     /// modelled yet; this flag lets traces with aliens be represented.
     pub has_aliens: bool,
@@ -51,8 +58,9 @@ pub struct Board {
     pub tick: u32,
     /// `board+0x28`: board update counter, the sound-throttle clock.
     pub clock: i32,
-    /// `board+0x26c`: clock when the slurp sample last played.
-    pub slurp_last: i32,
+    /// `board+0x1a4`: per-sample last-played clock (sound throttling,
+    /// which gates some RNG draws).
+    pub sample_last: [i32; 64],
 }
 
 impl Board {
@@ -65,12 +73,14 @@ impl Board {
             paused: false,
             guppies: Vec::new(),
             foods: Vec::new(),
+            coins: Vec::new(),
+            tutorial: false,
             has_aliens: false,
             rng,
             global_rng,
             tick: 0,
             clock: 0,
-            slurp_last: i32::MIN / 2,
+            sample_last: [i32::MIN / 2; 64],
         }
     }
 
@@ -91,7 +101,18 @@ impl Board {
 
     /// Board mouse-down, normal food-drop path. Spec: food.md#dropping-food.
     pub fn click(&mut self, x: i32, y: i32) -> ClickResult {
-        // TODO(spec): coins, aliens, pets and buttons take clicks first.
+        // Widgets on top get the click first: coins are in front of fish
+        // and food (z-order), last-added on top.
+        // TODO(spec): aliens, pets, fish clicks and buttons.
+        if let Some(i) = self.coins.iter().rposition(|c| c.hit(x, y)) {
+            let c = &mut self.coins[i];
+            if !c.collected {
+                c.collect();
+                let kind = c.kind;
+                self.play_collect_sound(kind);
+            }
+            return ClickResult::CoinCollected;
+        }
         if !(31..=586).contains(&x) || !(61..=399).contains(&y) {
             return ClickResult::Ignored;
         }
@@ -101,6 +122,18 @@ impl Board {
         }
         self.money -= self.food_price;
         self.add_food(x - 10, y - 10)
+    }
+
+    /// Coin-collect sounds (`0x004e51f0`); silver/gold pick a variant with
+    /// one draw when the sample isn't throttled (`0x005383d0`).
+    fn play_collect_sound(&mut self, kind: i32) {
+        if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10) {
+            let slot = &mut self.sample_last[0x12c - 0x106];
+            if self.clock.wrapping_sub(*slot) >= 3 {
+                *slot = self.clock;
+                self.rng.next_u31();
+            }
+        }
     }
 
     /// `Board::AddFood` (`0x00543280`) for a player pellet.
@@ -139,15 +172,19 @@ impl Board {
             return;
         }
         self.clock += 1;
-        // Board::Update ambient check: one app-RNG draw per tick
-        // (`Next() % 1000 == 0` → ambient bubbles; confirmed live: exactly
-        // one draw per idle tick). TODO(spec): bubble burst draws when it
-        // hits, and the rest of Board::Update (board-update.md).
+        // Board::Update ambient bubbles (`0x0054815e`): one draw per tick;
+        // on `% 1000 == 0`, a burst of `(r & 3) + 3` bubbles, each placed with
+        // two draws (`0x00538a50`: x `150 + r % 22`, y `400 + r % 6`).
+        // TODO(spec): the emitter skips a bubble when it already holds ≥ 50
+        // (the bubble system isn't modelled; tank 1-1 never gets close).
         if self.rng.next_range(1000) == 0 {
-            let n = (self.rng.next_u31() & 3) + 2;
-            let _ = n;
+            let n = (self.rng.next_u31() & 3) + 3;
+            for _ in 0..n {
+                self.rng.next_range(22);
+                self.rng.next_range(6);
+            }
         }
-        // Objects update in RebuildZOrder order: food before guppies.
+        // Objects update in RebuildZOrder order: food, guppies, then coins.
         self.foods.retain_mut(|f| f.update() == FoodStep::Keep);
         let env = FishEnv {
             paused: self.paused,
@@ -155,16 +192,29 @@ impl Board {
         };
         let mut world = World {
             foods: &mut self.foods,
+            coins: &mut self.coins,
             rng: &mut self.rng,
             global: &mut self.global_rng,
             clock: self.clock,
-            slurp_last: &mut self.slurp_last,
+            sample_last: &mut self.sample_last,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
         }
         // TODO(spec): DeadFish, "last fish died" mercy guppy.
         self.guppies.retain(|f| !f.dead);
+        let mut banked = 0;
+        let long_rest = self.tutorial;
+        self.coins.retain_mut(|c| match c.update(long_rest) {
+            CoinStep::Keep => true,
+            CoinStep::Remove => false,
+            CoinStep::Bank(v) => {
+                banked += v;
+                false
+            }
+        });
+        // `0x0053c1e0`: add money, capped at 9,999,999.
+        self.money = (self.money + banked).min(9_999_999);
         self.tick += 1;
     }
 }

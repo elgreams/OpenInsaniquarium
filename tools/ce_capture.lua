@@ -125,10 +125,27 @@ while captured < max_ticks and polls < max_ticks * 40 do
         if #items > 0 then raws[#raws+1] = string.format('"%s":[%s]', l[2], table.concat(items, ",")) end
       end
     end
+    -- Optional: publish the first guppy's widget position for a scripted
+    -- clicker (e.g. to keep it fed during long captures).
+    if CAPTURE_GPOS and board and board ~= 0 then
+      local g = vec_ptrs(u32(board + 0xa0))[1]
+      if g then
+        local gf = io.open(CAPTURE_GPOS, "w")
+        if gf then gf:write(string.format("%d %d\n", i32(g + 0x30), i32(g + 0x34))); gf:close() end
+      end
+    end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))
     local _, gmi2 = rand_state(GLOBAL_RAND)
-    emit(string.format('{"tick":%d,"board":{"money":%s},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
-      t, tostring(board and i32(board + OFF.money) or "null"), table.concat(counts, ","), table.concat(fish, ","),
+    -- Board scalars the sim needs to resume mid-game: update clock (+0x28)
+    -- and the per-sample last-played table (+0x1a4, 64 ints).
+    local bclock, samples = "null", ""
+    if board and board ~= 0 then
+      bclock = tostring(i32(board + 0x28)) .. string.format(',"tank":%d,"level":%d,"paused":%s', i32(board + 0x3c8), i32(board + 0x3cc),
+        (readBytes(board + 0x94, 1) or 0) ~= 0 and "true" or "false")
+      samples = hex_block(board + 0x1a4, 0x100)
+    end
+    emit(string.format('{"tick":%d,"board":{"money":%s,"clock":%s,"samples":"%s"},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
+      t, tostring(board and i32(board + OFF.money) or "null"), bclock, samples, table.concat(counts, ","), table.concat(fish, ","),
       table.concat(raws, ","), ami2 or -1, gmi2 or -1))
     captured = captured + 1
   end
