@@ -49,7 +49,7 @@ In order, with **app-RNG draws numbered**:
 1. `x = (double)x`, `y = (double)y`. Widget pos = `ftol(x), ftol(y)`. Size 80×80. Type 0. `vx = 0.0`, `vy = −0.5`. `+0x188` (facing scale) = 1.0.
 2. **R1:** `if Next() & 1 == 0 { vx = −0.1; +0x188 = −1.0 }`
 3. Facing (`+0x178`) = 1. Bounds: miny `+0x190` = **370**, maxy `+0x198` = **95**, minx `+0x194` = **10**, maxx `+0x19c` = **540**. (Despite the names, `+0x190`/`+0x198` are the floor and ceiling. Confirm against the clamp code.)
-4. **R2:** divisor `+0x180` = `[2.0, 1.6, 1.8][Next() % 3]`
+4. **R2:** divisor `+0x180` = `[2.0, 1.8, 1.6][Next() % 3]` (corrected; confirmed by `tank1-1_buy_01`)
 5. **R3:** **hunger `+0x9c` = `Next() % 200 + 400`** (400–599 ticks ≈ 11–17 s until hungry)
 6. `+0x1a8` = (Virtual Tank: global `Rand() % 9 + 12`) else **R4:** `Next() % 3 + 4`
 7. **R5:** initial swim mode `+0x1ac` = `Next() % 10`. Mode timer `+0x1b0` = 40, reroll timer `+0x1b4` = 0, coin timer `+0x220` = 0.
@@ -142,9 +142,9 @@ Static, from disassembly (resolves the earlier open question about the two trail
 3. **RNG** vy = `Next() % 5 + 18` (an unsigned→double conversion; always 18..22).
 4. **RNG** next draw is `% 10`. Before using it, y is set to **30.0** and the widget y to 30.
 5. vy-damping timer `+0x208` = `r % 10 + 45`.
-6. Append to the board, update the max-guppy statistic `board+0x48c`, register the shadow (`0x00544800`), rebuild the z-order.
+6. Append to the board, update the max-guppy statistic `board+0x48c`, register the shadow (`0x00544800`), rebuild the z-order. **`Shadow::Shadow` (`0x004ec4f0`) draws once: shadow y = `410 + r % 5`.**
 
-So a bought or mercy guppy splashes in from the surface at 18–22 px/tick. Damping (×0.9 per tick) slows it, and it emits bubbles (`clamp_and_bubbles`, RNG) while the timer is above 30 and vy > 0. The y passed to the constructor is overwritten. **8 app draws** in total, plus bubble draws on the following ticks.
+So a bought or mercy guppy splashes in from the surface at 18–22 px/tick. Damping (×0.9 per tick) slows it, and it emits bubbles (`clamp_and_bubbles`, RNG) while the timer is above 30 and vy > 0. The y passed to the constructor is overwritten. **11 app draws** in total (2 position + 6 constructor + vy + damp timer + shadow), plus bubble draws on the following ticks. Buying from the shop adds one more: the splash sound variant (`0x00538360`, `% 3`). Confirmed by `tank1-1_buy_01` (12 draws on the purchase tick, bit-exact afterwards).
 
 ## Death and the empty tank
 

@@ -185,7 +185,7 @@ impl Fish {
             f.vx = -0.1;
             f.facing = -1.0;
         }
-        f.divisor = [2.0, 1.6, 1.8][rng.next_range(3) as usize];
+        f.divisor = [2.0, 1.8, 1.6][rng.next_range(3) as usize];
         f.hunger = rng.next_range(200) as i32 + 400;
         f.growth_needed = rng.next_range(3) as i32 + 4;
         f.mode = rng.next_range(10) as i32;

@@ -20,7 +20,9 @@ fn captures() -> Vec<PathBuf> {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                ["_raw_", "_feed_", "_coin_"].iter().any(|k| n.contains(k))
+                ["_raw_", "_feed_", "_coin_", "_buy_"]
+                    .iter()
+                    .any(|k| n.contains(k))
                     && n.ends_with(".trace.jsonl")
             })
         })

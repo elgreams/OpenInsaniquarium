@@ -16,6 +16,9 @@ pub enum Input {
     Click { x: i32, y: i32 },
     /// Dismiss the current modal dialog (its default button).
     DismissDialog,
+    /// Shop slot 0: buy a guppy (`FUN_00549380` case 0). TODO(spec):
+    /// replace with a click once the shop-bar hit test is specced.
+    BuyGuppy,
 }
 
 /// Modal dialogs the board can raise. While one is up the board is paused.
@@ -115,6 +118,10 @@ impl Board {
         f.vy_damp_timer = self.rng.next_range(10) as i32 + 45;
         f.stage = 0;
         self.guppies.push(f);
+        // `0x00544800` gives it a floor shadow; `Shadow::Shadow` (`0x004ec4f0`)
+        // draws its y as `410 + r % 5`. Shadows are cosmetic otherwise.
+        // TODO(spec): Shadow::Update, if it ever draws.
+        self.rng.next_range(5);
     }
 
     /// Board mouse-down, normal food-drop path. Spec: food.md#dropping-food.
@@ -181,9 +188,29 @@ impl Board {
                 }
                 Input::Click { .. } => {}
                 Input::DismissDialog => self.dismiss_dialog(),
+                Input::BuyGuppy if self.dialog.is_none() => {
+                    self.buy_guppy();
+                }
+                Input::BuyGuppy => {}
             }
         }
         self.update();
+    }
+
+    /// Price of shop slot 0 (`board+0x314`); $100 on tank 1.
+    pub const GUPPY_PRICE: i32 = 100;
+
+    /// Shop slot 0 (`FUN_00549380` case 0): spend, then `AddRandomGuppy`.
+    pub fn buy_guppy(&mut self) -> bool {
+        if self.money < Self::GUPPY_PRICE {
+            return false;
+        }
+        self.money -= Self::GUPPY_PRICE;
+        self.add_random_guppy();
+        // Purchase sounds: a throttled "buy" sample, then a splash variant
+        // picked with one unthrottled draw (`0x00538360`: `% 3`).
+        self.rng.next_range(3);
+        true
     }
 
     /// `WinFishApp` dialog-button handler (vtable slot 3 @ `0x00552a8a`).

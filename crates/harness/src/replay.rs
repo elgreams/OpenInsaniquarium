@@ -447,6 +447,20 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             }
         }
         prev_coins = coins;
+        // A guppy appearing at the surface (y = 30 before its first move)
+        // was bought; money drops by the price on the same snapshot.
+        let guppies = s
+            .state
+            .get("guppies")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let prev_guppies = prev_snap
+            .and_then(|p| p.state.get("guppies"))
+            .and_then(Value::as_array)
+            .map_or(guppies, Vec::len);
+        if guppies > prev_guppies && money_of(Some(s)) < money_of(prev_snap) {
+            out.inputs.entry(s.tick).or_default().push(Input::BuyGuppy);
+        }
         prev_prev_snap = prev_snap;
         prev_snap = Some(s);
     }
