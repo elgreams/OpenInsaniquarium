@@ -146,3 +146,13 @@ As an example of call order and RNG consumption:
 5. `AddGameObject(fish)`, `wm->AddWidget(fish)`, update the guppy high-water mark, `FUN_00544800(fish)` (shadow creation), `RebuildZOrder()`
 
 So a new guppy costs **4 app-RNG draws, in this order**.
+
+## The global RNG stream in normal play
+
+`Sexy::Rand` (global `gMTRand`) has 74 call sites. On tank 1-1 with guppies, food and coins only, every global draw comes from the **cosmetic bubble systems**:
+
+- `board+0x11c`: the ambient bubble emitter (`0x005110e0`, run from `Board::Update`). Each tick it advances its bubbles (one `Rand() & 1` wobble per bubble, `0x004ffec0`) and removes those above the surface. With probability `emit_pct %` (`Rand() % 100 < +0x28`) it spawns a bubble at a random x in its range (`0x00510fe0`). New bubbles draw 5–6 more (`0x004ffdc0`: size `& 3`, re-rolled once on 3; y `400 + %6`; x `150 + %22`; speed from a 6-entry table). A second list at `+0x4c` (stream bubbles, `0x00511010` / `0x004fff40`) draws colour and position.
+- `board+0x140`: the side bubble streams (`0x00511680`), refilled to their quota with `Rand() % 480` positions (`0x005114a0` → `0x00511580`).
+- `Board::Update` also draws in level-start/background selection (`0x00547776`) and the surface-splash burst (`0x005478f0`: `5 + %5` splashes, each `%41` and `%10`).
+
+None of these feed back into gameplay. Gameplay sites on the global stream are only: guppy startle exit (`Fish::Update`, mode 123), aliens, pets, missiles, and Virtual Tank fish init. So the sim can treat the global stream as independent of the app stream. The replay harness compares only the app stream's `mti`, and the global stream is resynchronised from each capture's header. **Modelling the bubble systems exactly** (float positions, list order) is needed only before the first global-stream gameplay draw that follows bubble activity, i.e. alien levels and startles. It's tracked as an open item for M3's Sylvester work.
