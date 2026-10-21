@@ -126,7 +126,7 @@ Linux dev builds should enable Bevy's dynamic linking for faster iteration (conf
 
 ## Code style
 
-- Rust stable, edition 2024. `cargo fmt` and `cargo clippy --all-targets` clean.
+- Rust edition 2024, toolchain pinned in `rust-toolchain.toml` (Bevy 0.20 needs rustc ≥ 1.97.1). `cargo fmt` and `cargo clippy --all-targets` clean.
 - Name things after the original's RTTI/class names where it aids cross-referencing with specs (`Board`, `Coin`, `Gekko`), but structure the code idiomatically — don't mirror C++ inheritance. Prefer enums + data for object kinds.
 - Comments explain *why* or cite a spec (`// see docs/re/objects/fish.md#hunger`). Don't paste addresses everywhere — the spec holds them.
 - Original behavior that looks like a bug is reproduced faithfully and documented as such. Fixes go behind an explicit, off-by-default option (mods/QoL), never silently.

@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+
+[workspace.dependencies]
+sexy-core = { path = "crates/sexy-core" }
+insaniquarium-sim = { path = "crates/insaniquarium-sim" }
+harness = { path = "crates/harness" }
+bevy = { version = "0.20", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Bevy is heavy; optimize dependencies even in dev builds.
+[profile.dev.package."*"]
+opt-level = 3

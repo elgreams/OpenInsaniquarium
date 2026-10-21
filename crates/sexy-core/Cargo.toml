@@ -1,0 +1,11 @@
+[package]
+name = "sexy-core"
+description = "Game-agnostic reimplementation of the PopCap SexyApp framework layer"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

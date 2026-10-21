@@ -1,0 +1,18 @@
+[package]
+name = "insaniquarium-app"
+description = "Bevy frontend for the Insaniquarium reimplementation"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+sexy-core.workspace = true
+insaniquarium-sim.workspace = true
+bevy = { workspace = true, features = ["default_app", "default_platform", "2d"] }
+
+[features]
+# Faster incremental dev builds: `cargo run --features dev`
+dev = ["bevy/dynamic_linking"]
+
+[lints]
+workspace = true
