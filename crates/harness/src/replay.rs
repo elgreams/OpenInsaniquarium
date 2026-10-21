@@ -35,7 +35,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         vx: rd_f64(b, 0x168),
         vy: rd_f64(b, 0x170),
         divisor: rd_f64(b, 0x180),
-        facing_scale: rd_f64(b, 0x188),
+        facing: rd_f64(b, 0x188),
         patrol_dir: rd_i32(b, 0x178),
         floor_y: rd_i32(b, 0x190),
         min_x: rd_i32(b, 0x194),
@@ -48,6 +48,15 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         mode_timer: rd_i32(b, 0x1b0),
         reroll_timer: rd_i32(b, 0x1b4),
         anim_frame: rd_i32(b, 0x1bc),
+        swim_cycle: rd_i32(b, 0x1b8),
+        cel: rd_i32(b, 0x1c0),
+        turn_timer: rd_i32(b, 0x1c4),
+        eat_timer: rd_i32(b, 0x1c8),
+        pulse_timer: rd_i32(b, 0x1cc),
+        timer_108: rd_i32(b, 0x108),
+        timer_10c: rd_i32(b, 0x10c),
+        timer_f8: rd_i32(b, 0xf8),
+        fade: rd_i32(b, 0xa0),
         vy_damp_timer: rd_i32(b, 0x208),
         push_timer: rd_i32(b, 0x20c),
         push: rd_f64(b, 0x218),
@@ -111,23 +120,30 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
     Ok(board)
 }
 
-/// The same fields `ce_capture.lua` records, from sim state.
+/// Every modelled guppy field, so raw captures can be compared in full.
+fn fish_json(f: &Fish) -> Value {
+    json!({
+        "x": f.x, "y": f.y, "vx": f.vx, "vy": f.vy, "div": f.divisor,
+        "facing": f.facing, "patrol_dir": f.patrol_dir,
+        "bounds": [f.min_x, f.ceil_y, f.max_x, f.floor_y],
+        "hunger": f.hunger, "stage": f.stage, "unk_1a8": f.unk_1a8,
+        "mode": f.mode, "mode_t": f.mode_timer, "reroll_t": f.reroll_timer,
+        "anim": [f.anim_frame, f.swim_cycle, f.cel, f.turn_timer, f.eat_timer, f.pulse_timer],
+        "timers": [f.timer_108, f.timer_10c, f.timer_f8, f.fade, f.vy_damp_timer,
+                   f.push_timer, f.misc_timer],
+        "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
+        "widget": [f.widget_x, f.widget_y],
+    })
+}
+
+/// Sim state as a snapshot.
 pub fn snapshot(board: &Board) -> Snapshot {
-    let guppies: Vec<Value> = board
-        .guppies
-        .iter()
-        .map(|f| {
-            json!({
-                "x": f.x, "y": f.y, "vx": f.vx, "vy": f.vy, "div": f.divisor,
-                "hunger": f.hunger, "mode": f.mode, "mode_t": f.mode_timer,
-                "reroll_t": f.reroll_timer, "stage": f.stage,
-                "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
-            })
-        })
-        .collect();
     let mut state = BTreeMap::new();
     state.insert("board".into(), json!({ "money": board.money }));
-    state.insert("guppies".into(), Value::Array(guppies));
+    state.insert(
+        "fish".into(),
+        Value::Array(board.guppies.iter().map(fish_json).collect()),
+    );
     state.insert(
         "rng_mti".into(),
         json!({ "app": board.rng.state().1, "global": board.global_rng.state().1 }),
@@ -135,6 +151,33 @@ pub fn snapshot(board: &Board) -> Snapshot {
     Snapshot {
         tick: board.tick,
         state,
+    }
+}
+
+/// A capture re-expressed with each guppy decoded from its raw bytes into
+/// the same `"fish"` shape [`snapshot`] emits.
+pub fn decode_capture(t: &Trace) -> Trace {
+    let snapshots = t
+        .snapshots
+        .iter()
+        .map(|s| {
+            let mut s = s.clone();
+            let fish: Option<Vec<Value>> =
+                s.state.get("guppies").and_then(Value::as_array).map(|gs| {
+                    gs.iter()
+                        .filter_map(|g| g.get("raw")?.as_str().and_then(hex_bytes))
+                        .map(|raw| fish_json(&fish_from_raw(&raw)))
+                        .collect()
+                });
+            if let Some(f) = fish {
+                s.state.insert("fish".into(), Value::Array(f));
+            }
+            s
+        })
+        .collect();
+    Trace {
+        header: t.header.clone(),
+        snapshots,
     }
 }
 

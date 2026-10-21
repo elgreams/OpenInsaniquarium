@@ -27,6 +27,11 @@ local LISTS = {
   {0xe4,"shadow"},{0xf0,"warp"},{0xf8,"special"},
 }
 
+-- Lists dumped as raw bytes: {board offset, name, bytes}.
+local RAW_LISTS = {
+  {0xac,"food",0x200},{0xa8,"coin",0x200},{0xe8,"coin_b",0x200},{0xec,"coin_c",0x200},
+}
+
 local out_path = CAPTURE_OUT or "/tmp/trace.jsonl"
 local max_ticks = CAPTURE_TICKS or 300
 
@@ -109,10 +114,22 @@ while captured < max_ticks and polls < max_ticks * 40 do
           num(i32(p+0x220)), num(i32(p+0x224)), hex_block(p, 0x230))
       end
     end
+    -- Raw bytes of other modelled objects, for state rebuild and offset RE.
+    local raws = {}
+    if board and board ~= 0 then
+      for _, l in ipairs(RAW_LISTS) do
+        local items = {}
+        for _, p in ipairs(vec_ptrs(u32(board + l[1]))) do
+          items[#items+1] = '"' .. hex_block(p, l[3]) .. '"'
+        end
+        if #items > 0 then raws[#raws+1] = string.format('"%s":[%s]', l[2], table.concat(items, ",")) end
+      end
+    end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))
     local _, gmi2 = rand_state(GLOBAL_RAND)
-    emit(string.format('{"tick":%d,"board":{"money":%s},"counts":{%s},"guppies":[%s],"rng_mti":{"app":%d,"global":%d}}',
-      t, tostring(board and i32(board + OFF.money) or "null"), table.concat(counts, ","), table.concat(fish, ","), ami2 or -1, gmi2 or -1))
+    emit(string.format('{"tick":%d,"board":{"money":%s},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
+      t, tostring(board and i32(board + OFF.money) or "null"), table.concat(counts, ","), table.concat(fish, ","),
+      table.concat(raws, ","), ami2 or -1, gmi2 or -1))
     captured = captured + 1
   end
   sleep(5)

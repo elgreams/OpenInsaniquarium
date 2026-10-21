@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use harness::replay::replay_idle;
+use harness::replay::{decode_capture, replay_idle};
 use harness::trace::{Trace, diff};
 
 fn captures() -> Vec<PathBuf> {
@@ -33,7 +33,8 @@ fn idle_guppies_match_original() {
         return;
     }
     for path in files {
-        let expected = Trace::read(BufReader::new(File::open(&path).unwrap())).unwrap();
+        let capture = Trace::read(BufReader::new(File::open(&path).unwrap())).unwrap();
+        let expected = decode_capture(&capture);
         let actual = replay_idle(&expected).unwrap();
         if let Some(d) = diff(&expected, &actual) {
             panic!("{}: {d}", path.display());

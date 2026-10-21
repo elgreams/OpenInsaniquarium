@@ -103,6 +103,35 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
 | Bubble emission (`+0xb4` ≥ 31) | 1 + (1–6) | `%n`, offsets |
 | Food chase / hunger | TODO | (`UpdateHunger` sub-calls) |
 
+## Animation and drawing
+
+Confirmed bit-exact on `tank1-1_raw_01` (turns, all 10 swim cels).
+
+**Per-tick animation** (slot 89 @ `0x004de840`, run just before integration):
+
+1. Turn trigger: if the stored facing `+0x188` > 0 and vx < 0, set the turn timer `+0x1c4` = 20. If facing < 0 and vx > 0, set it to −20.
+2. If the turn timer ≠ 0, step it one toward 0. If the eat timer `+0x1c8` ≠ 0 at the same time, decrement that too.
+3. Cel `+0x1c0`:
+   - turn timer > 0: `9 − t/2`
+   - turn timer < 0: `t/2 + 9` (C division, truncating toward zero)
+   - turn timer = 0 and eat timer > 0: decrement the eat timer, then `9 − e/2`
+   - otherwise: advance the swim counter `+0x1b8` by 1 (speed bucket `+0x1bc` ≤ 1) or 2, wrap it to 0 at ≥ 20, and use cel `counter/2`.
+4. Decrement `+0x1cc` if > 0.
+5. If vx ≠ facing, vx ≠ 0 and facing ≠ 0: facing = vx. (Facing is therefore "last non-zero vx", not ±1.)
+6. If `+0x108` > 100 and no turn is in progress: cel = 4.
+
+**Sheet selection** (`Fish::Draw` @ `0x004e4a90` → `DrawBody` slot 83 @ `0x004dea00`):
+
+- Each cel is 80×80. Column = cel, row = stage (0–2; stage 3 → 2, 4 → 3).
+- Image (`Fish::GetSwimImage` @ `0x004d5aa0`), with ids from `WinFish::GetStringIdById`:
+  - turning (`+0x1c4` ≠ 0): `SMALLTURN` (fed) / `HUNGRYTURN` (hungry)
+  - eating (`+0x1c8` ≥ 1 or `+0x108` ≥ 101): `SMALLEAT` / `HUNGRYEAT`
+  - otherwise: `SMALLSWIM` / `HUNGRYSWIM`
+- "Hungry" (`0x004d6f30`): hunger < 301 and fade `+0xa0` == 0 (and, from stage 3, the board's `+0x4ff` flag).
+- The fade `+0xa0` (1..5, set when a hungry fish eats) draws the fed sheet over the hungry one at alpha `fade·255/5`.
+- Mirroring: art faces **left**. With turn timer 0, the fish is drawn mirrored (facing right) when vx > 0, or when vx == 0 and facing > 0. During a turn the mirror flag is inverted relative to the turn direction: `t > 0` (turning left) draws mirrored, `t < 0` draws unmirrored. Byte `+0xf5` inverts all of this.
+- Draw origin is the widget position (`trunc(x), trunc(y)`), the cel's top-left.
+
 ## Hunger (`Fish::UpdateHunger`, slot 83 @ `0x004f15c0`)
 
 1. Animate the eat counter (`0x004d6c50`).
