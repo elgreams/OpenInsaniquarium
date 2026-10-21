@@ -36,6 +36,14 @@ local function num(v) if v == nil then return "null" end
   if math.type(v) == "integer" then return tostring(v) end
   return string.format("%.17g", v) end
 local function i32(a) return readInteger(a, true) end
+-- Full object bytes as hex, so harness tests can rebuild exact state.
+local function hex_block(a, n)
+  local b = readBytes(a, n, true)
+  if not b then return "" end
+  local t = {}
+  for i = 1, #b do t[i] = string.format("%02x", b[i]) end
+  return table.concat(t)
+end
 
 local function rand_state(base)
   local b = readBytes(base, 0x9c4, true)
@@ -95,10 +103,10 @@ while captured < max_ticks and polls < max_ticks * 40 do
     if board and board ~= 0 then
       for _, p in ipairs(vec_ptrs(u32(board + 0xa0))) do
         fish[#fish+1] = string.format(
-          '{"x":%s,"y":%s,"vx":%s,"vy":%s,"div":%s,"hunger":%s,"mode":%s,"mode_t":%s,"reroll_t":%s,"stage":%s,"coin_t":%s,"coin_iv":%s}',
+          '{"x":%s,"y":%s,"vx":%s,"vy":%s,"div":%s,"hunger":%s,"mode":%s,"mode_t":%s,"reroll_t":%s,"stage":%s,"coin_t":%s,"coin_iv":%s,"raw":"%s"}',
           num(f64(p+0x158)), num(f64(p+0x160)), num(f64(p+0x168)), num(f64(p+0x170)), num(f64(p+0x180)),
           num(i32(p+0x9c)), num(i32(p+0x1ac)), num(i32(p+0x1b0)), num(i32(p+0x1b4)), num(i32(p+0x1a0)),
-          num(i32(p+0x220)), num(i32(p+0x224)))
+          num(i32(p+0x220)), num(i32(p+0x224)), hex_block(p, 0x230))
       end
     end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))

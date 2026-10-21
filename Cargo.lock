@@ -2943,6 +2943,7 @@ dependencies = [
  "insaniquarium-sim",
  "serde",
  "serde_json",
+ "sexy-core",
  "thiserror 2.0.21",
 ]
 

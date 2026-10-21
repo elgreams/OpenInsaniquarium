@@ -1,6 +1,6 @@
 # Fish (guppy): movement, hunger, coin drop
 
-Status: `draft`. Movement integration, hunger countdown and the reroll timer are **confirmed live** (CE capture `traces/original/tank1-1_live_04.trace.jsonl`, 150 ticks: `x += vx/div` is bit-exact on 149/149 ticks, hunger −1/tick, `+0x1b4` cycles 0..20, div ∈ {2.0, 1.6, 1.8}, coin interval 217 ∈ [150, 349]). Food/eating and coin drop are static only.
+Status: `draft`. Idle swim (modes 0–9, reroll, hunger countdown, no food/coins) **replays bit-exactly for 400 ticks** from a raw capture (`crates/harness/tests/idle_guppies.rs`, `tank1-1_raw_01`). Movement integration, hunger countdown and the reroll timer are **confirmed live** (CE capture `traces/original/tank1-1_live_04.trace.jsonl`, 150 ticks: `x += vx/div` is bit-exact on 149/149 ticks, hunger −1/tick, `+0x1b4` cycles 0..20, div ∈ {2.0, 1.6, 1.8}, coin interval 217 ∈ [150, 349]). Food/eating and coin drop are static only.
 Class: `Sexy::Fish` (type code `0x00`), vtable `0x00597d54`. `Fish::Update` = vtable slot 22 @ `0x004f6970` (also used by Oscar, Ultra, Gekko, SylvesterFish, BallFish, BiFish).
 
 **Offset note:** Ghidra's recovered `Fish_data` struct is based at `this+0x154`. The offsets below are **raw `this`-relative** (decompiler `field_0xNN` + `0x154`).
@@ -73,12 +73,13 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
    - **Otherwise call `Fish::UpdateHunger`** (slot 83 @ `0x004f15c0`, below). If it returns true (the fish is chasing food), stop here for the behaviour branch. If false, run the **swim mode** state machine on `+0x1ac` (step 3).
 3. **Swim modes** (`+0x1b0` is the per-mode timer; most modes act every 40 ticks):
    - **mode 123 (startled):** reset the coin timer and some counters. After 30 ticks, damp vx and vy by 0.95 if |v| > 2.0. After 50 ticks: **RNG A** `mode = Next() % 9 + 1`, then if x is out of bounds (`x > maxx − 20` or `x < minx + 20`) or **global RNG** `Rand() % 3 == 0`: `vx *= −1`. *(This is the only global-RNG use in guppy code.)*
-   - **mode 0 (drift down):** if `+0xb4 == 0`, vy = 0.5. Every 40 ticks: move vx 3.0 toward 0 (only when |vx| > 3).
+   - **mode 0 (drift down):** if `+0xb4 == 0`, vy = 0.5. Every 40 ticks: move vx 0.5 toward 0 when |vx| > 0.5 (|vx| ≤ 0.5 is left alone), then frame = trunc(|vx|). *(Corrected: an earlier reading had 3.0; the step constant at `0x004f725d` is the 0.5 already on the FPU stack.)*
    - **modes 1 / 2 (cruise):** if `+0xb4 == 0`, vy = −0.5. Every 40 ticks: move vx by 1.0 (mode 1) or toward −1.0 in steps of 1.0 (mode 2).
    - **modes 3 / 4 (rise):** every 40 ticks: nudge vx toward ±1, nudge vy toward 3.0 by 1.0, and increment/decrement the frame toward 4.
    - **modes 0–2, at the end of their branch:** `y −= c / divisor` (c = 0.25 for mode 0, 0.5 for modes 1–2).
-   - **modes 5–9 (patrol):** if `+0xb4 == 0`, vy = −0.5, or −0.1 when `y < 115`. Every 40 ticks: accelerate along facing (+2 if moving that way, else +1). Flip facing at x > 250 (facing +1) or x < 175 (facing −1).
-   - **Any mode:** if y > 240, set mode 0.
+   - **modes 5–9 (patrol):** if `+0xb4 == 0`, vy = −0.5, or −0.1 when `y < 115`. Every 40 ticks: accelerate along the patrol direction `+0x178` by 2.0 while vx still points against it, else by 1.0; frame = trunc(|vx|). Then flip: dir +1 and x > 250 → dir −1, vx −= 2.0; dir −1 and x < 175 → dir +1, vx += 2.0.
+     - Exact compares: dir +1 adds 2.0 iff vx < 0; dir −1 subtracts 2.0 iff vx > 0 (vx == 0 takes the 1.0 step either way).
+   - **Modes 3/4 only** (end of their branch, every tick): if y > 240, set mode 0.
 4. **Mode reroll:** `+0x1b0 += 1`, `+0x1b4 += 1`. When `+0x1b4 > 20`: reset it to 0, then **RNG B** `if Next() % 10 == 0 { RNG C: mode = Next() % 9 + 1 }`.
    - *Matches the live trace:* each guppy draws once every 21 ticks (`board.md` → "+2 every 21 ticks" with 2 guppies).
 5. **Coin drop** (`Fish::UpdateCoin`, slot 82 @ `0x004f1400`), unless `0x004da780` says the level is over. Details below.
@@ -89,8 +90,8 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
 10. If `+0xb4 < 1` or vy ≤ 0: clamp y ≥ miny. Otherwise (**bubble emission**, while `+0xb4` ≥ 31):
     - `n = 2` (or 1 if `+0xb4 > 40`). **RNG D** `if Next() % n == 0`, emit bubbles via `Board::AddBubble` (`0x00538ac0`). For a small fish (stage 0): **RNG** `&1`, then 2 draws for the offset (`15 − r%30`). For others: 4–6 draws (offsets `55 − r%60`, `20 − r%40`; stage 6 uses `125 − r%120`, `105 − r%80`).
 11. **Edge steering:** near the right edge (x > maxx − 5) with vx > 0.1: `vx −= 0.1`. Near the left (x < 15) with vx < −0.1: `vx += 0.1`.
-12. **Slot 90** (`0x004d5650`, anim/turn update). TODO.
-13. **Integrate:** `div = +0x180`, or 0.3 / 0.8 in special states (`+0x6e`/`+0x70`, "boosted"). Then `x += vx / div` and `y += vy / div`.
+12. **Slot 89** (`0x004de840`, anim/turn update): swim-frame and turn-frame counters only. The one RNG use is the rainbow-tint path (`+0x1d1` set, global `Rand() % 255 + 1` once, cached in `+0x1d4`); never set for tank 1-1 guppies.
+13. **Integrate:** `div = +0x180`, unless byte `+0xf6` is set, in which case div = 0.8 while `+0xf8` > 0, else 0.3. Then `x += vx / div` and `y += vy / div`.
 14. Set the widget position (slot 42) to `trunc(x), trunc(y)` (`_ftol2`, truncation toward zero).
 
 ### App-RNG call order per guppy per tick (summary)
@@ -128,6 +129,5 @@ So a guppy lasts **500 ticks hungry ≈ 14 s** after hunger hits 0 before dying 
 - Food targeting (`0x004df0b0`): nearest pellet? first in list? eat radius?
 - `Fish::PreUpdate` `0x004f22c0` and slot 90 `0x004d5650` (turn animation).
 - ~~Rounding~~: `FUN_00564160` is `_ftol2` (truncation), confirmed.
-- Trace verification: add `x`, `y`, `vx`, `vy`, `hunger`, `mode` per guppy to `tools/ce_capture.lua`.
 
 Partial decompiles from the interrupted research run are in `re/scratch/` (local, gitignored).
