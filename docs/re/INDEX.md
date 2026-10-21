@@ -11,6 +11,7 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | framework | `framework/rng.md` | confirmed (algorithm/seeding) | MT19937 (31-bit output); app stream + global stream + store stream. Implemented: `sexy_core::rand::MtRand` |
 | meta | `dynamic-analysis.md` | — | How to attach CE to the Proton game; known crash hazard |
 | framework | `framework/demo-recording.md` | draft | `-record`/`-play` functional; tick-indexed input bitstream |
+| objects | `objects/fish-guppy.md` | draft | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, hunger countdown/death at −500, coin timer |
 | sim | `sim/board.md` | draft | Type codes → typed vectors; update order = z-order rebuild sequence |
 | assets | `assets/images.md` | draft | Extension probe order, `_x`/`x_` mask lookup, alphaimage/alphagrid, GIF transparency, AnimInfo cel math. Implemented: `sexy_core::image` |
 | assets | `assets/overview.md` | draft | Survey: resources.xml, ImageFont, fishsongs, music, saves. Split into per-format specs as each is implemented |
