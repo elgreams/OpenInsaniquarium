@@ -1,5 +1,6 @@
 //! Browse every resource in the user's install: images (with cel animation),
-//! ImageFonts (rendered with our own glyph layout), and sounds.
+//! ImageFonts (rendered with our own glyph layout), sounds, and the music
+//! modules (if libopenmpt is installed).
 //!
 //! Usage: `cargo run --bin asset-browser -- --data <install>`
 //! Keys: Left/Right = prev/next resource, PageUp/PageDown = jump 10,
@@ -23,8 +24,9 @@ use sexy_core::anim::AnimInfo;
 use sexy_core::data_dir::DataDir;
 use sexy_core::font::FontData;
 use sexy_core::image::{Rgba, get_image, load_image_res};
+use sexy_core::music::Openmpt;
 use sexy_core::resources::{Manifest, Resource};
-use sexy_core::sound::decode_au;
+use sexy_core::sound::{Pcm, decode_au};
 
 const WIDTH: f32 = 1280.0;
 const HEIGHT: f32 = 800.0;
@@ -32,6 +34,36 @@ const HEIGHT: f32 = 800.0;
 const TICK: Duration = Duration::from_millis(28);
 const CAPTION_FONT: &str = "FONT_JUNGLEFEVER12OUTLINE";
 const SAMPLE_TEXT: &[u8] = b"The quick brown fish jumps over 1,234 lazy aliens!";
+/// (browser id, path, start order): the tank songs inside Insaniq2.mo3 per
+/// the remap table in docs/re/assets/music.md.
+const MUSIC: &[(&str, &str, i32)] = &[
+    ("MUSIC_TANK1", "music/Insaniq2.mo3", 0),
+    ("MUSIC_TANK2", "music/Insaniq2.mo3", 12),
+    ("MUSIC_TANK3", "music/Insaniq2.mo3", 25),
+    ("MUSIC_TANK4", "music/Insaniq2.mo3", 37),
+    ("MUSIC_MENU", "music/Insaniq2.mo3", 45),
+    ("MUSIC_ALIEN", "music/Alien.mo3", 0),
+    ("MUSIC_LULLABY", "music/Lullaby.mo3", 0),
+];
+const MUSIC_PREVIEW_SECS: u32 = 60;
+
+fn render_music(data: &DataDir, path: &str, order: i32) -> Result<Vec<u8>, String> {
+    let lib = Openmpt::load().map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(data.find(path).ok_or("file missing")?).map_err(|e| e.to_string())?;
+    let mut m = lib.open(&bytes).map_err(|e| e.to_string())?;
+    m.set_repeat_count(-1);
+    m.seek_order(order);
+    let rate = 44100;
+    let mut samples = vec![0i16; (2 * rate * MUSIC_PREVIEW_SECS) as usize];
+    let frames = m.read_stereo(rate, &mut samples);
+    samples.truncate(frames * 2);
+    Ok(Pcm {
+        sample_rate: rate,
+        channels: 2,
+        samples,
+    }
+    .to_wav())
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -50,7 +82,9 @@ fn main() {
     let src =
         std::fs::read_to_string(data.join("properties/resources.xml")).expect("read resources.xml");
     let manifest = Manifest::parse(&src).expect("parse resources.xml");
-    let ids: Vec<String> = manifest.iter().map(|r| r.id().to_string()).collect();
+    let mut ids: Vec<String> = manifest.iter().map(|r| r.id().to_string()).collect();
+    // Music isn't in resources.xml; it's loaded by path (docs/re/assets/music.md).
+    ids.extend(MUSIC.iter().map(|(id, _, _)| id.to_string()));
     let shot = args
         .iter()
         .position(|a| a == "--shot")
@@ -254,7 +288,6 @@ fn rebuild(
         commands.entity(e).despawn();
     }
     let id = b.ids[b.index].clone();
-    let res = b.manifest.get(&id).cloned().unwrap();
     let top_left = Vec2::new(-WIDTH / 2.0 + 16.0, HEIGHT / 2.0 - 16.0);
 
     let mut info = format!("[{}/{}] {id}", b.index + 1, b.ids.len());
@@ -262,6 +295,27 @@ fn rebuild(
         Some(Resource::Font(f)) => Some(f.path.clone()),
         _ => None,
     };
+
+    if let Some((_, path, order)) = MUSIC.iter().find(|(m, _, _)| *m == id) {
+        info +=
+            &format!("  {path} @ order {order}  ({MUSIC_PREVIEW_SECS}s preview, Space to replay)");
+        match render_music(&b.data, path, *order) {
+            Ok(wav) => {
+                let h = audio.add(AudioSource {
+                    bytes: Arc::from(wav),
+                });
+                commands.spawn((Shown, AudioPlayer::new(h), PlaybackSettings::DESPAWN));
+            }
+            Err(e) => info += &format!("  ERROR: {e} (install libopenmpt)"),
+        }
+        info!("{info}");
+        if let Some(fp) = caption_font {
+            let ascii: Vec<u8> = info.bytes().filter(|c| c.is_ascii()).collect();
+            let _ = spawn_text(&mut commands, &mut images, &b.data, &fp, &ascii, top_left);
+        }
+        return;
+    }
+    let res = b.manifest.get(&id).cloned().unwrap();
 
     let body_top = top_left - Vec2::new(0.0, 40.0);
     match &res {

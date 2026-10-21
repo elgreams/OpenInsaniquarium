@@ -15,7 +15,8 @@ harness = { path = "crates/harness" }
 bevy = { version = "0.20", default-features = false }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny (not forbid) so the one FFI module (sexy_core::music) can opt in explicitly.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

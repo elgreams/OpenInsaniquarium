@@ -6,6 +6,7 @@ pub mod anim;
 pub mod data_dir;
 pub mod font;
 pub mod image;
+pub mod music;
 pub mod rand;
 pub mod resources;
 pub mod sound;

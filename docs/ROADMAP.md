@@ -30,7 +30,7 @@ Load the user's install and show things on screen. Mostly framework, no gameplay
 - [x] `resources.xml` parser: groups, `SetDefaults`, ids, and load-time attributes.
 - [x] Image loading with alpha-mask compositing (`foo.gif` + `_foo.gif`), sprite-sheet cel layout (rows/cols). Cel animation (`AnimInfo`).
 - [x] ImageFont descriptor parser + text rendering (kerning, line spacing, outline variants). *(Single-layer layout; multi-layer draw order TODO when needed.)*
-- [~] Audio: `.ogg`, `.au` done; `.mo3` via libopenmpt pending.
+- [x] Audio: `.ogg`, `.au`, `.mo3` (libopenmpt loaded at runtime; optional).
 - [x] Asset browser (`cargo run --bin asset-browser -- --data <install>`; `--shot ID out.png` for headless screenshots).
 
 **Exit:** every resource in `resources.xml` loads and displays correctly in the browser, matching the original by eye.

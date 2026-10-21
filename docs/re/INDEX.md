@@ -14,4 +14,5 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | objects | `objects/fish-guppy.md` | draft | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, hunger countdown/death at −500, coin timer |
 | sim | `sim/board.md` | draft | Type codes → typed vectors; update order = z-order rebuild sequence |
 | assets | `assets/images.md` | draft | Extension probe order, `_x`/`x_` mask lookup, alphaimage/alphagrid, GIF transparency, AnimInfo cel math. Implemented: `sexy_core::image` |
+| assets | `assets/music.md` | draft | MO3 via libopenmpt; one module, songs selected by order; tank/alien selection + fades. Implemented: `sexy_core::music` |
 | assets | `assets/overview.md` | draft | Survey: resources.xml, ImageFont, fishsongs, music, saves. Split into per-format specs as each is implemented |
