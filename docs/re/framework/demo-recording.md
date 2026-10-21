@@ -1,6 +1,6 @@
 # Demo recording & playback (SexyApp)
 
-Status: **recording and file format `confirmed`** (live recording, 2026-10-21, decoded end-to-end by `harness::demo`). Playback: `draft`. The live `-play` attempt exited within seconds and the cause is still unknown (see Open questions).
+Status: **recording and file format `confirmed`** (live recording, 2026-10-21, decoded end-to-end by `harness::demo`). **Playback is broken in this build** (confirmed, see below).
 
 ## Summary
 
@@ -96,7 +96,17 @@ The short-form mouse button `button` encoding comes from the window message (`0x
 
 **Remaining gap:** the app gameplay RNG (`app+0x7b0`) is seeded from `gMTRand` during `WinFishApp` construction, which happens *before* `ReadDemoBuffer` reseeds `gMTRand`. On playback the app RNG may therefore not be reproducible from the demo seed alone. If not, the harness also snapshots `[app+0x7b0]` at tick 0 (see `rng.md`).
 
+## Playback is broken in this build (confirmed)
+
+`-play` crashes during startup, before any window appears. Wine SEH trace: an access violation in `Buffer::ReadBytes` (`0x00413740`, faulting at `0x00413755`) called from the registry-read helper (`0x0047e8b0`).
+
+Cause: `HandleCmdLineParam` sets the "replay I/O from demo" flag (`app+0x511 = 1`) as soon as `-play` is parsed. But `SexyAppBase::Init` (`0x004883f0`) performs its first registry reads (slot 24 → `SexyApp::ReadRegistry` @ `0x00491700`) **before** it calls `ReadDemoBuffer` (`0x004888ef`). Those early reads take the playback branch, try to pull their recorded values from a demo buffer that hasn't been loaded yet (empty `Buffer` at `app+0x54c`), and read past the end. Recording works because the same reads are written as the first stream events; playback simply reads them back before loading the file.
+
+So the original can't replay its own demos. **Consequences for us:**
+- The harness captures from **live play** (`tools/ce_capture.lua` during a `-record` session gives both the input stream and the per-tick state from the same run), not from replays on the original.
+- Our engine *can* replay `.dmo` files (`harness::demo`): it consumes the recorded I/O events in order and ignores the early-read ordering bug.
+- A one-byte patch to the original (e.g. reorder the flag set) would likely make `-play` work. We deliberately don't patch the original binary. Revisit only if live capture turns out to be insufficient.
+
 ## Open questions
 
-- **Live `-play` exits after ~2 s with no crash log** (the first attempt reported "Demo file not found" until the file was placed at the PopCap path). Suspects: the version-string check, or something in the replayed I/O (the stream contains the original save-file contents, so the on-disk saves shouldn't matter). The saves were restored to their pre-record state before playback. Next step: break on `ReadDemoBuffer` failure paths, or log `app+0x509` via CE.
 - Exact payload of the long-form Activate (cmd 1) in playback vs. recording.

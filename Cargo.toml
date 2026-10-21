@@ -20,6 +20,8 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
-# Bevy is heavy; optimize dependencies even in dev builds.
+# Bevy is heavy; optimize dependencies even in dev builds. Full debug info for
+# all of Bevy makes a ~1.4 GB binary and minute-long links; keep line tables only.
 [profile.dev.package."*"]
 opt-level = 3
+debug = "line-tables-only"
