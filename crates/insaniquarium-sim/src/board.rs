@@ -8,6 +8,7 @@ use sexy_core::rand::MtRand;
 use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
+use crate::sound::Sound;
 
 /// Player input, applied at the start of a tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +79,9 @@ pub struct Board {
     /// `board+0x1a4`: per-sample last-played clock (sound throttling,
     /// which gates some RNG draws).
     pub sample_last: [i32; 64],
+    /// Sounds started during the last `step` (presentation only; cleared
+    /// at the start of each step).
+    pub sounds: Vec<Sound>,
 }
 
 impl Board {
@@ -99,6 +103,7 @@ impl Board {
             tick: 0,
             clock: 0,
             sample_last: [i32::MIN / 2; 64],
+            sounds: Vec::new(),
         }
     }
 
@@ -152,12 +157,21 @@ impl Board {
     /// Coin-collect sounds (`0x004e51f0`); silver/gold pick a variant with
     /// one draw when the sample isn't throttled (`0x005383d0`).
     fn play_collect_sound(&mut self, kind: i32) {
-        if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10) {
-            let slot = &mut self.sample_last[0x12c - 0x106];
-            if self.clock.wrapping_sub(*slot) >= 3 {
-                *slot = self.clock;
-                self.rng.next_u31();
-            }
+        if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10) && self.sample_ready(0x12c, 3) {
+            let r = self.rng.next_u31() & 3;
+            self.sounds.push(Sound::points(r));
+        }
+    }
+
+    /// `0x005381f0`: may sample `id` play now (≥ `gap` ticks since last)?
+    /// Records the play when it may.
+    fn sample_ready(&mut self, id: usize, gap: i32) -> bool {
+        let slot = &mut self.sample_last[id - 0x106];
+        if self.clock.wrapping_sub(*slot) >= gap {
+            *slot = self.clock;
+            true
+        } else {
+            false
         }
     }
 
@@ -176,11 +190,15 @@ impl Board {
         }
         let food = Food::new_pellet(x, y, self.food_level, &mut self.rng);
         self.foods.push(food);
+        if self.sample_ready(0x118, 3) {
+            self.sounds.push(Sound::DropFood);
+        }
         ClickResult::FoodDropped
     }
 
     /// One logic tick (28 ms) with this tick's inputs.
     pub fn step(&mut self, inputs: &[Input]) {
+        self.sounds.clear();
         for i in inputs {
             match *i {
                 Input::Click { x, y } if self.dialog.is_none() => {
@@ -209,7 +227,11 @@ impl Board {
         self.add_random_guppy();
         // Purchase sounds: a throttled "buy" sample, then a splash variant
         // picked with one unthrottled draw (`0x00538360`: `% 3`).
-        self.rng.next_range(3);
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy);
+        }
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r));
         true
     }
 
@@ -255,6 +277,7 @@ impl Board {
             global: &mut self.global_rng,
             clock: self.clock,
             sample_last: &mut self.sample_last,
+            sounds: &mut self.sounds,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);

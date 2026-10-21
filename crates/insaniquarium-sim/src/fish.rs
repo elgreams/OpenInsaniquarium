@@ -7,6 +7,7 @@ use sexy_core::rand::MtRand;
 
 use crate::coin::Coin;
 use crate::food::Food;
+use crate::sound::Sound;
 
 /// Guppy state. All positions/velocities are `f64` (x87 doubles in the
 /// original); timers and bounds are `i32`.
@@ -111,6 +112,8 @@ pub struct World<'a> {
     pub clock: i32,
     /// Per-sample last-played clock (`board+0x1a4`, indexed by id − 0x106).
     pub sample_last: &'a mut [i32; 64],
+    /// Sounds started this tick (presentation only).
+    pub sounds: &'a mut Vec<Sound>,
 }
 
 impl World<'_> {
@@ -129,7 +132,8 @@ impl World<'_> {
     /// `0x005384c0`: slurp (sample 0x138), variant picked by one draw.
     fn play_slurp(&mut self) {
         if self.sample_ready(0x138, 3) {
-            self.rng.next_range(5);
+            let r = self.rng.next_range(5);
+            self.sounds.push(Sound::slurp(r));
         }
     }
 }
@@ -461,6 +465,9 @@ impl Fish {
                 self.stage += 1;
                 self.growth = 0;
                 self.pulse_timer = 10;
+                if w.sample_ready(0x122, 3) {
+                    w.sounds.push(Sound::Grow);
+                }
             }
             if self.growth >= 15 * self.growth_needed && self.stage >= 2 && self.stage != 4 {
                 self.stage = 4;

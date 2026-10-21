@@ -10,6 +10,25 @@ use std::collections::HashMap;
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::{ImageError, Rgba, load_image_res};
 use sexy_core::resources::{Manifest, Resource};
+use sexy_core::sound::decode_au;
+
+/// Bytes of a manifest sound in a format Bevy plays: `.ogg` as-is, `.au`
+/// (μ-law) converted to WAV. `None` if the id is unknown or the file missing.
+pub fn load_sound_bytes(data: &DataDir, manifest: &Manifest, id: &str) -> Option<Vec<u8>> {
+    let Some(Resource::Sound(s)) = manifest.get(id) else {
+        return None;
+    };
+    let path = data.find_with_ext(&s.path, &["ogg", "au"])?;
+    let raw = std::fs::read(&path).ok()?;
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("au"))
+    {
+        decode_au(&raw).ok().map(|pcm| pcm.to_wav())
+    } else {
+        Some(raw)
+    }
+}
 
 /// Pets in manifest order (`STINKY` … `WALTER`), matching `SCL_*` order.
 pub const PETS: [&str; 24] = [
@@ -151,5 +170,29 @@ mod tests {
         // AMP lives in the 40×20 band at y = 10; rows outside stay empty.
         assert!(amp.pixels[..400].iter().all(|p| p[3] == 0));
         assert!(amp.pixels[400..1200].iter().any(|p| p[3] > 0));
+    }
+}
+
+#[cfg(test)]
+mod sound_tests {
+    use super::*;
+    use sexy_core::data_dir::test_data_dir;
+
+    #[test]
+    fn tank_sounds_load() {
+        let Some(d) = test_data_dir() else { return };
+        let src = std::fs::read_to_string(d.join("properties/resources.xml")).unwrap();
+        let m = Manifest::parse(&src).unwrap();
+        for id in [
+            "SOUND_DROPFOOD",
+            "SOUND_SLURP",
+            "SOUND_POINTS",
+            "SOUND_SPLASH",
+            "SOUND_GROW",
+        ] {
+            let b = load_sound_bytes(&d, &m, id).unwrap_or_else(|| panic!("{id}"));
+            assert!(b.len() > 100, "{id}");
+        }
+        assert!(load_sound_bytes(&d, &m, "SOUND_NOPE").is_none());
     }
 }

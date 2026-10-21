@@ -9,17 +9,20 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bevy::asset::RenderAssetUsages;
+use bevy::audio::AudioSource;
 use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
 use bevy::window::PrimaryWindow;
-use insaniquarium_app::assets::GameImages;
+use insaniquarium_app::assets::{GameImages, load_sound_bytes};
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::board::{Dialog, Input};
+use insaniquarium_sim::sound::Sound;
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
@@ -62,6 +65,10 @@ fn main() {
         std::fs::read_to_string(data.join("properties/resources.xml")).expect("read resources.xml");
     let manifest = Manifest::parse(&src).expect("parse resources.xml");
     let images = GameImages::load(&data, &manifest).expect("load images");
+    let sounds: HashMap<&'static str, Vec<u8>> = ALL_SOUNDS
+        .iter()
+        .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
+        .collect();
 
     // The sim never reads the clock; the app picks the seed, as the
     // original seeds its global RNG from GetTickCount.
@@ -102,6 +109,7 @@ fn main() {
             pending: Vec::new(),
         })
         .insert_resource(Sources(images))
+        .insert_resource(SoundBytes(sounds))
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold14.txt").ok(),
             dialog_font: ImageFont::load(&data, "data/JungleFever15outline.txt").ok(),
@@ -110,7 +118,7 @@ fn main() {
         })
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse, hud_text, draw, title).chain())
-        .add_systems(FixedUpdate, step)
+        .add_systems(FixedUpdate, (step, play_sounds).chain())
         .run();
 }
 
@@ -124,6 +132,31 @@ struct Sim {
 
 #[derive(Resource)]
 struct Sources(GameImages);
+
+const ALL_SOUNDS: &[Sound] = &[
+    Sound::DropFood,
+    Sound::Slurp,
+    Sound::Slurp2,
+    Sound::Slurp3,
+    Sound::Points,
+    Sound::Points2,
+    Sound::Points3,
+    Sound::Points4,
+    Sound::Splash,
+    Sound::Splash2,
+    Sound::Splash3,
+    Sound::Buy,
+    Sound::Grow,
+    Sound::Die,
+    Sound::Buzzer,
+];
+
+#[derive(Resource)]
+struct SoundBytes(HashMap<&'static str, Vec<u8>>);
+
+/// Uploaded audio, by sound id.
+#[derive(Resource, Default)]
+struct SoundHandles(HashMap<&'static str, Handle<AudioSource>>);
 
 /// Uploaded sheets plus their cel size.
 #[derive(Resource)]
@@ -179,6 +212,30 @@ fn setup(mut commands: Commands, src: Res<Sources>, mut images: ResMut<Assets<Im
 fn step(mut sim: ResMut<Sim>) {
     let inputs = std::mem::take(&mut sim.pending);
     sim.board.step(&inputs);
+}
+
+fn play_sounds(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    bytes: Res<SoundBytes>,
+    mut handles: Local<SoundHandles>,
+    mut audio: ResMut<Assets<AudioSource>>,
+) {
+    for s in &sim.board.sounds {
+        let id = s.id();
+        let h = match handles.0.get(id) {
+            Some(h) => h.clone(),
+            None => {
+                let Some(b) = bytes.0.get(id) else { continue };
+                let h = audio.add(AudioSource {
+                    bytes: Arc::from(b.clone()),
+                });
+                handles.0.insert(id, h.clone());
+                h
+            }
+        };
+        commands.spawn((AudioPlayer::new(h), PlaybackSettings::DESPAWN));
+    }
 }
 
 fn mouse(
