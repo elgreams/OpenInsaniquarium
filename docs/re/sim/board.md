@@ -120,6 +120,22 @@ Per-element filter in most loops: an object is brought to front unless `obj+0xfc
 
 The `Board::Update` body (timers, wave countdown `+0x234` from 3000, the alien-type selection per tank/level, ambient bubbles) is substantial. Split it out into `sim/board-update.md` when we implement M3.
 
+## Live observations (CE read-only capture, 2026-10-21)
+
+From `tools/ce_capture.lua`, tank 1-1, two guppies (`traces/original/tank1-1_live_02.trace.jsonl`, 200 consecutive ticks with none missed):
+
+| Fact | Value | Confidence |
+|---|---|---|
+| Board pointer | `[app+0x730]` | confirmed |
+| Money | `board+0x3f0` (int); food pellet costs **5** (180→175→170) | confirmed |
+| App-RNG draws per idle tick | **exactly 1** (the `rand()%1000` ambient-bubbles check in `Board::Update`) | confirmed |
+| Periodic extra draws | **+2 every 21 ticks** with 2 guppies (ticks 3296, 3317, 3338, …), probably 1 draw per fish on a 21-tick timer | confirmed (count), guess (cause) |
+| Food drop | money −5, `food` list +1, extra RNG draws on the drop tick | confirmed |
+| Global RNG (`gMTRand`) | untouched during tank play (`mti` stayed 6) | confirmed |
+| Shadows | one `Shadow` object per guppy (`board+0xe4`) | confirmed |
+
+Per-tick app-RNG draw counts are a cheap, strong fidelity check. Our sim must reproduce this exact sequence.
+
 ## Fish spawn (`Board::AddRandomGuppy` @ `0x00546d70`)
 
 As an example of call order and RNG consumption:
