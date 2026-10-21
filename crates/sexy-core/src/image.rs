@@ -55,6 +55,99 @@ impl Rgba {
     pub fn as_bytes(&self) -> &[u8] {
         self.pixels.as_flattened()
     }
+
+    /// A transparent black image (fresh MemoryImage contents are 0x00000000).
+    pub fn new_transparent(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            pixels: vec![[0; 4]; (width * height) as usize],
+        }
+    }
+
+    fn px(&self, x: u32, y: u32) -> [u8; 4] {
+        self.pixels[(y * self.width + x) as usize]
+    }
+
+    /// Copy the `w × h` region at `(x, y)`, clipped to the image.
+    pub fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Rgba {
+        let w = w.min(self.width.saturating_sub(x));
+        let h = h.min(self.height.saturating_sub(y));
+        let mut out = Rgba::new_transparent(w, h);
+        for j in 0..h {
+            for i in 0..w {
+                out.pixels[(j * w + i) as usize] = self.px(x + i, y + j);
+            }
+        }
+        out
+    }
+
+    /// Repeat the image along x and y until it fills `w × h` (copies start at
+    /// multiples of the source size, the last one clipped).
+    pub fn tile(&self, w: u32, h: u32) -> Rgba {
+        let mut out = Rgba::new_transparent(w, h);
+        for j in 0..h {
+            for i in 0..w {
+                out.pixels[(j * w + i) as usize] = self.px(i % self.width, j % self.height);
+            }
+        }
+        out
+    }
+
+    /// Replace alpha with `mask`'s alpha, pixel by pixel in linear order
+    /// (`WinFish::CreateMaskedCutout`; see docs/re/assets/sprite-variants.md).
+    pub fn with_alpha_of(mut self, mask: &Rgba) -> Rgba {
+        for (p, m) in self.pixels.iter_mut().zip(&mask.pixels) {
+            p[3] = m[3];
+        }
+        self
+    }
+
+    /// Area-average (box) downscale of `src` into `dst` at `(dx, dy, dw, dh)`,
+    /// then composited onto `dst` the way the original's slow stretch does
+    /// onto an empty canvas (`c·a >> 8`, alpha kept). Approximates
+    /// `MemoryImage::SlowStretchBlt` (exact fixed-point weights are TODO).
+    pub fn box_downscale_into(&self, dst: &mut Rgba, dx: u32, dy: u32, dw: u32, dh: u32) {
+        let (sw, sh) = (self.width as f64, self.height as f64);
+        let (fx, fy) = (sw / dw as f64, sh / dh as f64);
+        for j in 0..dh {
+            let (y0, y1) = (j as f64 * fy, (j + 1) as f64 * fy);
+            for i in 0..dw {
+                let (x0, x1) = (i as f64 * fx, (i + 1) as f64 * fx);
+                let mut acc = [0f64; 4];
+                let mut area = 0.0;
+                let mut sy = y0.floor() as u32;
+                while (sy as f64) < y1 && sy < self.height {
+                    let cy = (y1.min(sy as f64 + 1.0) - y0.max(sy as f64)).max(0.0);
+                    let mut sx = x0.floor() as u32;
+                    while (sx as f64) < x1 && sx < self.width {
+                        let cx = (x1.min(sx as f64 + 1.0) - x0.max(sx as f64)).max(0.0);
+                        let w = cx * cy;
+                        let p = self.px(sx, sy);
+                        for c in 0..4 {
+                            acc[c] += p[c] as f64 * w;
+                        }
+                        area += w;
+                        sx += 1;
+                    }
+                    sy += 1;
+                }
+                if area == 0.0 {
+                    continue;
+                }
+                let avg = acc.map(|v| (v / area) as u32);
+                let a = avg[3];
+                if a == 0 {
+                    continue;
+                }
+                let out = &mut dst.pixels[((dy + j) * dst.width + dx + i) as usize];
+                for c in 0..3 {
+                    out[c] = ((avg[c] * a) >> 8) as u8;
+                }
+                out[3] = a as u8;
+            }
+        }
+    }
 }
 
 /// Decode a single file by its extension.

@@ -1,0 +1,4 @@
+//! Insaniquarium frontend library: game-specific asset handling shared by the
+//! game binary and tools (asset browser).
+
+pub mod assets;

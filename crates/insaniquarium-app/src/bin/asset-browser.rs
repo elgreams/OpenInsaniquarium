@@ -20,10 +20,11 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::sprite::Anchor;
+use insaniquarium_app::assets::{GameImages, PETS};
 use sexy_core::anim::AnimInfo;
 use sexy_core::data_dir::DataDir;
 use sexy_core::font::FontData;
-use sexy_core::image::{Rgba, get_image, load_image_res};
+use sexy_core::image::{Rgba, get_image};
 use sexy_core::music::Openmpt;
 use sexy_core::resources::{Manifest, Resource};
 use sexy_core::sound::{Pcm, decode_au};
@@ -85,6 +86,9 @@ fn main() {
     let mut ids: Vec<String> = manifest.iter().map(|r| r.id().to_string()).collect();
     // Music isn't in resources.xml; it's loaded by path (docs/re/assets/music.md).
     ids.extend(MUSIC.iter().map(|(id, _, _)| id.to_string()));
+    // Pet-dialog thumbnails derived at load time (sprite-variants.md).
+    ids.extend(PETS.iter().map(|p| format!("THUMB_{p}")));
+    let game = GameImages::load(&data, &manifest).expect("load images");
     let shot = args
         .iter()
         .position(|a| a == "--shot")
@@ -120,6 +124,7 @@ fn main() {
             dirty: true,
             show_grid: false,
             tick: 0,
+            game,
         })
         .insert_resource(Shot(shot.map(|(_, p)| p), 0))
         .add_systems(Startup, setup)
@@ -137,6 +142,8 @@ struct Browser {
     dirty: bool,
     show_grid: bool,
     tick: i32,
+    /// All images with the original's post-load derivations applied.
+    game: GameImages,
 }
 
 /// Everything spawned for the current resource; despawned on change.
@@ -315,13 +322,33 @@ fn rebuild(
         }
         return;
     }
+    if let Some(pet) = id.strip_prefix("THUMB_") {
+        let thumb = b.game.pet_thumbnails[&format!("IMAGE_{pet}")].clone();
+        info += "  40x40 pet-dialog thumbnail (derived from SCL_ cel 0)";
+        let h = images.add(to_bevy(&thumb));
+        commands.spawn((
+            Shown,
+            Sprite {
+                image: h,
+                custom_size: Some(Vec2::splat(160.0)),
+                ..default()
+            },
+            Anchor::TOP_LEFT,
+            Transform::from_translation((top_left - Vec2::new(0.0, 40.0)).extend(0.0)),
+        ));
+        if let Some(fp) = caption_font {
+            let ascii: Vec<u8> = info.bytes().filter(|c| c.is_ascii()).collect();
+            let _ = spawn_text(&mut commands, &mut images, &b.data, &fp, &ascii, top_left);
+        }
+        return;
+    }
     let res = b.manifest.get(&id).cloned().unwrap();
 
     let body_top = top_left - Vec2::new(0.0, 40.0);
     match &res {
         Resource::Image(r) => {
             info += &format!("  {}  {}x{} cels", r.path, r.cols, r.rows);
-            match load_image_res(&b.data, r) {
+            match b.game.get(&r.id).cloned().ok_or("not loaded") {
                 Ok(img) => {
                     info += &format!("  {}x{}px", img.width, img.height);
                     let (cw, ch) = ((img.width / r.cols) as f32, (img.height / r.rows) as f32);
