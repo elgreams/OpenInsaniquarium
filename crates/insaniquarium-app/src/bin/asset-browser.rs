@@ -20,14 +20,13 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::sprite::Anchor;
-use insaniquarium_app::assets::{GameImages, PETS};
+use insaniquarium_app::assets::{GameImages, PETS, render_song};
 use sexy_core::anim::AnimInfo;
 use sexy_core::data_dir::DataDir;
 use sexy_core::font::FontData;
 use sexy_core::image::{Rgba, get_image};
-use sexy_core::music::Openmpt;
 use sexy_core::resources::{Manifest, Resource};
-use sexy_core::sound::{Pcm, decode_au};
+use sexy_core::sound::decode_au;
 
 const WIDTH: f32 = 1280.0;
 const HEIGHT: f32 = 800.0;
@@ -49,21 +48,7 @@ const MUSIC: &[(&str, &str, i32)] = &[
 const MUSIC_PREVIEW_SECS: u32 = 60;
 
 fn render_music(data: &DataDir, path: &str, order: i32) -> Result<Vec<u8>, String> {
-    let lib = Openmpt::load().map_err(|e| e.to_string())?;
-    let bytes = std::fs::read(data.find(path).ok_or("file missing")?).map_err(|e| e.to_string())?;
-    let mut m = lib.open(&bytes).map_err(|e| e.to_string())?;
-    m.set_repeat_count(-1);
-    m.seek_order(order);
-    let rate = 44100;
-    let mut samples = vec![0i16; (2 * rate * MUSIC_PREVIEW_SECS) as usize];
-    let frames = m.read_stereo(rate, &mut samples);
-    samples.truncate(frames * 2);
-    Ok(Pcm {
-        sample_rate: rate,
-        channels: 2,
-        samples,
-    }
-    .to_wav())
+    render_song(data, path, order, MUSIC_PREVIEW_SECS)
 }
 
 fn main() {

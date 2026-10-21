@@ -1,7 +1,7 @@
 //! Playable tank 1-1 prototype: runs `insaniquarium-sim` at the original's
 //! 28 ms tick and draws its state. Click to drop food or collect coins.
 //!
-//! Usage: `cargo run --bin tank -- --data <install> [--seed N]`
+//! Usage: `cargo run --bin tank -- --data <install> [--seed N] [--no-music]`
 //!
 //! Draw rules come from the specs: guppies `fish-guppy.md#animation-and-drawing`,
 //! food `food.md`, coins `coin.md`. Money is shown in the window title until
@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
 use bevy::window::PrimaryWindow;
-use insaniquarium_app::assets::{GameImages, load_sound_bytes};
+use insaniquarium_app::assets::{GameImages, TANK1_SONG, load_sound_bytes, render_song};
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::board::{Dialog, Input};
 use insaniquarium_sim::sound::Sound;
@@ -69,6 +69,14 @@ fn main() {
         .iter()
         .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
         .collect();
+    // TODO: stream instead of pre-rendering; 5 minutes loops acceptably.
+    let music = if args.iter().any(|a| a == "--no-music") {
+        None
+    } else {
+        render_song(&data, TANK1_SONG.0, TANK1_SONG.1, 300)
+            .inspect_err(|e| eprintln!("music disabled: {e}"))
+            .ok()
+    };
 
     // The sim never reads the clock; the app picks the seed, as the
     // original seeds its global RNG from GetTickCount.
@@ -110,6 +118,7 @@ fn main() {
         })
         .insert_resource(Sources(images))
         .insert_resource(SoundBytes(sounds))
+        .insert_resource(Music(music))
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold14.txt").ok(),
             dialog_font: ImageFont::load(&data, "data/JungleFever15outline.txt").ok(),
@@ -154,6 +163,9 @@ const ALL_SOUNDS: &[Sound] = &[
 #[derive(Resource)]
 struct SoundBytes(HashMap<&'static str, Vec<u8>>);
 
+#[derive(Resource)]
+struct Music(Option<Vec<u8>>);
+
 /// Uploaded audio, by sound id.
 #[derive(Resource, Default)]
 struct SoundHandles(HashMap<&'static str, Handle<AudioSource>>);
@@ -189,8 +201,20 @@ fn to_bevy(img: &Rgba) -> Image {
     )
 }
 
-fn setup(mut commands: Commands, src: Res<Sources>, mut images: ResMut<Assets<Image>>) {
+fn setup(
+    mut commands: Commands,
+    src: Res<Sources>,
+    mut images: ResMut<Assets<Image>>,
+    mut music: ResMut<Music>,
+    mut audio: ResMut<Assets<AudioSource>>,
+) {
     commands.spawn(Camera2d);
+    if let Some(wav) = music.0.take() {
+        let h = audio.add(AudioSource {
+            bytes: Arc::from(wav),
+        });
+        commands.spawn((AudioPlayer::new(h), PlaybackSettings::LOOP));
+    }
     let mut sheets = HashMap::new();
     for &id in SHEETS {
         let Some(img) = src.0.get(id) else {

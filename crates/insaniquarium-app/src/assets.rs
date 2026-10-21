@@ -9,8 +9,39 @@ use std::collections::HashMap;
 
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::{ImageError, Rgba, load_image_res};
+use sexy_core::music::Openmpt;
 use sexy_core::resources::{Manifest, Resource};
-use sexy_core::sound::decode_au;
+use sexy_core::sound::{Pcm, decode_au};
+
+/// The tank 1 song: `Insaniq2.mo3` from order 0 (`docs/re/assets/music.md`,
+/// remap 0,22 → 4,0).
+pub const TANK1_SONG: (&str, i32) = ("music/Insaniq2.mo3", 0);
+
+/// Render `seconds` of a module song from `order` to a WAV (looping inside
+/// the module, as the original sets repeat −1). Needs libopenmpt at runtime.
+pub fn render_song(
+    data: &DataDir,
+    path: &str,
+    order: i32,
+    seconds: u32,
+) -> Result<Vec<u8>, String> {
+    let lib = Openmpt::load().map_err(|e| e.to_string())?;
+    let bytes =
+        std::fs::read(data.find(path).ok_or("music file missing")?).map_err(|e| e.to_string())?;
+    let mut m = lib.open(&bytes).map_err(|e| e.to_string())?;
+    m.set_repeat_count(-1);
+    m.seek_order(order);
+    let rate = 44100;
+    let mut samples = vec![0i16; (2 * rate * seconds) as usize];
+    let frames = m.read_stereo(rate, &mut samples);
+    samples.truncate(frames * 2);
+    Ok(Pcm {
+        sample_rate: rate,
+        channels: 2,
+        samples,
+    }
+    .to_wav())
+}
 
 /// Bytes of a manifest sound in a format Bevy plays: `.ogg` as-is, `.au`
 /// (μ-law) converted to WAV. `None` if the id is unknown or the file missing.
