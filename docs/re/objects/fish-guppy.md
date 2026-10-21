@@ -1,6 +1,6 @@
 # Fish (guppy): movement, hunger, coin drop
 
-Status: `draft` (static). Movement is mostly mapped. Hunger and coins are partial. Not yet trace-verified.
+Status: `draft`. Movement integration, hunger countdown and the reroll timer are **confirmed live** (CE capture `traces/original/tank1-1_live_04.trace.jsonl`, 150 ticks: `x += vx/div` is bit-exact on 149/149 ticks, hunger −1/tick, `+0x1b4` cycles 0..20, div ∈ {2.0, 1.6, 1.8}, coin interval 217 ∈ [150, 349]). Food/eating and coin drop are static only.
 Class: `Sexy::Fish` (type code `0x00`), vtable `0x00597d54`. `Fish::Update` = vtable slot 22 @ `0x004f6970` (also used by Oscar, Ultra, Gekko, SylvesterFish, BallFish, BiFish).
 
 **Offset note:** Ghidra's recovered `Fish_data` struct is based at `this+0x154`. The offsets below are **raw `this`-relative** (decompiler `field_0xNN` + `0x154`).

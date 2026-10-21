@@ -31,6 +31,10 @@ local out_path = CAPTURE_OUT or "/tmp/trace.jsonl"
 local max_ticks = CAPTURE_TICKS or 300
 
 local function u32(a) local v = readInteger(a); return v and (v & 0xffffffff) end
+local function f64(a) local v = readDouble(a); return v end
+local function num(v) if v == nil then return "null" end
+  if math.type(v) == "integer" then return tostring(v) end
+  return string.format("%.17g", v) end
 local function i32(a) return readInteger(a, true) end
 
 local function rand_state(base)
@@ -68,7 +72,7 @@ local start_tick = i32(app + OFF.update_count)
 local amt, ami = rand_state(u32(app + OFF.app_rand))
 local gmt, gmi = rand_state(GLOBAL_RAND)
 emit(string.format(
-  '{"format":"insaniquarium-trace","version":1,"source":"original","build":"f54c2c6ee54b00ae6da7f4bde15feb90d0a867aba6b4151b0277c1f81da3ff66","start_tick":%d,"rng":{"app":%s,"global":%s},"fields":["board.money","counts","rng_mti"]}',
+  '{"format":"insaniquarium-trace","version":1,"source":"original","build":"f54c2c6ee54b00ae6da7f4bde15feb90d0a867aba6b4151b0277c1f81da3ff66","start_tick":%d,"rng":{"app":%s,"global":%s},"fields":["board.money","counts","guppies","rng_mti"]}',
   start_tick, rand_json(amt, ami), rand_json(gmt, gmi)))
 
 local last = start_tick - 1
@@ -86,10 +90,21 @@ while captured < max_ticks and polls < max_ticks * 40 do
         if n > 0 then counts[#counts+1] = string.format('"%s":%d', l[2], n) end
       end
     end
+    -- Per-guppy state (docs/re/objects/fish-guppy.md).
+    local fish = {}
+    if board and board ~= 0 then
+      for _, p in ipairs(vec_ptrs(u32(board + 0xa0))) do
+        fish[#fish+1] = string.format(
+          '{"x":%s,"y":%s,"vx":%s,"vy":%s,"div":%s,"hunger":%s,"mode":%s,"mode_t":%s,"reroll_t":%s,"stage":%s,"coin_t":%s,"coin_iv":%s}',
+          num(f64(p+0x158)), num(f64(p+0x160)), num(f64(p+0x168)), num(f64(p+0x170)), num(f64(p+0x180)),
+          num(i32(p+0x9c)), num(i32(p+0x1ac)), num(i32(p+0x1b0)), num(i32(p+0x1b4)), num(i32(p+0x1a0)),
+          num(i32(p+0x220)), num(i32(p+0x224)))
+      end
+    end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))
     local _, gmi2 = rand_state(GLOBAL_RAND)
-    emit(string.format('{"tick":%d,"board":{"money":%s},"counts":{%s},"rng_mti":{"app":%d,"global":%d}}',
-      t, tostring(board and i32(board + OFF.money) or "null"), table.concat(counts, ","), ami2 or -1, gmi2 or -1))
+    emit(string.format('{"tick":%d,"board":{"money":%s},"counts":{%s},"guppies":[%s],"rng_mti":{"app":%d,"global":%d}}',
+      t, tostring(board and i32(board + OFF.money) or "null"), table.concat(counts, ","), table.concat(fish, ","), ami2 or -1, gmi2 or -1))
     captured = captured + 1
   end
   sleep(5)
