@@ -3,12 +3,15 @@
 The proof of fidelity: same starting state and same inputs give the same state, tick by tick, in the original and in `insaniquarium-sim`.
 
 ```
-original game  ──(-record)──▶  .dmo (inputs + I/O, tick-indexed)
-      │                              │
-      │ CE per-tick capture          │ harness::demo
-      ▼                              ▼
-  trace.jsonl  ◀────── diff ───────  our sim replaying the same inputs
+original game ──CE per-tick capture (tools/ce_capture.lua)──▶ trace.jsonl
+                                                                   │
+            harness::replay: rebuild Board from the first          │
+            snapshot's raw object bytes + RNG states, infer        │
+            clicks from object appearances, step the sim           ▼
+                         sim trace ◀──────── diff ────────▶ decoded capture
 ```
+
+The original's `-play` is broken in this build (`docs/re/framework/demo-recording.md`), so demos can't drive the original. Instead the harness **captures** the original while it's played (by hand or by a scripted clicker) and **infers** the inputs from the captured state. The `.dmo` parser (`harness::demo`) is kept for reading recorded sessions.
 
 ## Inputs: SexyApp demo files (`.dmo`)
 
@@ -36,25 +39,41 @@ A trace is a **JSON Lines** file (`*.trace.jsonl`). The first line is a header a
 - `rng`: full generator state at `start_tick`. If `mti == 624` and the state equals `SRand(mt[0])`, `{"seed": mt[0]}` is enough (see `docs/re/framework/rng.md`).
 - `fields`: which fields this trace captured. The diff only compares fields both sides captured.
 
-### Snapshot (lines 2…)
+### Snapshot (lines 2…), as written by `ce_capture.lua`
 
 ```json
-{"tick":1234,"rng_draws":{"app":3,"global":0},
- "board":{"money":200,"food_count":1,"alien_timer":2970},
- "objects":[{"list":"fish","idx":0,"type":0,"x":312.5,"y":181.0,"vx":1.25,"vy":-0.5,"hunger":412,"size":0},
-            {"list":"coin","idx":0,"type":1,"x":300.0,"y":250.0}]}
+{"tick":1234,
+ "board":{"money":200,"clock":100654,"tank":1,"level":1,"paused":false,"samples":"<hex 64×i32>"},
+ "counts":{"guppy":2,"food":1,"shadow":2},
+ "guppies":[{"x":312.5,"y":181.0,"vx":1.25,…,"raw":"<hex of 0x230 object bytes>"}],
+ "raw":{"food":["<hex 0x200>"],"coin":["<hex 0x200>"]},
+ "rng_mti":{"app":17,"global":6}}
 ```
 
-- `tick`: logic tick *after* the update completed.
-- `rng_draws`: how many values each generator produced during this tick. This is the cheapest strong check: a divergence in RNG call count shows up before any visible state differs.
-- `objects`: grouped by Board list in **update order** (see `docs/re/sim/board.md`), insertion order within each list.
-- Floats are written with full round-trip precision. Values captured from `double` fields keep all 64 bits, and `float` (f32) fields are widened exactly.
+- `tick`: the app update counter (`app+0x484`) after the update completed. The capture polls faster than the 28 ms tick and records each new tick once.
+- `raw`: full object bytes, so the harness decodes fields itself (`harness::replay::{fish,food,coin}_from_raw`) and new fields need no re-capture.
+- `rng_mti`: the generators' `mti` index. It's a cheap strong check: an extra or missing draw shows up before any visible state differs. The sim side compares only `app` (see `docs/re/sim/board.md`: the global stream is consumed by unmodelled cosmetic bubbles).
+- Floats are written with `%.17g` and parsed with serde_json's `float_roundtrip`, so doubles survive bit-exactly.
 
 Versioning: any incompatible change bumps `version`. Readers reject versions they don't know.
 
 ## Diff
 
 `diff(original, sim)` walks both traces in lockstep and reports the **first** divergence as `(tick, path, original_value, sim_value)`, e.g. `tick 1517 objects[fish#2].x: 311.75 != 311.5`. Floats compare exactly by default (we're aiming for bit-exact), and a per-field tolerance can be configured while a system is still converging.
+
+## Capture runbook
+
+1. Launch the inner game: `tools/run_inner_proton.sh` (if it exits silently, kill the stale prefix: `WINEPREFIX=<compatdata>/3320/pfx "<Proton>/files/bin/wineserver" -k`).
+2. Start CE as root (`docs/re/dynamic-analysis.md`), dismiss the "Proton target" and "Patreon or Trial" dialogs, and attach to `game.exe`.
+3. Get the board into the state you want, then from the CE bridge:
+   `CAPTURE_OUT="/tmp/x.jsonl"; CAPTURE_TICKS=5000; CAPTURE_GPOS="/tmp/gpos"; dofile("tools/ce_capture.lua")`.
+   The MCP call times out after 30 s but the capture keeps running.
+4. Optional scripted play: with `CAPTURE_GPOS` set, the capture publishes `gx gy paused` for the first guppy, plus one `x y` line per uncollected coin. A shell clicker (xdotool) can then feed, collect, and click Resume (312, 258) when paused.
+5. Copy to `traces/original/tank1-1_<what>_NN.trace.jsonl`. `crates/harness/tests/tank1_1.rs` picks up `_raw_`, `_feed_` and `_coin_` captures.
+
+Replay details (`harness::replay`):
+- The board is rebuilt from the **first** snapshot (paused lead-in skipped) and replayed up to the first pause.
+- Clicks are inferred from new pellets (`anim` 1 means the click came before the tick, 0 means after it) and from coins turning collected. A click that lands after an update but before the capture read is "mid-frame": it's applied at the next tick and that snapshot is masked.
 
 ## Files
 
