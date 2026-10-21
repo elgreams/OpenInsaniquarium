@@ -3203,6 +3203,7 @@ dependencies = [
  "bevy",
  "insaniquarium-sim",
  "sexy-core",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -2,3 +2,4 @@
 //! game binary and tools (asset browser).
 
 pub mod assets;
+pub mod text;

@@ -18,6 +18,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
 use bevy::window::PrimaryWindow;
 use insaniquarium_app::assets::GameImages;
+use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::board::{Dialog, Input};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
@@ -40,6 +41,7 @@ const SHEETS: &[&str] = &[
     "IMAGE_HUNGRYEAT",
     "IMAGE_FOOD",
     "IMAGE_MONEY",
+    "IMAGE_MENUBAR",
 ];
 
 fn main() {
@@ -100,8 +102,14 @@ fn main() {
             pending: Vec::new(),
         })
         .insert_resource(Sources(images))
+        .insert_resource(Hud {
+            font: ImageFont::load(&data, "data/ContinuumBold14.txt").ok(),
+            dialog_font: ImageFont::load(&data, "data/JungleFever15outline.txt").ok(),
+            money: None,
+            dialog: None,
+        })
         .add_systems(Startup, setup)
-        .add_systems(Update, (mouse, draw, title).chain())
+        .add_systems(Update, (mouse, hud_text, draw, title).chain())
         .add_systems(FixedUpdate, step)
         .run();
 }
@@ -120,6 +128,15 @@ struct Sources(GameImages);
 /// Uploaded sheets plus their cel size.
 #[derive(Resource)]
 struct Sheets(HashMap<&'static str, (Handle<Image>, UVec2)>);
+
+/// HUD text, re-rasterised only when the value changes.
+#[derive(Resource)]
+struct Hud {
+    font: Option<ImageFont>,
+    dialog_font: Option<ImageFont>,
+    money: Option<(i32, Handle<Image>, UVec2)>,
+    dialog: Option<(Dialog, Handle<Image>, UVec2)>,
+}
 
 /// Per-frame sprites; rebuilt each frame from sim state.
 #[derive(Component)]
@@ -148,7 +165,7 @@ fn setup(mut commands: Commands, src: Res<Sources>, mut images: ResMut<Assets<Im
             continue;
         };
         // Sprite sheets here are 10 square-ish cels across.
-        let cel = if id == "IMAGE_AQUARIUM1" {
+        let cel = if matches!(id, "IMAGE_AQUARIUM1" | "IMAGE_MENUBAR") {
             UVec2::new(img.width, img.height)
         } else {
             let w = img.width / 10;
@@ -264,10 +281,51 @@ fn guppy_cel(f: &Fish) -> (&'static str, i32, i32, bool) {
     (sheet, f.cel, row, mirror)
 }
 
+fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image>>) {
+    let money = sim.board.money;
+    if hud.money.as_ref().is_none_or(|m| m.0 != money)
+        && let Some(f) = &hud.font
+    {
+        let img = f.render(money.to_string().as_bytes());
+        let size = UVec2::new(img.width, img.height);
+        hud.money = Some((money, images.add(to_bevy(&img)), size));
+    }
+    match sim.board.dialog {
+        Some(d) if hud.dialog.as_ref().is_none_or(|x| x.0 != d) => {
+            if let Some(f) = &hud.dialog_font {
+                let text: &[u8] = match d {
+                    Dialog::LastFishDied => b"YOUR LAST FISH HAS DIED! CLICK TO CONTINUE",
+                    Dialog::GameOver => b"GAME OVER",
+                };
+                let img = f.render(text);
+                let size = UVec2::new(img.width, img.height);
+                hud.dialog = Some((d, images.add(to_bevy(&img)), size));
+            }
+        }
+        None => hud.dialog = None,
+        _ => {}
+    }
+}
+
+fn text_sprite(
+    handle: &Handle<Image>,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> (Drawn, Sprite, Anchor, Transform) {
+    (
+        Drawn,
+        Sprite::from_image(handle.clone()),
+        Anchor::TOP_LEFT,
+        Transform::from_xyz(x - W / 2.0, H / 2.0 - y, z),
+    )
+}
+
 fn draw(
     mut commands: Commands,
     sim: Res<Sim>,
     sheets: Res<Sheets>,
+    hud: Res<Hud>,
     old: Query<Entity, With<Drawn>>,
 ) {
     for e in &old {
@@ -324,9 +382,27 @@ fn draw(
             mirror: false,
         });
     }
+    cels.push(Cel {
+        sheet: "IMAGE_MENUBAR",
+        col: 0,
+        row: 0,
+        x: 0,
+        y: 0,
+        z: 10.0,
+        mirror: false,
+    });
     commands.spawn_batch(
         cels.iter()
             .filter_map(|c| c.bundle(&sheets))
             .collect::<Vec<_>>(),
     );
+    // Money, right-aligned in the counter. TODO(spec): exact position/font
+    // (shop-bar.md).
+    if let Some((_, h, size)) = &hud.money {
+        commands.spawn(text_sprite(h, 632.0 - size.x as f32, 38.0, 11.0));
+    }
+    if let Some((_, h, size)) = &hud.dialog {
+        let x = (W - size.x as f32) / 2.0;
+        commands.spawn(text_sprite(h, x, 230.0, 12.0));
+    }
 }
