@@ -8,6 +8,7 @@ use sexy_core::rand::MtRand;
 use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
+use crate::shop::{EGG_DONE, Shop, Slot};
 use crate::sound::Sound;
 
 /// Player input, applied at the start of a tick.
@@ -17,9 +18,8 @@ pub enum Input {
     Click { x: i32, y: i32 },
     /// Dismiss the current modal dialog (its default button).
     DismissDialog,
-    /// Shop slot 0: buy a guppy (`FUN_00549380` case 0). TODO(spec):
-    /// replace with a click once the shop-bar hit test is specced.
-    BuyGuppy,
+    /// Press a shop button directly (same as clicking it).
+    Buy(Slot),
 }
 
 /// Modal dialogs the board can raise. While one is up the board is paused.
@@ -30,12 +30,17 @@ pub enum Dialog {
     LastFishDied,
     /// Dialog 0x11: game over.
     GameOver,
+    /// Dialog 0x13 "OUT OF MONEY!" (tutorial, money 0).
+    /// TODO(spec): the loan it offers.
+    OutOfMoney,
 }
 
 /// What a click did (for UI feedback).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickResult {
     Ignored,
+    Bought(Slot),
+    CantAfford,
     CoinCollected,
     FoodDropped,
     TooPoor,
@@ -54,6 +59,21 @@ pub struct Board {
     pub food_level: i32,
     /// `board+0x94`
     pub paused: bool,
+    /// `board+0x3c8`, `+0x3cc`
+    pub tank: i32,
+    pub level: i32,
+    pub shop: Shop,
+    /// `board+0x43c`: egg pieces + 1; the level completes at 4.
+    pub egg_count: i32,
+    /// Set when the last egg piece is bought (hatch screen next).
+    pub level_complete: bool,
+    /// `board+0x450`: money-flash countdown after a failed purchase.
+    pub money_flash: i32,
+    /// `board+0x444`: running-tick counter (animates button icons).
+    pub level_ticks: i32,
+    /// Tutorial help arrows: `+0x4b2` (buy fish), `+0x4d8` (buy egg).
+    pub arrow_buy_fish: bool,
+    pub arrow_buy_egg: bool,
     /// The modal dialog raised by the board, if any.
     pub dialog: Option<Dialog>,
     /// `board+0xa0`: guppies in insertion order.
@@ -92,6 +112,15 @@ impl Board {
             max_food: 1,
             food_level: 0,
             paused: false,
+            tank: 1,
+            level: 1,
+            shop: Shop::adventure(1, 1),
+            egg_count: 1,
+            level_complete: false,
+            money_flash: 0,
+            level_ticks: 0,
+            arrow_buy_fish: false,
+            arrow_buy_egg: false,
             dialog: None,
             guppies: Vec::new(),
             foods: Vec::new(),
@@ -131,6 +160,11 @@ impl Board {
 
     /// Board mouse-down, normal food-drop path. Spec: food.md#dropping-food.
     pub fn click(&mut self, x: i32, y: i32) -> ClickResult {
+        // Shop buttons are top-level widgets: they take the click first and
+        // purchase on mouse-down (shop-bar.md#input-path).
+        if let Some(slot) = self.shop.hit(x, y) {
+            return self.purchase(slot);
+        }
         // Widgets on top get the click first: coins are in front of fish
         // and food (z-order), last-added on top.
         // TODO(spec): aliens, pets, fish clicks and buttons.
@@ -206,25 +240,70 @@ impl Board {
                 }
                 Input::Click { .. } => {}
                 Input::DismissDialog => self.dismiss_dialog(),
-                Input::BuyGuppy if self.dialog.is_none() => {
-                    self.buy_guppy();
+                Input::Buy(slot) if self.dialog.is_none() => {
+                    self.purchase(slot);
                 }
-                Input::BuyGuppy => {}
+                Input::Buy(_) => {}
             }
         }
         self.update();
     }
 
-    /// Price of shop slot 0 (`board+0x314`); $100 on tank 1.
-    pub const GUPPY_PRICE: i32 = 100;
+    /// Value of collected coins still flying to the counter
+    /// (`PendingCollectValue` @ `0x0053a0b0`).
+    pub fn pending_coin_value(&self) -> i32 {
+        self.coins
+            .iter()
+            .filter(|c| c.collected)
+            .map(|c| c.value() * c.multiplier)
+            .sum()
+    }
 
-    /// Shop slot 0 (`FUN_00549380` case 0): spend, then `AddRandomGuppy`.
-    pub fn buy_guppy(&mut self) -> bool {
-        if self.money < Self::GUPPY_PRICE {
+    /// `Board::TrySpend(price, buzz = 1)` (`0x00540b30`). Money may go
+    /// negative when coins in flight cover the gap.
+    fn try_spend(&mut self, price: i32) -> bool {
+        if self.money < price && self.money + self.pending_coin_value() < price {
+            if self.sample_ready(0x112, 3) {
+                self.sounds.push(Sound::Buzzer);
+            }
+            self.money_flash = 70;
+            if self.money == 0 && self.tutorial && self.dialog.is_none() {
+                self.paused = true;
+                self.dialog = Some(Dialog::OutOfMoney);
+            }
             return false;
         }
-        self.money -= Self::GUPPY_PRICE;
+        self.money -= price;
+        true
+    }
+
+    /// `Board::Purchase(slot)` (`0x00549380`), the slots tank 1 uses.
+    pub fn purchase(&mut self, slot: Slot) -> ClickResult {
+        let i = slot as usize;
+        if !self.shop.revealed[i] {
+            return ClickResult::Ignored;
+        }
+        let price = self.shop.price[i];
+        let ok = match slot {
+            Slot::Guppy => self.buy_guppy(price),
+            Slot::EggPiece => self.buy_egg_piece(price),
+            // TODO(spec): other slots (not on tank 1-1).
+            _ => return ClickResult::Ignored,
+        };
+        if ok {
+            ClickResult::Bought(slot)
+        } else {
+            ClickResult::CantAfford
+        }
+    }
+
+    /// Slot 0: spend, then `AddRandomGuppy` (12 draws with the splash).
+    fn buy_guppy(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
         self.add_random_guppy();
+        self.arrow_buy_fish = false;
         // Purchase sounds: a throttled "buy" sample, then a splash variant
         // picked with one unthrottled draw (`0x00538360`: `% 3`).
         if self.sample_ready(0x111, 3) {
@@ -235,6 +314,45 @@ impl Board {
         true
     }
 
+    /// Slot 11: `Board::BuyEggPiece` (`0x00545960`). No RNG.
+    fn buy_egg_piece(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        self.arrow_buy_egg = false;
+        self.egg_count += 1;
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy);
+        }
+        if self.egg_count >= EGG_DONE {
+            // SettlePendingCoins (`0x0053c2d0`), then the hatch screen.
+            self.money = (self.money + self.pending_coin_value()).clamp(0, 9_999_999);
+            self.level_complete = true;
+            self.paused = true;
+        }
+        true
+    }
+
+    /// `Fish::OnStageUp` (`0x004f1840`) shop reveals for tank 1-1.
+    fn on_stage_up(&mut self, stage: i32) {
+        let first_level = self.tank == 1 && self.level == 1;
+        match stage {
+            1 if !self.shop.revealed[Slot::Guppy as usize] => {
+                self.shop.reveal(Slot::Guppy, true);
+                if self.tutorial {
+                    self.arrow_buy_fish = true;
+                }
+            }
+            2 if first_level && !self.shop.revealed[Slot::EggPiece as usize] => {
+                self.shop.reveal(Slot::EggPiece, true);
+                self.arrow_buy_fish = false;
+                self.arrow_buy_egg = true;
+            }
+            // TODO(spec): other levels' reveal lists.
+            _ => {}
+        }
+    }
+
     /// `WinFishApp` dialog-button handler (vtable slot 3 @ `0x00552a8a`).
     fn dismiss_dialog(&mut self) {
         match self.dialog.take() {
@@ -242,6 +360,7 @@ impl Board {
                 self.paused = false;
                 self.add_random_guppy();
             }
+            Some(Dialog::OutOfMoney) => self.paused = false,
             Some(Dialog::GameOver) | None => {}
         }
     }
@@ -252,6 +371,11 @@ impl Board {
             return;
         }
         self.clock += 1;
+        self.level_ticks += 1;
+        if self.money_flash > 0 {
+            self.money_flash -= 1;
+        }
+        self.shop.tick();
         // Board::Update ambient bubbles (`0x0054815e`): one draw per tick;
         // on `% 1000 == 0`, a burst of `(r & 3) + 3` bubbles, each placed with
         // two draws (`0x00538a50`: x `150 + r % 22`, y `400 + r % 6`).
@@ -270,6 +394,7 @@ impl Board {
             paused: self.paused,
             has_aliens: self.has_aliens,
         };
+        let mut stage_ups = Vec::new();
         let mut world = World {
             foods: &mut self.foods,
             coins: &mut self.coins,
@@ -278,11 +403,14 @@ impl Board {
             clock: self.clock,
             sample_last: &mut self.sample_last,
             sounds: &mut self.sounds,
+            stage_ups: &mut stage_ups,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
         }
-        // TODO(spec): DeadFish, "last fish died" mercy guppy.
+        for s in stage_ups {
+            self.on_stage_up(s);
+        }
         self.guppies.retain(|f| !f.dead);
         let mut banked = 0;
         let long_rest = self.tutorial;
@@ -345,6 +473,65 @@ mod tests {
         b.step(&[Input::DismissDialog]);
         assert!(b.dialog.is_none() && !b.paused);
         assert_eq!(b.guppies.len(), 1);
+    }
+
+    /// Feed every guppy-ish 150 ticks and collect every coin; returns
+    /// once `until` holds or panics after `limit` ticks.
+    fn play(b: &mut Board, limit: u32, until: impl Fn(&Board) -> bool) {
+        for t in 0..limit {
+            if until(b) {
+                return;
+            }
+            let mut inputs = Vec::new();
+            if let Some(c) = b.coins.iter().find(|c| !c.collected) {
+                inputs.push(Input::Click {
+                    x: c.widget_x + 36,
+                    y: c.widget_y + 36,
+                });
+            } else if t % 150 == 0 {
+                let f = &b.guppies[0];
+                inputs.push(Input::Click {
+                    x: (f.widget_x + 40).clamp(31, 586),
+                    y: (f.widget_y - 10).clamp(70, 399),
+                });
+            }
+            b.step(&inputs);
+            assert!(b.dialog.is_none(), "dialog at tick {t}: {:?}", b.dialog);
+        }
+        panic!("condition not reached in {limit} ticks");
+    }
+
+    #[test]
+    fn tank_1_1_can_be_completed() {
+        let mut b = tank();
+        assert!(!b.shop.revealed.iter().any(|&r| r), "no buttons at start");
+        play(&mut b, 20_000, |b| b.shop.revealed[Slot::Guppy as usize]);
+        assert!(b.arrow_buy_fish);
+        // The guppy button is at bar position 0: (18..76, 3..63).
+        play(&mut b, 20_000, |b| b.money >= 100);
+        let n = b.guppies.len();
+        b.step(&[Input::Click { x: 40, y: 30 }]);
+        assert_eq!(b.guppies.len(), n + 1, "bought a guppy");
+        assert!(!b.arrow_buy_fish);
+        play(&mut b, 40_000, |b| b.shop.revealed[Slot::EggPiece as usize]);
+        for piece in 0..3 {
+            play(&mut b, 40_000, |b| b.money >= 150);
+            b.step(&[Input::Click { x: 460, y: 30 }]);
+            assert_eq!(b.egg_count, 2 + piece);
+        }
+        assert!(b.level_complete && b.paused);
+    }
+
+    #[test]
+    fn failed_purchase_flashes_money() {
+        let mut b = tank();
+        b.shop.reveal(Slot::Guppy, false);
+        b.money = 50;
+        assert_eq!(b.purchase(Slot::Guppy), ClickResult::CantAfford);
+        assert_eq!((b.money_flash, b.money, b.guppies.len()), (70, 50, 1));
+        assert_eq!(b.sounds, vec![Sound::Buzzer]);
+        // Unrevealed slots can't be bought at all.
+        assert_eq!(b.purchase(Slot::EggPiece), ClickResult::Ignored);
     }
 
     #[test]

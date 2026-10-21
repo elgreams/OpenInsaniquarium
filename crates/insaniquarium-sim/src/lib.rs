@@ -5,6 +5,7 @@ pub mod board;
 pub mod coin;
 pub mod fish;
 pub mod food;
+pub mod shop;
 pub mod sound;
 
 pub use board::Board;

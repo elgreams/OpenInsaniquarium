@@ -14,6 +14,7 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | objects | `objects/fish-guppy.md` | confirmed (idle swim + animation) | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, animation/turn/cel rules, draw-sheet selection. Replays bit-exact vs original |
 | objects | `objects/coin.md` | confirmed | Guppy coin drop (kind = stage, at fish+(5,10)), fall 1.5 to y 370, floor rest 150 (tutorial) / 20, 5-tick expiry, collect glide to (550,30), values, collect-sound RNG, ambient bubble burst draws |
 | objects | `objects/food.md` | confirmed (tank 1-1 pellets) | Food drop (click bounds, price, limit, 1 RNG draw), pellet fall/fade, guppy hunger, chase, nearest-food, bite boxes, eat (+700, cap 800, growth), slurp RNG throttle. Replays bit-exact vs original |
+| sim | `sim/shop-bar.md` | draft (static; guppy purchase confirmed) | Slot/position model, per-level layout and prices (1-1: guppy $100, egg $150), stage-up reveals, mouse-down purchase, TrySpend with pending coins, egg pieces → level complete, button art and money label |
 | sim | `sim/board.md` | draft | Type codes → typed vectors; update order = z-order rebuild sequence |
 | assets | `assets/images.md` | draft | Extension probe order, `_x`/`x_` mask lookup, alphaimage/alphagrid, GIF transparency, AnimInfo cel math. Implemented: `sexy_core::image` |
 | assets | `assets/music.md` | draft | MO3 via libopenmpt; one module, songs selected by order; tank/alien selection + fades. Implemented: `sexy_core::music` |

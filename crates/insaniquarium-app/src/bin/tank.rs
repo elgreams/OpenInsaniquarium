@@ -22,12 +22,13 @@ use bevy::window::PrimaryWindow;
 use insaniquarium_app::assets::{GameImages, TANK1_SONG, load_sound_bytes, render_song};
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::board::{Dialog, Input};
+use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
 use insaniquarium_sim::sound::Sound;
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
 use sexy_core::rand::MtRand;
-use sexy_core::resources::Manifest;
+use sexy_core::resources::{Manifest, Resource};
 
 const W: f32 = 640.0;
 const H: f32 = 480.0;
@@ -45,6 +46,13 @@ const SHEETS: &[&str] = &[
     "IMAGE_FOOD",
     "IMAGE_MONEY",
     "IMAGE_MENUBAR",
+    "IMAGE_MENUBTNU",
+    "IMAGE_MENUBTND",
+    "IMAGE_MENUBUTTONREFLECTION",
+    "IMAGE_EGGPIECES",
+    "IMAGE_HELPARROW",
+    "IMAGE_MONEYFLASH",
+    "IMAGE_HATCHANIMATION",
 ];
 
 fn main() {
@@ -96,6 +104,25 @@ fn main() {
     // with two guppies.
     board.add_random_guppy();
     board.add_random_guppy();
+    // TODO(spec): level start (InitLevel) places its guppies without the
+    // surface splash; until that's specced, settle them mid-tank.
+    for g in &mut board.guppies {
+        g.y = 200.0;
+        g.vy = 0.0;
+        g.vy_damp_timer = 0;
+    }
+    if args.iter().any(|a| a == "--demo-shop") {
+        // Dev shortcut: skip to the point where both buttons are up.
+        board.money = 500;
+        board.guppies[0].stage = 2;
+        board
+            .shop
+            .reveal(insaniquarium_sim::shop::Slot::Guppy, true);
+        board
+            .shop
+            .reveal(insaniquarium_sim::shop::Slot::EggPiece, true);
+        board.arrow_buy_egg = true;
+    }
 
     App::new()
         .add_plugins(
@@ -116,12 +143,23 @@ fn main() {
             board,
             pending: Vec::new(),
         })
+        .insert_resource(Grid(
+            SHEETS
+                .iter()
+                .filter_map(|&id| match manifest.get(id) {
+                    Some(Resource::Image(i)) => Some((id, (i.cols.max(1), i.rows.max(1)))),
+                    _ => None,
+                })
+                .collect(),
+        ))
         .insert_resource(Sources(images))
         .insert_resource(SoundBytes(sounds))
         .insert_resource(Music(music))
         .insert_resource(Hud {
-            font: ImageFont::load(&data, "data/ContinuumBold14.txt").ok(),
+            font: ImageFont::load(&data, "data/ContinuumBold12.txt").ok(),
             dialog_font: ImageFont::load(&data, "data/JungleFever15outline.txt").ok(),
+            tiny: ImageFont::load(&data, "data/Pix118.txt").ok(),
+            prices: HashMap::new(),
             money: None,
             dialog: None,
         })
@@ -141,6 +179,10 @@ struct Sim {
 
 #[derive(Resource)]
 struct Sources(GameImages);
+
+/// Manifest (cols, rows) per sheet.
+#[derive(Resource)]
+struct Grid(HashMap<&'static str, (u32, u32)>);
 
 const ALL_SOUNDS: &[Sound] = &[
     Sound::DropFood,
@@ -181,6 +223,9 @@ struct Hud {
     dialog_font: Option<ImageFont>,
     money: Option<(i32, Handle<Image>, UVec2)>,
     dialog: Option<(Dialog, Handle<Image>, UVec2)>,
+    /// `FONT_TINY` for button prices.
+    tiny: Option<ImageFont>,
+    prices: HashMap<i32, (Handle<Image>, UVec2)>,
 }
 
 /// Per-frame sprites; rebuilt each frame from sim state.
@@ -204,6 +249,7 @@ fn to_bevy(img: &Rgba) -> Image {
 fn setup(
     mut commands: Commands,
     src: Res<Sources>,
+    grid: Res<Grid>,
     mut images: ResMut<Assets<Image>>,
     mut music: ResMut<Music>,
     mut audio: ResMut<Assets<AudioSource>>,
@@ -221,12 +267,25 @@ fn setup(
             eprintln!("warning: missing {id}");
             continue;
         };
-        // Sprite sheets here are 10 square-ish cels across.
-        let cel = if matches!(id, "IMAGE_AQUARIUM1" | "IMAGE_MENUBAR") {
-            UVec2::new(img.width, img.height)
-        } else {
+        // Fish/food/money sheets declare no grid in the manifest; the
+        // game draws them as 80×80 (fish) / 40×40 / 72×72 cels, 10 across.
+        let (cols, rows) = grid.0.get(id).copied().unwrap_or((1, 1));
+        let ten_across = matches!(
+            id,
+            "IMAGE_SMALLSWIM"
+                | "IMAGE_SMALLTURN"
+                | "IMAGE_SMALLEAT"
+                | "IMAGE_HUNGRYSWIM"
+                | "IMAGE_HUNGRYTURN"
+                | "IMAGE_HUNGRYEAT"
+                | "IMAGE_FOOD"
+                | "IMAGE_MONEY"
+        );
+        let cel = if ten_across {
             let w = img.width / 10;
             UVec2::new(w, w.min(img.height))
+        } else {
+            UVec2::new(img.width / cols, img.height / rows)
         };
         sheets.insert(id, (images.add(to_bevy(img)), cel));
     }
@@ -286,12 +345,21 @@ fn mouse(
 
 fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
     if let Ok(mut w) = window.single_mut() {
-        let note = match sim.board.dialog {
+        let note = if sim.board.level_complete {
+            " — Level complete! (hatch screen not implemented)"
+        } else {
+            ""
+        };
+        let note2 = match sim.board.dialog {
             Some(Dialog::LastFishDied) => " — Your last fish has died! Click to continue",
             Some(Dialog::GameOver) => " — Game over",
+            Some(Dialog::OutOfMoney) => " — Out of money! Click to continue",
             None => "",
         };
-        let t = format!("Insaniquarium — tank 1-1 — ${}{note}", sim.board.money);
+        let t = format!(
+            "Insaniquarium — tank 1-1 — ${}{note}{note2}",
+            sim.board.money
+        );
         if w.title != t {
             w.title = t;
         }
@@ -369,7 +437,89 @@ fn guppy_cel_as(f: &Fish, hungry: bool) -> (&'static str, i32, i32, bool) {
     (sheet, f.cel, row, mirror)
 }
 
+/// Shop buttons, help arrows and money flash (shop-bar.md#button-art).
+fn shop_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
+    let one = |sheet, x, y, z| Cel {
+        sheet,
+        col: 0,
+        row: 0,
+        x,
+        y,
+        z,
+        mirror: false,
+        alpha: 255,
+    };
+    for slot in Slot::ALL {
+        let i = slot as usize;
+        let (Some(pos), true) = (b.shop.position[i], b.shop.revealed[i]) else {
+            continue;
+        };
+        let (bx, by) = (BUTTON_X[pos], BUTTON_Y);
+        let pop = b.shop.pop[i];
+        if pop < 7 {
+            cels.push(one("IMAGE_MENUBTNU", bx, by, 11.0));
+            match slot {
+                Slot::Guppy => cels.push(Cel {
+                    sheet: "IMAGE_SMALLSWIM",
+                    col: (b.level_ticks / 2) % 10,
+                    row: 0,
+                    x: bx - 12,
+                    y: by - 18,
+                    z: 11.1,
+                    mirror: false,
+                    alpha: 255,
+                }),
+                Slot::EggPiece if (1..=3).contains(&b.egg_count) => cels.push(Cel {
+                    sheet: "IMAGE_EGGPIECES",
+                    col: b.egg_count - 1,
+                    row: 0,
+                    x: bx + 7,
+                    y: by + 3,
+                    z: 11.1,
+                    mirror: false,
+                    alpha: 255,
+                }),
+                _ => {}
+            }
+        }
+        if (1..=6).contains(&pop) {
+            cels.push(Cel {
+                sheet: "IMAGE_HATCHANIMATION",
+                col: (6 - pop) / 2,
+                row: 0,
+                x: bx,
+                y: by,
+                z: 11.2,
+                mirror: false,
+                alpha: 255,
+            });
+        }
+        cels.push(one("IMAGE_MENUBUTTONREFLECTION", bx, by, 11.3));
+    }
+    if b.money_flash > 0 && b.money_flash % 20 < 10 {
+        cels.push(one("IMAGE_MONEYFLASH", 545, 39, 11.4));
+    }
+    if b.arrow_buy_fish {
+        cels.push(one("IMAGE_HELPARROW", 40, 70, 11.5));
+    } else if b.arrow_buy_egg {
+        cels.push(one("IMAGE_HELPARROW", 460, 70, 11.5));
+    }
+}
+
 fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image>>) {
+    for slot in Slot::ALL {
+        let price = sim.board.shop.price[slot as usize];
+        if sim.board.shop.revealed[slot as usize]
+            && price > 0
+            && !hud.prices.contains_key(&price)
+            && let Some(f) = &hud.tiny
+        {
+            let img = f.render(format!("${price}").as_bytes());
+            let size = UVec2::new(img.width, img.height);
+            let h = images.add(to_bevy(&img));
+            hud.prices.insert(price, (h, size));
+        }
+    }
     let money = sim.board.money;
     if hud.money.as_ref().is_none_or(|m| m.0 != money)
         && let Some(f) = &hud.font
@@ -384,6 +534,7 @@ fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image
                 let text: &[u8] = match d {
                     Dialog::LastFishDied => b"YOUR LAST FISH HAS DIED! CLICK TO CONTINUE",
                     Dialog::GameOver => b"GAME OVER",
+                    Dialog::OutOfMoney => b"OUT OF MONEY! CLICK TO CONTINUE",
                 };
                 let img = f.render(text);
                 let size = UVec2::new(img.width, img.height);
@@ -499,15 +650,33 @@ fn draw(
         mirror: false,
         alpha: 255,
     });
+    shop_cels(b, &mut cels);
     commands.spawn_batch(
         cels.iter()
             .filter_map(|c| c.bundle(&sheets))
             .collect::<Vec<_>>(),
     );
-    // Money, right-aligned in the counter. TODO(spec): exact position/font
-    // (shop-bar.md).
+    // Money label: rect (535, 40, 80, h), right-aligned → right edge 615
+    // (shop-bar.md#bar-money-counter-flash-help-arrows). The rendered
+    // bitmap has a 4 px pad on each side.
     if let Some((_, h, size)) = &hud.money {
-        commands.spawn(text_sprite(h, 632.0 - size.x as f32, 38.0, 11.0));
+        let mut t = text_sprite(h, 615.0 + 4.0 - size.x as f32, 40.0 - 4.0, 11.6);
+        t.1.color = Color::srgb_u8(180, 255, 90);
+        commands.spawn(t);
+    }
+    // Button prices: FONT_TINY centred on the 58-wide button, baseline
+    // ascent + 45 (shop-bar.md#button-art); shown once the pop-in ends.
+    for slot in Slot::ALL {
+        let i = slot as usize;
+        let (Some(pos), true) = (b.shop.position[i], b.shop.revealed[i]) else {
+            continue;
+        };
+        if let Some((h, size)) = hud.prices.get(&b.shop.price[i]) {
+            let x = BUTTON_X[pos] as f32 + (58.0 - size.x as f32) / 2.0;
+            let mut t = text_sprite(h, x, BUTTON_Y as f32 + 45.0 - 4.0, 11.25);
+            t.1.color = Color::srgb_u8(110, 250, 110);
+            commands.spawn(t);
+        }
     }
     if let Some((_, h, size)) = &hud.dialog {
         let x = (W - size.x as f32) / 2.0;

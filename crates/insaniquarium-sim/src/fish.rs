@@ -114,6 +114,8 @@ pub struct World<'a> {
     pub sample_last: &'a mut [i32; 64],
     /// Sounds started this tick (presentation only).
     pub sounds: &'a mut Vec<Sound>,
+    /// New stages reached this tick (`Fish::OnStageUp` triggers), in order.
+    pub stage_ups: &'a mut Vec<i32>,
 }
 
 impl World<'_> {
@@ -465,6 +467,7 @@ impl Fish {
                 self.stage += 1;
                 self.growth = 0;
                 self.pulse_timer = 10;
+                w.stage_ups.push(self.stage);
                 if w.sample_ready(0x122, 3) {
                     w.sounds.push(Sound::Grow);
                 }

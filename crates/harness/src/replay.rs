@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use insaniquarium_sim::board::Input;
+use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::{Board, Coin, Fish, Food};
 use serde_json::{Value, json};
 use sexy_core::rand::MtRand;
@@ -188,6 +189,38 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| coin_from_raw(b))
         .collect();
+    // Shop: captures record `board.revealed` (12 bytes) and `board.eggs`
+    // when available; older ones are inferred from the largest guppy (the
+    // tank 1-1 reveal triggers are stage-ups: medium → guppy, large → egg).
+    let shop_raw = first
+        .state
+        .get("board")
+        .and_then(|b| b.get("revealed"))
+        .and_then(Value::as_str)
+        .and_then(hex_bytes);
+    if let Some(r) = shop_raw {
+        for (i, &v) in r.iter().take(12).enumerate() {
+            if v != 0 {
+                board.shop.reveal(Slot::ALL[i], false);
+            }
+        }
+    } else {
+        let max_stage = board.guppies.iter().map(|g| g.stage).max().unwrap_or(0);
+        if max_stage >= 1 {
+            board.shop.reveal(Slot::Guppy, false);
+        }
+        if max_stage >= 2 {
+            board.shop.reveal(Slot::EggPiece, false);
+        }
+    }
+    if let Some(e) = first
+        .state
+        .get("board")
+        .and_then(|b| b.get("eggs"))
+        .and_then(Value::as_i64)
+    {
+        board.egg_count = e as i32;
+    }
     if let Some(b) = first.state.get("board") {
         if let (Some(tank), Some(level)) = (
             b.get("tank").and_then(Value::as_i64),
@@ -459,7 +492,10 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .and_then(Value::as_array)
             .map_or(guppies, Vec::len);
         if guppies > prev_guppies && money_of(Some(s)) < money_of(prev_snap) {
-            out.inputs.entry(s.tick).or_default().push(Input::BuyGuppy);
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::Guppy));
         }
         prev_prev_snap = prev_snap;
         prev_snap = Some(s);

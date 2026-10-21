@@ -152,6 +152,8 @@ while captured < max_ticks and polls < max_ticks * 40 do
       bclock = tostring(i32(board + 0x28)) .. string.format(',"tank":%d,"level":%d,"paused":%s', i32(board + 0x3c8), i32(board + 0x3cc),
         (readBytes(board + 0x94, 1) or 0) ~= 0 and "true" or "false")
       samples = hex_block(board + 0x1a4, 0x100)
+      bclock = bclock .. string.format(',"eggs":%d,"revealed":"%s","flash":%d',
+        i32(board + 0x43c), hex_block(board + 0x3a4, 12), i32(board + 0x450))
     end
     emit(string.format('{"tick":%d,"board":{"money":%s,"clock":%s,"samples":"%s"},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
       t, tostring(board and i32(board + OFF.money) or "null"), bclock, samples, table.concat(counts, ","), table.concat(fish, ","),
