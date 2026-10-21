@@ -12,13 +12,13 @@ Each milestone has an exit criterion. Don't start the next one until it's met.
 
 Answer the questions that shape everything else.
 
-- [ ] Commit CLAUDE.md, .gitignore; scaffold the Cargo workspace (empty crates, CI with fmt/clippy/test).
-- [ ] Ghidra: import `Insaniquarium.exe`, apply RTTI class names, recover vtables for `GameObject` and its subclasses.
-- [ ] **Timing:** find the main loop / `SexyAppBase::UpdateApp`; confirm tick rate and how many updates run per frame. → `docs/re/framework/timing.md`
-- [ ] **RNG:** identify the algorithm (MSVC `rand()` vs. `MTRand`), seeding, number of streams, where the state lives. → `docs/re/framework/rng.md`
-- [ ] **Demo recording:** test whether `-record` / `-demofile` work in this build. If yes, document the file format — it may give us free input capture and replay on the original.
-- [ ] **Object model:** map `Board` and its object lists (fish, coins, food, aliens, pets, shots); find `Board::Update` and record the update order. → `docs/re/sim/board.md`
-- [ ] Survey of the asset formats in `resources.xml`, the fonts in `data/*.txt`, `fishsongs/*.txt`, the save/profile files, and `.mo3`. → `docs/re/assets/`
+- [x] Commit CLAUDE.md, .gitignore; scaffold the Cargo workspace (empty crates, CI with fmt/clippy/test).
+- [x] Ghidra: import `Insaniquarium.exe`, apply RTTI class names, recover vtables for `GameObject` and its subclasses. *(The exe is a DRM stub; the inner PE was extracted, see `framework/drm-wrapper.md`.)*
+- [x] **Timing:** find the main loop / `SexyAppBase::UpdateApp`; confirm tick rate and how many updates run per frame. → `docs/re/framework/timing.md` *(28 ms, confirmed live)*
+- [x] **RNG:** identify the algorithm (MSVC `rand()` vs. `MTRand`), seeding, number of streams, where the state lives. → `docs/re/framework/rng.md`
+- [~] **Demo recording:** test whether `-record` / `-demofile` work in this build. If yes, document the file format — it may give us free input capture and replay on the original. *(Format documented statically; live test pending.)*
+- [x] **Object model:** map `Board` and its object lists (fish, coins, food, aliens, pets, shots); find `Board::Update` and record the update order. → `docs/re/sim/board.md`
+- [x] Survey of the asset formats in `resources.xml`, the fonts in `data/*.txt`, `fishsongs/*.txt`, the save/profile files, and `.mo3`. → `docs/re/assets/`
 
 **Exit:** we know the tick rate and the RNG algorithm, and we've chosen a trace capture strategy (CE polling, demo files, or both).
 
@@ -26,12 +26,12 @@ Answer the questions that shape everything else.
 
 Load the user's install and show things on screen. Mostly framework, no gameplay.
 
-- [ ] `sexy-core`: game-data path resolution (`--data` / env / config), install validation (hash check with a friendly error).
-- [ ] `resources.xml` parser: groups, `SetDefaults`, ids, and load-time attributes.
-- [ ] Image loading with alpha-mask compositing (`foo.gif` + `_foo.gif`), sprite-sheet cel layout (rows/cols).
-- [ ] ImageFont descriptor parser + text rendering (kerning, line spacing, outline variants).
-- [ ] Audio: `.ogg`, `.au`; `.mo3` via libopenmpt.
-- [ ] `tools/asset-browser`: Bevy app to browse every image/anim/font/sound by resource id.
+- [x] `sexy-core`: game-data path resolution (`--data` / env), install validation, case-insensitive lookup. *(Config file deferred until we have config.)*
+- [x] `resources.xml` parser: groups, `SetDefaults`, ids, and load-time attributes.
+- [x] Image loading with alpha-mask compositing (`foo.gif` + `_foo.gif`), sprite-sheet cel layout (rows/cols). Cel animation (`AnimInfo`).
+- [x] ImageFont descriptor parser + text rendering (kerning, line spacing, outline variants). *(Single-layer layout; multi-layer draw order TODO when needed.)*
+- [~] Audio: `.ogg`, `.au` done; `.mo3` via libopenmpt pending.
+- [x] Asset browser (`cargo run --bin asset-browser -- --data <install>`; `--shot ID out.png` for headless screenshots).
 
 **Exit:** every resource in `resources.xml` loads and displays correctly in the browser, matching the original by eye.
 

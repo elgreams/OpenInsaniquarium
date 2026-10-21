@@ -8,7 +8,7 @@ publish.workspace = true
 [dependencies]
 sexy-core.workspace = true
 insaniquarium-sim.workspace = true
-bevy = { workspace = true, features = ["default_app", "default_platform", "2d"] }
+bevy = { workspace = true, features = ["default_app", "default_platform", "2d", "audio", "wav", "png"] }
 
 [features]
 # Faster incremental dev builds: `cargo run --features dev`
