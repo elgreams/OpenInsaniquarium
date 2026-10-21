@@ -4751,6 +4751,9 @@ dependencies = [
 [[package]]
 name = "sexy-core"
 version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "sharded-slab"
