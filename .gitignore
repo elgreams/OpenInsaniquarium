@@ -1,0 +1,22 @@
+# Original game files — copyrighted, never commit
+/original Game/
+
+# Reverse-engineering artifacts (Ghidra projects, CE tables, raw decomp output)
+/re/ghidra/
+/re/ce/
+*.gpr
+*.rep/
+*.CT
+
+# Captured traces from the original (may be large / derived from proprietary binary)
+/traces/
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
