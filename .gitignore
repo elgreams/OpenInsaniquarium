@@ -1,9 +1,10 @@
 # Original game files — copyrighted, never commit
 /original Game/
 
-# Reverse-engineering artifacts (Ghidra projects, CE tables, raw decomp output)
-/re/ghidra/
-/re/ce/
+# Reverse-engineering workspace: Ghidra projects, CE tables, extracted binaries,
+# raw dumps. Local only — share findings via docs/re/ specs.
+/re/*
+!/re/README.md
 *.gpr
 *.rep/
 *.CT
