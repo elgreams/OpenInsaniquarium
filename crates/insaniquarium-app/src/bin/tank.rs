@@ -18,7 +18,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
 use bevy::window::PrimaryWindow;
 use insaniquarium_app::assets::GameImages;
-use insaniquarium_sim::board::Input;
+use insaniquarium_sim::board::{Dialog, Input};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
@@ -173,6 +173,11 @@ fn mouse(
         return;
     }
     let Ok(w) = window.single() else { return };
+    if sim.board.dialog.is_some() {
+        // TODO: draw the dialog; any click presses its button for now.
+        sim.pending.push(Input::DismissDialog);
+        return;
+    }
     if let Some(p) = w.cursor_position() {
         sim.pending.push(Input::Click {
             x: p.x as i32,
@@ -183,7 +188,12 @@ fn mouse(
 
 fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
     if let Ok(mut w) = window.single_mut() {
-        let t = format!("Insaniquarium — tank 1-1 — ${}", sim.board.money);
+        let note = match sim.board.dialog {
+            Some(Dialog::LastFishDied) => " — Your last fish has died! Click to continue",
+            Some(Dialog::GameOver) => " — Game over",
+            None => "",
+        };
+        let t = format!("Insaniquarium — tank 1-1 — ${}{note}", sim.board.money);
         if w.title != t {
             w.title = t;
         }

@@ -132,6 +132,14 @@ Confirmed bit-exact on `tank1-1_raw_01` (turns, all 10 swim cels).
 - Mirroring: art faces **left**. With turn timer 0, the fish is drawn mirrored (facing right) when vx > 0, or when vx == 0 and facing > 0. During a turn the mirror flag is inverted relative to the turn direction: `t > 0` (turning left) draws mirrored, `t < 0` draws unmirrored. Byte `+0xf5` inverts all of this.
 - Draw origin is the widget position (`trunc(x), trunc(y)`), the cel's top-left.
 
+
+## Death and the empty tank
+
+- A guppy dies when hunger drops below −500 (`food.md#guppy-hunger-and-feeding`). Death (slot 88 @ `0x004d5f90`) plays the die sound (throttled), clears the eat state and spawns a `DeadFish` (`Board::AddDeadFish` @ `0x005441f0`) carrying x, y, vx, vy, divisor, stage and facing. **No RNG.** The `DeadFish` (type 0x1b, vtable `0x00597bfc`) only animates and sinks; it's cosmetic.
+- `Board::Update` (`0x00548e29`): when no fish of any kind remain (`0x005392a0`: guppies, carnivores, breeders, and four other kinds), the board pauses (`0x0053db80`), banks the pending coin value (`0x0053c2d0`), and raises:
+  - **dialog 0x10** "Your last fish has died! … we'll give you another fish" on the tutorial level (`0x00537b80`: tank 1, level 1, tutorial not skipped). Its button handler (`WinFishApp` slot 3, case 0x10 @ `0x00552a8a`) closes the dialog and calls **`Board::AddRandomGuppy`** (8 app-RNG draws).
+  - dialog 0x11 (game over) otherwise.
+
 ## Hunger (`Fish::UpdateHunger`, slot 83 @ `0x004f15c0`)
 
 1. Animate the eat counter (`0x004d6c50`).

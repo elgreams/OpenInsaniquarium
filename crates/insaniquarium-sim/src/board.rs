@@ -14,6 +14,18 @@ use crate::food::{Food, FoodStep};
 pub enum Input {
     /// Mouse-down at board coordinates.
     Click { x: i32, y: i32 },
+    /// Dismiss the current modal dialog (its default button).
+    DismissDialog,
+}
+
+/// Modal dialogs the board can raise. While one is up the board is paused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialog {
+    /// Dialog 0x10: "Your last fish has died!" (tutorial level only).
+    /// Continuing adds a random guppy.
+    LastFishDied,
+    /// Dialog 0x11: game over.
+    GameOver,
 }
 
 /// What a click did (for UI feedback).
@@ -38,6 +50,8 @@ pub struct Board {
     pub food_level: i32,
     /// `board+0x94`
     pub paused: bool,
+    /// The modal dialog raised by the board, if any.
+    pub dialog: Option<Dialog>,
     /// `board+0xa0`: guppies in insertion order.
     pub guppies: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
@@ -71,6 +85,7 @@ impl Board {
             max_food: 1,
             food_level: 0,
             paused: false,
+            dialog: None,
             guppies: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
@@ -158,12 +173,25 @@ impl Board {
     pub fn step(&mut self, inputs: &[Input]) {
         for i in inputs {
             match *i {
-                Input::Click { x, y } => {
+                Input::Click { x, y } if self.dialog.is_none() => {
                     self.click(x, y);
                 }
+                Input::Click { .. } => {}
+                Input::DismissDialog => self.dismiss_dialog(),
             }
         }
         self.update();
+    }
+
+    /// `WinFishApp` dialog-button handler (vtable slot 3 @ `0x00552a8a`).
+    fn dismiss_dialog(&mut self) {
+        match self.dialog.take() {
+            Some(Dialog::LastFishDied) => {
+                self.paused = false;
+                self.add_random_guppy();
+            }
+            Some(Dialog::GameOver) | None => {}
+        }
     }
 
     /// One logic tick (28 ms).
@@ -215,6 +243,72 @@ impl Board {
         });
         // `0x0053c1e0`: add money, capped at 9,999,999.
         self.money = (self.money + banked).min(9_999_999);
+        // Board::Update (`0x00548e29`): no fish left → pause and raise the
+        // tutorial's second-chance dialog, or game over. (Coins still on the
+        // board are banked first in the original via `0x0053c2d0`; that only
+        // matters once coin values on-screen are tracked separately.)
+        // TODO(spec): other fish kinds and pets count as fish (`0x005392a0`).
+        if self.guppies.is_empty() && self.dialog.is_none() {
+            self.paused = true;
+            self.dialog = Some(if self.tutorial {
+                Dialog::LastFishDied
+            } else {
+                Dialog::GameOver
+            });
+        }
         self.tick += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tank() -> Board {
+        let mut b = Board::new(MtRand::new(1), MtRand::new(2));
+        b.money = 200;
+        b.tutorial = true;
+        b.add_random_guppy();
+        b
+    }
+
+    #[test]
+    fn starving_guppy_dies_and_tutorial_offers_another() {
+        let mut b = tank();
+        let mut ticks = 0;
+        while b.dialog.is_none() {
+            b.step(&[]);
+            ticks += 1;
+            assert!(ticks < 2000, "guppy should starve within ~1100 ticks");
+        }
+        // Hunger starts at 400..599 and death is below −499.
+        assert!((900..1100).contains(&ticks), "{ticks}");
+        assert_eq!(b.dialog, Some(Dialog::LastFishDied));
+        assert!(b.paused && b.guppies.is_empty());
+        // Paused: clicks do nothing, ticks don't advance the board.
+        let before = b.clock;
+        b.step(&[Input::Click { x: 300, y: 200 }]);
+        assert_eq!((b.clock, b.money, b.foods.len()), (before, 200, 0));
+        b.step(&[Input::DismissDialog]);
+        assert!(b.dialog.is_none() && !b.paused);
+        assert_eq!(b.guppies.len(), 1);
+    }
+
+    #[test]
+    fn feeding_keeps_a_guppy_alive_and_grows_it() {
+        let mut b = tank();
+        for t in 0..6000 {
+            let mut inputs = Vec::new();
+            if t % 150 == 0 {
+                let f = &b.guppies[0];
+                inputs.push(Input::Click {
+                    x: (f.widget_x + 40).clamp(31, 586),
+                    y: (f.widget_y - 10).clamp(61, 399),
+                });
+            }
+            b.step(&inputs);
+            assert!(b.dialog.is_none(), "starved at tick {t}");
+        }
+        assert!(b.guppies[0].stage >= 1);
     }
 }
