@@ -24,6 +24,8 @@ Users must supply their own legally obtained copy of Insaniquarium Deluxe. The e
 - Test fixtures that need assets must locate them via the game-data path (see below) and **skip** when it's absent — never vendor them.
 - Synthetic test data we author ourselves (e.g. a hand-written tiny `resources.xml`, a 4×4 test PNG) is fine to commit.
 
+**The engine is fully standalone.** It never links to, calls, or checks for Steam, the PopCap DRM wrapper, or any storefront. It doesn't care how the user got their copy, only that the files are present. Steam may be used during development *only* as a tool for running the original to observe it (recording demos, capturing traces). It is never part of the engine.
+
 The local reference install lives at `original Game/` (gitignored). The engine locates game data via, in order: `--data <path>` CLI flag → `INSANIQUARIUM_DATA` env var → config file. Do not hardcode `original Game/`.
 
 ## Reference target
