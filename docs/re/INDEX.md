@@ -12,4 +12,5 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | meta | `dynamic-analysis.md` | — | How to attach CE to the Proton game; known crash hazard |
 | framework | `framework/demo-recording.md` | draft | `-record`/`-play` functional; tick-indexed input bitstream |
 | sim | `sim/board.md` | draft | Type codes → typed vectors; update order = z-order rebuild sequence |
+| assets | `assets/images.md` | draft | Extension probe order, `_x`/`x_` mask lookup, alphaimage/alphagrid, GIF transparency, AnimInfo cel math. Implemented: `sexy_core::image` |
 | assets | `assets/overview.md` | draft | Survey: resources.xml, ImageFont, fishsongs, music, saves. Split into per-format specs as each is implemented |

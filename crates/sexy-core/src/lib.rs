@@ -4,5 +4,6 @@
 
 pub mod data_dir;
 pub mod font;
+pub mod image;
 pub mod rand;
 pub mod resources;
