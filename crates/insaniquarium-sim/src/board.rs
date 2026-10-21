@@ -105,12 +105,15 @@ impl Board {
         let x = self.rng.next_range(520) as i32 + 20;
         let y = self.rng.next_range(265) as i32 + 105;
         let mut f = Fish::new(x, y, &mut self.rng);
-        // TODO(spec): AddRandomGuppy then sets two more fields
-        // (`%5+18` and `%10+45`); the decompiler offsets are ambiguous, so
-        // we only consume the draws for now (fish-guppy.md open question).
-        self.rng.next_range(5);
-        self.rng.next_range(10);
-        f.vy_damp_timer = 0;
+        // The new guppy splashes in from the top: it starts at y = 30 moving
+        // down fast, and the vy damping (×0.9 per tick) slows it over
+        // 45..54 ticks, emitting bubbles while vy > 0 (fish-guppy.md#spawn).
+        // `y` from the first draw only matters to the constructor.
+        f.vy = f64::from(self.rng.next_range(5) + 18);
+        f.y = 30.0;
+        f.widget_y = 30;
+        f.vy_damp_timer = self.rng.next_range(10) as i32 + 45;
+        f.stage = 0;
         self.guppies.push(f);
     }
 

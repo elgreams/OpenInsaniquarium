@@ -133,6 +133,19 @@ Confirmed bit-exact on `tank1-1_raw_01` (turns, all 10 swim cels).
 - Draw origin is the widget position (`trunc(x), trunc(y)`), the cel's top-left.
 
 
+## Spawn (`Board::AddRandomGuppy` @ `0x00546d70`)
+
+Static, from disassembly (resolves the earlier open question about the two trailing draws):
+
+1. **RNG** x = `Next() % 520 + 20`, **RNG** y = `Next() % 265 + 105`.
+2. Construct (`0x004eef00` → `Fish::Init` with x, y: 6 draws, see above), then stage = 0.
+3. **RNG** vy = `Next() % 5 + 18` (an unsigned→double conversion; always 18..22).
+4. **RNG** next draw is `% 10`. Before using it, y is set to **30.0** and the widget y to 30.
+5. vy-damping timer `+0x208` = `r % 10 + 45`.
+6. Append to the board, update the max-guppy statistic `board+0x48c`, register the shadow (`0x00544800`), rebuild the z-order.
+
+So a bought or mercy guppy splashes in from the surface at 18–22 px/tick. Damping (×0.9 per tick) slows it, and it emits bubbles (`clamp_and_bubbles`, RNG) while the timer is above 30 and vy > 0. The y passed to the constructor is overwritten. **8 app draws** in total, plus bubble draws on the following ticks.
+
 ## Death and the empty tank
 
 - A guppy dies when hunger drops below −500 (`food.md#guppy-hunger-and-feeding`). Death (slot 88 @ `0x004d5f90`) plays the die sound (throttled), clears the eat state and spawns a `DeadFish` (`Board::AddDeadFish` @ `0x005441f0`) carrying x, y, vx, vy, divisor, stage and facing. **No RNG.** The `DeadFish` (type 0x1b, vtable `0x00597bfc`) only animates and sinks; it's cosmetic.
