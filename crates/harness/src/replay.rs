@@ -300,6 +300,9 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
     }
     if let Some(b) = first.state.get("board") {
         let g = |k: &str| b.get(k).and_then(Value::as_i64).map(|v| v as i32);
+        if let (Some(x), Some(y)) = (g("shot_x"), g("shot_y")) {
+            board.last_shot = (x, y);
+        }
         if let Some(v) = g("laser") {
             board.laser = v;
         }
@@ -397,8 +400,7 @@ fn alien_json(a: &Alien) -> Value {
 }
 
 fn shot_json(s: &Shot) -> Value {
-    json!({ "kind": s.kind, "delay": s.delay, "age": s.age, "frame": s.frame, "r": s.r,
-            "widget": [s.widget_x, s.widget_y] })
+    json!({ "kind": s.kind, "widget": [s.widget_x, s.widget_y] })
 }
 
 fn coin_json(c: &Coin) -> Value {
@@ -873,9 +875,76 @@ pub fn replay(t: &Trace, inputs: &BTreeMap<u32, Vec<Input>>) -> Result<Trace, Re
 
 /// [`replay`] from a prepared board (e.g. with level settings applied).
 pub fn replay_from(
+    board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+) -> Result<Trace, ReplayError> {
+    replay_resync(board, t, inputs, &BTreeMap::new())
+}
+
+/// Ticks where the sim deliberately deviates from the original's RNG use
+/// (implementation artifacts, CLAUDE.md "Bugs"): after stepping such a tick,
+/// the app RNG is set to the capture's state there. `full` is the whole
+/// capture whose header RNG the states are derived from.
+pub fn deviation_resyncs(full: &Trace, ticks: &[u32]) -> BTreeMap<u32, MtRand> {
+    ticks
+        .iter()
+        .filter_map(|&t| Some((t, rng_from(&rebase_rng(full, "app", t)?))))
+        .collect()
+}
+
+/// Dead-alien debris ticks (effect sparks are allocated): the snapshot shows
+/// new effect shots (kind ≥ 3) with age ≤ 1. These are the ticks where the
+/// original's stale-field read can draw extra RNG.
+pub fn debris_ticks(t: &Trace) -> Vec<u32> {
+    // A burst runs when the dead alien's life (`+0x198`) hits a multiple of
+    // 7 above 50, decremented during that tick's update.
+    t.snapshots
+        .iter()
+        .filter(|s| {
+            raw_list(s, "dead_alien").first().is_some_and(|b| {
+                let life = dead_alien_from_raw(b).life;
+                life % 7 == 0 && life > 50
+            })
+        })
+        .map(|s| s.tick)
+        .collect()
+}
+
+/// Drop the shot list from snapshots while debris sparks are alive: their
+/// kinds, positions and delays come after an artifact draw the sim doesn't
+/// make (alien-sylvester.md#deviations), so the list legitimately differs.
+/// Everything else (fish, pets, alien, coins, RNG after re-sync) is compared.
+///
+/// `capture` is the raw capture `decoded` was built from (decoding drops the
+/// raw object bytes this needs).
+pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
+    let debris: std::collections::BTreeSet<u32> = capture
+        .snapshots
+        .iter()
+        .filter(|s| {
+            !raw_list(s, "dead_alien").is_empty()
+                || raw_list(s, "shot")
+                    .iter()
+                    .any(|b| shot_from_raw(b).kind >= 3)
+        })
+        .map(|s| s.tick)
+        .collect();
+    let mut out = decoded.clone();
+    for s in &mut out.snapshots {
+        if debris.contains(&s.tick) {
+            s.state.remove("shots");
+        }
+    }
+    out
+}
+
+/// [`replay_from`] with RNG re-syncs at deviation ticks.
+pub fn replay_resync(
     mut board: Board,
     t: &Trace,
     inputs: &BTreeMap<u32, Vec<Input>>,
+    resync: &BTreeMap<u32, MtRand>,
 ) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
@@ -887,6 +956,9 @@ pub fn replay_from(
         );
         let next = board.tick + 1;
         board.step(inputs.get(&next).map_or(&[][..], Vec::as_slice));
+        if let Some(r) = resync.get(&board.tick) {
+            board.rng = r.clone();
+        }
         snapshots.push(snapshot(&board));
     }
     let mut header = Header::new("sim", &t.header.build, t.header.start_tick);

@@ -20,7 +20,7 @@ Notation:
 | `+0x2bc` | int | next alien kind (0 = this level has no waves) |
 | `+0x2c0` | int | wave countdown, ticks |
 | `+0x2c4` | int | set to 35 on spawn, −1 per tick while non-zero (read by `0x0053be54`; purpose TODO) |
-| `+0x2c8` | int | set to 36 when the last alien dies (`0x00539c90`). Food can't be dropped while > 0 (see `food.md`) |
+| `+0x2c8` | int | set to 36 when the last alien dies (`0x00539c90`); −1 per tick at the top of `Board::Update`. While > 0, clicks **within 50 px of the last shot** (`+0x3d0/+0x3d4`, `dx²+dy² ≤ 2500`) can't drop food; a click farther away resets it to 0 (`0x00543972`). Confirmed |
 | `+0x2cc`,`+0x2d0` | int | spawn position A (x, y), rolled at the warning |
 | `+0x2d4`,`+0x2d8` | int | spawn position B, used only by the two-alien kinds 9–12 |
 | `+0x3e4` | int | laser level (damage, §4) |
@@ -337,12 +337,16 @@ Sub-costs:
 
 On tank 1-2 (tutorial not completed), when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01`. Not modelled yet (`TODO`: add as a `Dialog`).
 
+## Deviations
+
+Implementation artifacts we deliberately don't reproduce (CLAUDE.md, "Bugs"):
+
+- **Effect-shot start delay.** `Shot::Shot` (`0x004ec660`) tests its kind field `+0x160` *before* assigning it. If the recycled heap block still holds a kind other than 0/2, it draws `rand(3)` as a start delay (`+0x164`). The result depends on allocator history, so it isn't reproducible even in the original. We never draw it; sparks start immediately. Effect: the dead alien's debris sparks and any later RNG consumers differ from a given run of the original. The harness re-syncs the app RNG after each burst (`harness::replay`, `Resync`).
+- **Prey and eat order by object address** (§3.1, §3.2). We iterate guppies in list order. This differs only on exact distance ties or two fish inside the eat box on the same tick.
+
 ## Open questions / TODO
 
-- **Heap-dependent behaviour (measured).** In `tank1-2_full_01` every *hit* effect shot cost exactly 1 draw (its block had held kind 2 or 0). The dead alien's debris sparks (kinds 3–7) cost 1 or 2 draws each, and a simple LIFO or FIFO free-list model of the Shot blocks predicts only some ticks correctly (the allocator also recycles 0x170-byte Shadow blocks and others). Next step: watch `HeapAlloc` returns with CE on a kill and model the allocator's bin reuse.
-- **Heap-dependent behaviour.**
-  - (a) The Shot ctor reads uninitialised `+0x160`, so each effect shot takes 1 or 2 draws. Shot and Shadow blocks are both `0x170` bytes, so freed blocks get reused. Measure with CE how many draws a hit costs.
-  - (b) Nearest-prey and eat order iterate a `std::set` keyed by **object address**. Ties, and two fish inside the eat box at once, are resolved by heap address. We need a model (allocation order + free-list reuse) or CE evidence.
+- Heap-dependent behaviour is resolved by policy (see Deviations). Measured: every *hit* effect shot in `tank1-2_full_01` cost 1 draw, while the debris sparks cost 1–2.
 - Whether an alien spawned inside `Board::Update` gets its own `Update` in the same tick (WidgetManager iteration).
 - Meaning of GameObject `+0xac`/`+0x120` (prey filter), board `+0x2c4`, `+0x340`, `app+0x882`.
 - Whether `Coin` kind 4 from this path uses the "rising" behaviour (ctor arg −1.0).

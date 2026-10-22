@@ -49,8 +49,22 @@ pub enum ClickResult {
     FoodLimit,
 }
 
+/// Behaviour switches. Defaults are the engine's: original gameplay bugs
+/// fixed. `classic` restores every original behaviour that has a fix (and is
+/// what trace verification runs with). See CLAUDE.md, "Bugs".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Rules {
+    pub classic: bool,
+}
+
+impl Rules {
+    /// Play exactly like the original (bugs included).
+    pub const CLASSIC: Rules = Rules { classic: true };
+}
+
 #[derive(Debug, Clone)]
 pub struct Board {
+    pub rules: Rules,
     /// `board+0x3f0`
     pub money: i32,
     /// `board+0x4ac`: price of one food drop.
@@ -111,6 +125,8 @@ pub struct Board {
     pub waves: i32,
     /// `+0x3e4`: laser level (damage 3 × laser per hit).
     pub laser: i32,
+    /// `+0x3d0`, `+0x3d4`: last shot click position.
+    pub last_shot: (i32, i32),
     /// App RNG (`[app+0x7b0]`) — almost all gameplay randomness.
     pub rng: MtRand,
     /// Global RNG (`0x005eb928`).
@@ -130,6 +146,7 @@ pub struct Board {
 impl Board {
     pub fn new(rng: MtRand, global_rng: MtRand) -> Self {
         Self {
+            rules: Rules::default(),
             money: 0,
             food_price: 5,
             max_food: 1,
@@ -163,6 +180,7 @@ impl Board {
             wave_b: (0, 0),
             waves: 0,
             laser: 2,
+            last_shot: (0, 0),
             rng,
             global_rng,
             tick: 0,
@@ -269,6 +287,14 @@ impl Board {
 
     /// Board mouse-down, normal food-drop path. Spec: food.md#dropping-food.
     pub fn click(&mut self, x: i32, y: i32) -> ClickResult {
+        // Food lockout after a kill only covers clicks within 50 px of the
+        // last shot; a click elsewhere ends it (`0x00543972`).
+        if self.food_lockout > 0 {
+            let (dx, dy) = (self.last_shot.0 - x, self.last_shot.1 - y);
+            if dx * dx + dy * dy > 2500 {
+                self.food_lockout = 0;
+            }
+        }
         // Shop buttons are top-level widgets: they take the click first and
         // purchase on mouse-down (shop-bar.md#input-path).
         if let Some(slot) = self.shop.hit(x, y) {
@@ -317,6 +343,7 @@ impl Board {
             }
         }
         // Click flash `Shot` (no RNG), then the shot sound (2 draws).
+        self.last_shot = (x, y);
         self.shots.push(Shot {
             kind: 0,
             delay: 0,
@@ -332,10 +359,12 @@ impl Board {
     }
 
     /// `EffectShot` (`0x005436f0`): only while fewer than 20 shots.
-    /// The Shot ctor reads its kind before writing it; a fresh block that
-    /// held a kind other than 0/2 draws an extra `% 3` delay. Freed Shot
-    /// and Shadow blocks are reused, so in practice that read is 0 or 2.
-    /// TODO(spec): heap-dependent; confirmed 1 draw on every tank 1-2 hit.
+    ///
+    /// Deviation (implementation artifact): the original's Shot constructor
+    /// reads its kind field before setting it, and draws an extra `% 3` start
+    /// delay when the recycled heap block happened to hold kind 1 or 3+.
+    /// The intent is no delay (the field is set right after), so we never
+    /// draw it (`alien-sylvester.md#deviations`).
     fn add_effect_shot(&mut self, x: i32, y: i32, kind: i32) {
         if self.shots.len() >= 20 {
             return;

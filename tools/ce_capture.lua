@@ -169,6 +169,7 @@ while captured < max_ticks and polls < max_ticks * 40 do
         i32(board + 0x2bc), i32(board + 0x2c0), i32(board + 0x2c4), i32(board + 0x2c8),
         i32(board + 0x2cc), i32(board + 0x2d0), i32(board + 0x2d4), i32(board + 0x2d8),
         i32(board + 0x45c), i32(board + 0x3e4), i32(0x5e89dc), i32(0x5df58c))
+      bclock = bclock .. string.format(',"shot_x":%d,"shot_y":%d', i32(board + 0x3d0), i32(board + 0x3d4))
     end
     emit(string.format('{"tick":%d,"board":{"money":%s,"clock":%s,"samples":"%s"},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
       t, tostring(board and i32(board + OFF.money) or "null"), bclock, samples, table.concat(counts, ","), table.concat(fish, ","),

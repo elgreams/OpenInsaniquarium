@@ -131,4 +131,7 @@ Linux dev builds should enable Bevy's dynamic linking for faster iteration (conf
 - Rust edition 2024, toolchain pinned in `rust-toolchain.toml` (Bevy 0.20 needs rustc ≥ 1.97.1). `cargo fmt` and `cargo clippy --all-targets` clean.
 - Name things after the original's RTTI/class names where it aids cross-referencing with specs (`Board`, `Coin`, `Gekko`), but structure the code idiomatically — don't mirror C++ inheritance. Prefer enums + data for object kinds.
 - Comments explain *why* or cite a spec (`// see docs/re/objects/fish.md#hunger`). Don't paste addresses everywhere — the spec holds them.
-- Original behavior that looks like a bug is reproduced faithfully and documented as such. Fixes go behind an explicit, off-by-default option (mods/QoL), never silently.
+- **Bugs (OpenMW-style policy).** There are two kinds:
+  - **Implementation artifacts**: behavior that depends on uninitialised memory, heap addresses, allocator reuse or timing races (e.g. a constructor reading a stale field, ties broken by object address). Don't emulate these. Implement the evident intent deterministically, with no toggle, and document the choice in the spec under "Deviations". The harness re-syncs RNG and state to the capture at those points and stays exact everywhere else.
+  - **Gameplay bugs** a player can see or exploit: fix them by default, and keep the original behavior behind the **`classic`** switch (`Rules::classic`, one flag for all fixes). Every fix is documented in its spec ("Bug: … / Fix: …"), and its code path is easy to find (`if rules.classic { original } else { fixed }`). Trace verification runs in classic mode.
+  - Never change behavior silently: every deviation from the original is written down.

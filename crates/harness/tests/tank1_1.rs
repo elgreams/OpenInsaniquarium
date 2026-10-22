@@ -317,13 +317,15 @@ fn sylvester_wave_matches() {
     }
     let from = full.snapshots[start].tick;
     let end = first_burst(&full, from).unwrap_or(u32::MAX);
-    // Stop before the dead alien's first debris burst: its effect-spark
-    // constructors read a stale heap field (see alien-sylvester.md, open
-    // questions), which we don't model yet.
-    let killed = full.snapshots[start..]
+    // Through the dead alien's debris bursts (until it is gone). The sparks
+    // are a documented deviation (alien-sylvester.md#deviations): the app RNG
+    // is re-synced after each burst tick.
+    let gone = full.snapshots[start..]
         .iter()
-        .find(|s| s.state["raw"].get("dead_alien").is_some())
-        .map_or(u32::MAX, |s| s.tick + 3);
+        .skip_while(|s| s.state["raw"].get("dead_alien").is_none())
+        .find(|s| s.state["raw"].get("dead_alien").is_none())
+        .map_or(u32::MAX, |s| s.tick);
+    let killed = gone;
     let to = end.min(killed);
     let mut t = window(&full, from, to);
     for stream in ["app", "global"] {
@@ -336,12 +338,16 @@ fn sylvester_wave_matches() {
     }
     let inferred = inferred_clicks(&t);
     let expected = inferred.clean(&decode_capture(&t));
+    let expected = harness::replay::without_debris_shots(&expected, &t);
     let mut board = board_from_capture(&t).unwrap();
     board.tank = 1;
     board.level = 2;
     board.shop = insaniquarium_sim::shop::Shop::adventure(1, 2);
     board.paused = false;
-    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    let resync = harness::replay::deviation_resyncs(&full, &harness::replay::debris_ticks(&t));
+    let actual =
+        harness::replay::replay_resync(board, &expected, &inferred.inputs, &resync).unwrap();
+    eprintln!("debris resyncs: {}", resync.len());
     eprintln!(
         "sylvester: ticks {from}..={to}, {} inputs, {} masked",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),
