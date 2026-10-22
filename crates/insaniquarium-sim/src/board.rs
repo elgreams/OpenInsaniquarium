@@ -5,13 +5,13 @@
 
 use sexy_core::rand::MtRand;
 
-use crate::alien::{Alien, AlienOut, DeadAlien, Shot};
+use crate::alien::{Alien, AlienOut, DeadAlien, Shot, Warp};
 use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
 use crate::pet::{Pet, PetOut, STINKY};
 use crate::shop::{EGG_DONE, Shop, Slot};
-use crate::sound::Sound;
+use crate::sound::{Music, Played, Sound};
 
 /// Player input, applied at the start of a tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +145,11 @@ pub struct Board {
     pub sample_last: [i32; 64],
     /// Sounds started during the last `step` (presentation only; cleared
     /// at the start of each step).
-    pub sounds: Vec<Sound>,
+    pub sounds: Vec<Played>,
+    /// Music change requested during the last `step` (presentation only).
+    pub music: Option<Music>,
+    /// `board+0xf0`: warp-in holes (cosmetic, no RNG).
+    pub warps: Vec<Warp>,
 }
 
 impl Board {
@@ -192,6 +196,8 @@ impl Board {
             clock: 0,
             sample_last: [i32::MIN / 2; 64],
             sounds: Vec::new(),
+            music: None,
+            warps: Vec::new(),
         }
     }
 
@@ -275,11 +281,15 @@ impl Board {
     pub fn add_pet(&mut self, id: i32) {
         let a = self.rng.next_range(265) as i32 + 105;
         let _b = self.rng.next_range(520) as i32 + 20;
+        // The pet's Shadow ctor draws its floor y (`board.md#shadows`); a
+        // type-1 shadow (Stinky) keeps it.
         if id == STINKY {
-            let p = Pet::stinky(a, _b, &mut self.rng);
+            let mut p = Pet::stinky(a, _b, &mut self.rng);
+            p.shadow_y = self.rng.next_range(5) as i32 + 410;
             self.pets.push(p);
+        } else {
+            self.rng.next_range(5);
         }
-        self.rng.next_range(5);
     }
 
     /// `Board::AddGuppyAt` (`0x00546ef0`): constructed in place, plus shadow.
@@ -340,6 +350,7 @@ impl Board {
                 if let Some(killed) = self.aliens[i].hit(x, y, self.laser) {
                     // `EffectShot(x − 40, y − 40, 2)` and the hit sound.
                     self.add_effect_shot(x - 40, y - 40, 2);
+                    self.play(0x126, Sound::Hit);
                     if killed {
                         self.kill_alien(i);
                         break;
@@ -358,8 +369,16 @@ impl Board {
             widget_x: x - 40,
             widget_y: y - 40,
         });
-        self.rng.next_u31();
-        self.rng.next_range(10);
+        // `0x00538ae0`: zap, maybe zzam, maybe a ricochet.
+        if self.rng.next_u31() & 1 != 0 {
+            self.play(0x144, Sound::Zap);
+            self.play(0x145, Sound::Zzam);
+        } else {
+            self.play(0x144, Sound::Zap);
+        }
+        if self.rng.next_range(10) == 0 {
+            self.play(0x132, Sound::Ricochet);
+        }
         ClickResult::Ignored
     }
 
@@ -397,6 +416,7 @@ impl Board {
         if self.aliens.is_empty() {
             self.food_lockout = 36;
             self.has_aliens = false;
+            self.music = Some(Music::Tank);
         }
         // Debris (§4.3 step 5). Bubbles draw the global stream (not modelled).
         let n = self.rng.next_u31() & 1;
@@ -428,13 +448,18 @@ impl Board {
             let x = self.rng.next_range(30) as i32 + 40 + ix;
             self.add_effect_shot(x, y, k);
         }
-        self.dead_aliens.push(DeadAlien {
-            life: 125,
-            widget_x: ix,
-            widget_y: iy,
-            kind: a.kind,
-            facing_right: a.vx > 0.0,
-        });
+        // Death sounds (`0x004fa01e`, `0x004fa03e`).
+        self.play(0x11d, Sound::Explode);
+        self.play(0x11e, Sound::Explosion1);
+        // AddDeadAlien gets trunc(x, y) (`0x004fa6ae`): the stroke animation
+        // can move the alien after its widget position was set.
+        self.dead_aliens.push(DeadAlien::new(
+            a.x as i32,
+            a.y as i32,
+            a.cel,
+            a.kind,
+            a.vx > 0.0,
+        ));
     }
 
     /// `DeadAlien::Update` (`0x004f6050`): debris bursts every 7 ticks.
@@ -448,6 +473,24 @@ impl Board {
             }
             d.life -= 1;
             let (life, ix, iy) = (d.life, d.widget_x, d.widget_y);
+            // Rumble every 5th tick above 50, from the freshest corpse only
+            // (`0x004e54f0`), louder while fresh. No RNG.
+            if life % 5 == 0
+                && life > 50
+                && self.dead_aliens.iter().all(|o| o.life <= life)
+                && self.sample_ready(0x11d, 3)
+            {
+                let t = life - 50;
+                let v = if t < 75 {
+                    ((75 - t) * 25 + 100 * t) / 75
+                } else {
+                    100
+                };
+                self.sounds.push(Played {
+                    sound: Sound::Explode,
+                    volume: f64::from(v.clamp(25, 100)) / 100.0,
+                });
+            }
             if life % 7 == 0 && life > 50 {
                 // Two bubbles (positions only; bubbles draw global RNG).
                 self.rng.next_range(70);
@@ -466,6 +509,7 @@ impl Board {
                     self.add_effect_shot(x, y, k);
                 }
             }
+            self.dead_aliens[i].drift();
             i += 1;
         }
     }
@@ -487,6 +531,8 @@ impl Board {
                 self.dialog = Some(Dialog::AlienWarning);
             }
             275 => {
+                self.music = Some(Music::Alien);
+                self.play(0x106, Sound::Awooga);
                 self.wave_a = (
                     self.rng.next_range(450) as i32 + 20,
                     self.rng.next_range(195) as i32 + 105,
@@ -499,10 +545,13 @@ impl Board {
             c if c <= 0 => {
                 self.wave_2c4 = 35;
                 let a = Alien::new(self.wave_a.0, self.wave_a.1, self.wave_kind, &mut self.rng);
+                self.warps.push(Warp::for_alien(&a));
                 self.aliens.push(a);
                 // Its shadow.
                 self.rng.next_range(5);
                 self.has_aliens = true;
+                // Arrival roar (kinds 1–3), played directly.
+                self.sounds.push(Sound::Roar.into());
                 if self.tank == 1 && self.level == 5 {
                     self.wave_kind = if self.rng.next_u31() & 1 != 0 { 3 } else { 9 };
                 }
@@ -515,10 +564,14 @@ impl Board {
 
     /// Coin-collect sounds (`0x004e51f0`); silver/gold pick a variant with
     /// one draw when the sample isn't throttled (`0x005383d0`).
+    /// Diamonds and pearls play a fixed sample (`0x00538470`, no RNG).
+    /// TODO(spec): treasure chests and the other kinds' samples.
     fn play_collect_sound(&mut self, kind: i32) {
         if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10) && self.sample_ready(0x12c, 3) {
             let r = self.rng.next_u31() & 3;
-            self.sounds.push(Sound::points(r));
+            self.sounds.push(Sound::points(r).into());
+        } else if matches!(kind, 4 | 5 | 11 | 12) {
+            self.play(0x116, Sound::Diamond);
         }
     }
 
@@ -531,6 +584,13 @@ impl Board {
             true
         } else {
             false
+        }
+    }
+
+    /// `0x00538230(id, 3, 1.0)`: play a throttled sample (no RNG).
+    fn play(&mut self, id: usize, sound: Sound) {
+        if self.sample_ready(id, 3) {
+            self.sounds.push(sound.into());
         }
     }
 
@@ -550,7 +610,7 @@ impl Board {
         let food = Food::new_pellet(x, y, self.food_level, &mut self.rng);
         self.foods.push(food);
         if self.sample_ready(0x118, 3) {
-            self.sounds.push(Sound::DropFood);
+            self.sounds.push(Sound::DropFood.into());
         }
         ClickResult::FoodDropped
     }
@@ -558,6 +618,7 @@ impl Board {
     /// One logic tick (28 ms) with this tick's inputs.
     pub fn step(&mut self, inputs: &[Input]) {
         self.sounds.clear();
+        self.music = None;
         for i in inputs {
             match *i {
                 Input::Click { x, y } if self.dialog.is_none() => {
@@ -594,7 +655,7 @@ impl Board {
     fn try_spend(&mut self, price: i32) -> bool {
         if self.money < price && self.money + self.pending_coin_value() < price {
             if self.sample_ready(0x112, 3) {
-                self.sounds.push(Sound::Buzzer);
+                self.sounds.push(Sound::Buzzer.into());
             }
             self.money_flash = 70;
             if self.money == 0 && self.tutorial && self.dialog.is_none() {
@@ -639,10 +700,10 @@ impl Board {
         // Purchase sounds: a throttled "buy" sample, then a splash variant
         // picked with one unthrottled draw (`0x00538360`: `% 3`).
         if self.sample_ready(0x111, 3) {
-            self.sounds.push(Sound::Buy);
+            self.sounds.push(Sound::Buy.into());
         }
         let r = self.rng.next_range(3);
-        self.sounds.push(Sound::splash(r));
+        self.sounds.push(Sound::splash(r).into());
         true
     }
 
@@ -659,7 +720,7 @@ impl Board {
             self.shop.reveal(Slot::EggPiece, true);
         }
         if self.sample_ready(0x111, 3) {
-            self.sounds.push(Sound::Buy);
+            self.sounds.push(Sound::Buy.into());
         }
         true
     }
@@ -671,7 +732,7 @@ impl Board {
         }
         self.max_food += 1;
         if self.sample_ready(0x111, 3) {
-            self.sounds.push(Sound::Buy);
+            self.sounds.push(Sound::Buy.into());
         }
         true
     }
@@ -684,7 +745,7 @@ impl Board {
         self.arrow_buy_egg = false;
         self.egg_count += 1;
         if self.sample_ready(0x111, 3) {
-            self.sounds.push(Sound::Buy);
+            self.sounds.push(Sound::Buy.into());
         }
         if self.egg_count >= EGG_DONE {
             // SettlePendingCoins (`0x0053c2d0`), then the hatch screen.
@@ -728,6 +789,10 @@ impl Board {
 
     /// `WinFishApp` dialog-button handler (vtable slot 3 @ `0x00552a8a`).
     fn dismiss_dialog(&mut self) {
+        // Game over has no "continue": the board stays paused under it.
+        if self.dialog == Some(Dialog::GameOver) {
+            return;
+        }
         match self.dialog.take() {
             Some(Dialog::LastFishDied) => {
                 self.paused = false;
@@ -779,6 +844,8 @@ impl Board {
         // Objects update in RebuildZOrder order: dead aliens, food, guppies,
         // aliens, pets, shots, coins.
         self.update_dead_aliens();
+        // Warps sit between the coin sub-list and food in z-order.
+        self.warps.retain_mut(Warp::update);
         self.foods.retain_mut(|f| f.update() == FoodStep::Keep);
         let env = FishEnv {
             paused: self.paused,
@@ -811,7 +878,12 @@ impl Board {
                 let victim = self.guppies.remove(g);
                 // Eat sound (`0x00538560`): one draw when not throttled.
                 if self.sample_ready(0x113, 3) {
-                    self.rng.next_range(3);
+                    let chomp = if self.rng.next_range(3) == 0 {
+                        Sound::Chomp2
+                    } else {
+                        Sound::Chomp
+                    };
+                    self.sounds.push(chomp.into());
                 }
                 // Gore burst (`app+0x882`, on by default): 2..4 kind-1 shots.
                 // TODO(options): the original's option that clears 0x882.
@@ -957,7 +1029,7 @@ mod tests {
         b.money = 50;
         assert_eq!(b.purchase(Slot::Guppy), ClickResult::CantAfford);
         assert_eq!((b.money_flash, b.money, b.guppies.len()), (70, 50, 1));
-        assert_eq!(b.sounds, vec![Sound::Buzzer]);
+        assert_eq!(b.sounds, vec![Sound::Buzzer.into()]);
         // Unrevealed slots can't be bought at all.
         assert_eq!(b.purchase(Slot::EggPiece), ClickResult::Ignored);
     }

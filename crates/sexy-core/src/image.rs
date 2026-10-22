@@ -94,6 +94,98 @@ impl Rgba {
         out
     }
 
+    /// Alpha-blend the `sw × sh` region of `src` at (`sx`, `sy`) onto this
+    /// image at (`dx`, `dy`), tinted by `tint` (RGB multiply), clipped to
+    /// `clip` = (x, y, w, h) in this image.
+    pub fn blit(
+        &mut self,
+        src: &Rgba,
+        (sx, sy, sw, sh): (i32, i32, i32, i32),
+        (dx, dy): (i32, i32),
+        tint: [u8; 3],
+        clip: (i32, i32, i32, i32),
+    ) {
+        let (cx0, cy0) = (clip.0.max(0), clip.1.max(0));
+        let cx1 = (clip.0 + clip.2).min(self.width as i32);
+        let cy1 = (clip.1 + clip.3).min(self.height as i32);
+        for j in 0..sh {
+            let (y, syj) = (dy + j, sy + j);
+            if y < cy0 || y >= cy1 || syj < 0 || syj >= src.height as i32 {
+                continue;
+            }
+            for i in 0..sw {
+                let (x, sxi) = (dx + i, sx + i);
+                if x < cx0 || x >= cx1 || sxi < 0 || sxi >= src.width as i32 {
+                    continue;
+                }
+                let s = src.px(sxi as u32, syj as u32);
+                let a = u32::from(s[3]);
+                if a == 0 {
+                    continue;
+                }
+                let d = &mut self.pixels[(y as u32 * self.width + x as u32) as usize];
+                for k in 0..3 {
+                    let c = u32::from(s[k]) * u32::from(tint[k]) / 255;
+                    d[k] = ((c * a + u32::from(d[k]) * (255 - a)) / 255) as u8;
+                }
+                d[3] = (a + u32::from(d[3]) * (255 - a) / 255) as u8;
+            }
+        }
+    }
+
+    /// SexyApp `Graphics::DrawImageBox` (`0x00456430`): draw `src` into the
+    /// rect (`x`, `y`, `w`, `h`) as a 3×3 grid. The source is cut into thirds:
+    /// corners are copied as-is, edges and the centre are tiled (repeated,
+    /// clipped), never stretched. Spec: docs/re/framework/dialog.md.
+    pub fn draw_image_box(&mut self, src: &Rgba, (x, y, w, h): (i32, i32, i32, i32)) {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let (sw, sh) = (src.width as i32, src.height as i32);
+        let (cw, ch) = (sw / 3, sh / 3);
+        let (mw, mh) = (sw - 2 * cw, sh - 2 * ch);
+        let all = (x, y, w, h);
+        let white = [255; 3];
+        let put = |img: &mut Rgba, r, at, clip| img.blit(src, r, at, white, clip);
+        // Corners.
+        put(self, (0, 0, cw, ch), (x, y), all);
+        put(self, (cw + mw, 0, cw, ch), (x + w - cw, y), all);
+        put(self, (0, ch + mh, cw, ch), (x, y + h - ch), all);
+        put(
+            self,
+            (cw + mw, ch + mh, cw, ch),
+            (x + w - cw, y + h - ch),
+            all,
+        );
+        // Top and bottom edges, tiled across the middle.
+        let mid_w = (x + cw, y, w - 2 * cw, h);
+        let mut i = 0;
+        while i < w - 2 * cw {
+            put(self, (cw, 0, mw, ch), (x + cw + i, y), mid_w);
+            put(self, (cw, ch + mh, mw, ch), (x + cw + i, y + h - ch), mid_w);
+            i += mw;
+        }
+        // Left and right edges, tiled down the middle.
+        let mid_h = (x, y + ch, w, h - 2 * ch);
+        let mut j = 0;
+        while j < h - 2 * ch {
+            put(self, (0, ch, cw, mh), (x, y + ch + j), mid_h);
+            put(self, (cw + mw, ch, cw, mh), (x + w - cw, y + ch + j), mid_h);
+            j += mh;
+        }
+        // Centre.
+        let centre = (x + cw, y + ch, w - 2 * cw, h - 2 * ch);
+        let mut i = 0;
+        while i < w - 2 * cw {
+            let mut j = 0;
+            while j < h - 2 * ch {
+                put(self, (cw, ch, mw, mh), (x + cw + i, y + ch + j), centre);
+                j += mh;
+            }
+            i += mw;
+        }
+    }
+
     /// Replace alpha with `mask`'s alpha, pixel by pixel in linear order
     /// (`WinFish::CreateMaskedCutout`; see docs/re/assets/sprite-variants.md).
     pub fn with_alpha_of(mut self, mask: &Rgba) -> Rgba {

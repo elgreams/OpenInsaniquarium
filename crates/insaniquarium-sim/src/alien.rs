@@ -384,7 +384,7 @@ impl Shot {
 }
 
 /// `DeadAlien` (type 0x1a, list `+0x9c`): sinking corpse that spawns
-/// debris bursts (RNG) for 125 ticks.
+/// debris bursts (RNG) for 125 ticks (`alien-sylvester.md#74-dead-alien`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeadAlien {
     /// `+0x198`: lifetime (125 → 0).
@@ -392,5 +392,101 @@ pub struct DeadAlien {
     pub widget_x: i32,
     pub widget_y: i32,
     pub kind: i32,
+    /// `+0x158`: drawn mirrored (the alien faced right).
     pub facing_right: bool,
+    /// `+0x188`: the alien's cel when it died.
+    pub cel: i32,
+    /// `+0x168`, `+0x160`: position.
+    pub x: f64,
+    pub y: f64,
+    /// `+0x170`, `+0x178`: drift.
+    pub vx: f64,
+    pub vy: f64,
+    /// `+0x190`: opacity, 1.0 → 0.
+    pub fade: f64,
+}
+
+impl DeadAlien {
+    /// `DeadAlien::DeadAlien` (`0x004eec10`). No RNG.
+    pub fn new(ix: i32, iy: i32, cel: i32, kind: i32, facing_right: bool) -> Self {
+        DeadAlien {
+            life: 125,
+            widget_x: ix,
+            widget_y: iy,
+            kind,
+            facing_right,
+            cel,
+            x: f64::from(ix),
+            y: f64::from(iy),
+            vx: 0.0,
+            vy: 0.0,
+            fade: 1.0,
+        }
+    }
+
+    /// The non-RNG part of `DeadAlien::Update` (`0x004f6050`), after the
+    /// debris bursts: fade, drift and sink.
+    pub fn drift(&mut self) {
+        if self.life < 105 {
+            self.fade -= 0.02;
+            if self.fade < 0.0 {
+                self.fade = 0.0;
+            }
+        }
+        if self.vx <= 0.0 {
+            self.vx += 0.03;
+        } else {
+            self.vx -= 0.03;
+        }
+        if self.vy < 2.0 {
+            self.vy += 0.05;
+        }
+        // Explicit compares in the original's order.
+        #[allow(clippy::manual_clamp)]
+        if self.x > 490.0 {
+            self.x = 490.0;
+        }
+        if self.x < -10.0 {
+            self.x = -10.0;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        self.widget_x = self.x as i32;
+        self.widget_y = self.y as i32;
+    }
+}
+
+/// `Warp` (type 0x21, list `+0xf0`): the hole an alien arrives through.
+/// Cosmetic, no RNG (`alien-sylvester.md#72-warp-hole`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Warp {
+    /// `+0x15c`: 36 → −1.
+    pub counter: i32,
+    pub widget_x: i32,
+    pub widget_y: i32,
+}
+
+impl Warp {
+    /// `Warp::Warp(alien.ix + 30, alien.iy − 40)` (`0x004ecf00`).
+    pub fn for_alien(a: &Alien) -> Self {
+        Warp {
+            counter: 36,
+            widget_x: a.widget_x + 30,
+            widget_y: a.widget_y - 40,
+        }
+    }
+
+    /// `Warp::Update` (`0x004f3e70`): true while alive.
+    pub fn update(&mut self) -> bool {
+        if self.counter < 1 {
+            return false;
+        }
+        self.counter -= 1;
+        true
+    }
+
+    /// Animation frame (17 cels); ≥ 17 draws nothing.
+    pub fn frame(&self) -> i32 {
+        17 - self.counter / 2
+    }
 }

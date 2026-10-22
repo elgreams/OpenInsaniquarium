@@ -46,6 +46,9 @@ pub struct Pet {
     pub unk_1bc: i32,
     pub widget_x: i32,
     pub widget_y: i32,
+    /// Its shadow's floor y (`410 + r % 5`, drawn in the Shadow ctor; a
+    /// type-1 shadow never moves vertically). Presentation only.
+    pub shadow_y: i32,
 }
 
 /// What a pet's update did that the board must apply.
@@ -82,6 +85,7 @@ impl Pet {
             unk_1bc: 0,
             widget_x: x,
             widget_y: 370,
+            shadow_y: 410,
         };
         p.mode = rng.next_range(10) as i32;
         p.unk_1b8 = rng.next_range(250) as i32 + 250;

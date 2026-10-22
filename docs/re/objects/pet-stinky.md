@@ -134,6 +134,26 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
 4. If shell > 0: cel = shell (hiding).
 5. If vx ≠ facing, vx ≠ 0, facing ≠ 0 and shell == 0: facing = vx.
 
+## Drawing
+
+`OtherTypePet` draw (vtable slot 26 @ `0x004f37c0`) → `0x004f3590` → `Stinky::DrawSprite` @ `0x004e2cc0`. All positions are relative to the widget's top-left `(+0x30, +0x34)`. `static`.
+
+1. **Mirror flag.** Art faces left, and mirroring flips it to face right.
+   - In his shell (`+0x1b4 > 0`): mirror = `facing ≥ 0`.
+   - Else, while turning (`+0x19c ≠ 0`): mirror = `turn > 0`. `Stinky::DrawSprite` overrides this the same way.
+   - Else: mirror = `vx > 0`, or `vx == 0 && facing > 0`.
+
+   (The `0x00564160` call in the vx branch is a float→int conversion of `vx`. For pet 0 it only matters at exactly 0, which falls through to the facing test.)
+2. If the "slow" flag `+0x1b0` is set: `IMAGE_ZZZ` at (25, −14), or (55, −14) when mirrored.
+3. If `+0x1bc > 150`: tint the next draw (255, 75, 75). This is the "about to be zapped" red tint. It never happens on 1-2: `+0x1bc` stays 0.
+4. `IMAGE_STINKY` (80×80 cels, 10×3) at (0, 0), mirrored per step 1. Column = cel `+0x1a4`. Row:
+   - 2 while in the shell (`+0x1b4 ≠ 0`);
+   - 1 while turning (`+0x19c ≠ 0`);
+   - 0 otherwise.
+5. If the drop-in flag `+0x1c8` is set and `+0x1a8 < 20`: an additive grey (175,175,175) flash from `IMAGE_PRESTO` cel `(+0x1a8 / 2, row 2)` (the "teleport in" effect). Stinky added by `PopulateLevel` has no drop-in flag, so it's not drawn on level start.
+
+The pet has a 40-wide-shadow `Shadow` (type 0) under it, like a guppy's ([Shadows](../sim/board.md#shadows)).
+
 ## Interactions
 
 - **Aliens:** while any alien is present, Stinky stops chasing coins and hides in his shell (cel = shell counter 1..9). Aliens target fish only (`alien-sylvester.md#31`), so Stinky can't be eaten.

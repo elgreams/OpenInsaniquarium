@@ -149,6 +149,37 @@ As an example of call order and RNG consumption:
 
 So a new guppy costs **4 app-RNG draws, in this order**.
 
+## Shadows
+
+`Shadow` (type 0x1f, list `+0xe4`, drawn first so it sits behind every object). It is created by `0x00544800(owner)` → `0x00544370(shadowType, owner)` when the board holds fewer than 40. The shadow type depends on the owner:
+
+| Owner (type `+0x8c`) | Shadow type |
+|---|---|
+| guppy 0, 5, 7, 10, 0x1b, 0x23, 0x24 | 0 |
+| 6 (Ultravore), alien 0x16 (kind ≠ 0x14), 0x22 (`+0x1a0 ≠ 1`) | 2 |
+| 8, 9; pet 0x14 with id ≠ 1, 5 (**Stinky: 1**) | 1 |
+| pet 0x14 id 5 | 0 |
+
+Fields (raw): owner `+0x158`, type `+0x15c`, darkness `+0x160`, scale `+0x168` (f64, 1.0). The widget is 80×40.
+
+- **Ctor** `0x004ec4f0`: x −200, **y = `rand(5) + 410`** (the one app draw every spawn pays), darkness = `(owner.iy − 50) / 2`.
+- **Update** `0x004f3d00` (unpaused only, no RNG; it runs before its owner moves, so it lags one tick):
+  - darkness = `(owner.iy − 50) / 2`;
+  - x = owner.ix, plus 40 for type 2;
+  - types 0 and 2: `y = 415 − (max(0, 370 − owner.iy) · 30) / 370` (ints). Type 1 keeps its ctor y.
+
+  Confirmed in `tank1-2_full_02`: Stinky's shadow at (ix, 412) with darkness 160, and guppy shadows at y 398..408.
+- **Draw** `0x004e31f0`: colour = the tank's shadow colour (`0x00537d30`: tank 1 → (66, 48, 41)), alpha:
+  - `clamp(darkness · scale, 0, 150)` for types 0/1;
+  - `clamp(2 · darkness · scale, 0, 255)` for type 2.
+
+  Then:
+  - Type 1: `IMAGE_SHADOW` at (0, 0).
+  - Otherwise, on the 3D renderer: `f = (shadow.iy − owner.iy) / 100` (as f32), clamped to [0.9, 1.3], **+0.4 for type 2**, then `g = f − 1`. Draw the image stretched to `(−dx, −dy, 80 + 2dx, 40 + 2dy)` with `dx = trunc(80·g)`, `dy = trunc(40·g)`: fish high in the tank cast larger, fainter shadows. Without 3D: unstretched.
+  - Skipped when the owner is hidden (`+0xfc`) and of type 8/9.
+
+Owners only ever lose their shadow when removed. Shadows are cosmetic apart from the ctor draw.
+
 ## The global RNG stream in normal play
 
 `Sexy::Rand` (global `gMTRand`) has 74 call sites. On tank 1-1 with guppies, food and coins only, every global draw comes from the **cosmetic bubble systems**:

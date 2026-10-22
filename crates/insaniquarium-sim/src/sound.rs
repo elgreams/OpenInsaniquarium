@@ -20,6 +20,17 @@ pub enum Sound {
     Grow,
     Die,
     Buzzer,
+    Awooga,
+    Roar,
+    Zap,
+    Zzam,
+    Ricochet,
+    Hit,
+    Chomp,
+    Chomp2,
+    Explode,
+    Explosion1,
+    Diamond,
 }
 
 impl Sound {
@@ -41,6 +52,17 @@ impl Sound {
             Sound::Grow => "SOUND_GROW",
             Sound::Die => "SOUND_DIE",
             Sound::Buzzer => "SOUND_BUZZER",
+            Sound::Awooga => "SOUND_AWOOGA",
+            Sound::Roar => "SOUND_ROAR",
+            Sound::Zap => "SOUND_ZAP",
+            Sound::Zzam => "SOUND_ZZAM",
+            Sound::Ricochet => "SOUND_RICOCHET",
+            Sound::Hit => "SOUND_HIT",
+            Sound::Chomp => "SOUND_CHOMP",
+            Sound::Chomp2 => "SOUND_CHOMP2",
+            Sound::Explode => "SOUND_EXPLODE",
+            Sound::Explosion1 => "SOUND_EXPLOSION1",
+            Sound::Diamond => "SOUND_DIAMOND",
         }
     }
 
@@ -70,5 +92,28 @@ impl Sound {
             1 => Sound::Splash2,
             _ => Sound::Splash3,
         }
+    }
+}
+
+/// One sound event: a sample and its volume (1.0 = the sample's own level).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Played {
+    pub sound: Sound,
+    pub volume: f64,
+}
+
+/// Music changes the board asks for (`assets/music.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Music {
+    /// `PlayAlienMusic` (`0x0054c480`): fade the tank song out, start the
+    /// alien song.
+    Alien,
+    /// `PlayTankMusic(1)` (`0x0054c390`): fade back to the tank song.
+    Tank,
+}
+
+impl From<Sound> for Played {
+    fn from(sound: Sound) -> Self {
+        Played { sound, volume: 1.0 }
     }
 }

@@ -17,6 +17,9 @@ use sexy_core::sound::{Pcm, decode_au};
 /// remap 0,22 → 4,0).
 pub const TANK1_SONG: (&str, i32) = ("music/Insaniq2.mo3", 0);
 
+/// The alien song: `Alien.mo3` (track 1) from the start (`music.md`).
+pub const ALIEN_SONG: (&str, i32) = ("music/Alien.mo3", 0);
+
 /// Render `seconds` of a module song from `order` to a WAV (looping inside
 /// the module, as the original sets repeat −1). Needs libopenmpt at runtime.
 pub fn render_song(

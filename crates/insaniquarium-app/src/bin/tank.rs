@@ -1,11 +1,13 @@
-//! Playable tank 1-1 prototype: runs `insaniquarium-sim` at the original's
-//! 28 ms tick and draws its state. Click to drop food or collect coins.
+//! Playable tank prototype (levels 1-1 and 1-2): runs `insaniquarium-sim` at
+//! the original's 28 ms tick and draws its state. Click to drop food, collect
+//! coins and shoot aliens.
 //!
-//! Usage: `cargo run --bin tank -- --data <install> [--seed N] [--no-music]`
+//! Usage: `cargo run --bin tank -- --data <install> [--level 1|2] [--seed N] [--no-music]`
 //!
 //! Draw rules come from the specs: guppies `fish-guppy.md#animation-and-drawing`,
-//! food `food.md`, coins `coin.md`. Money is shown in the window title until
-//! ImageFont text rendering moves out of the asset browser.
+//! food `food.md`, coins `coin.md`, Stinky `pet-stinky.md#drawing`, aliens,
+//! warps, shots and corpses `alien-sylvester.md#7-drawing-and-sound-presentation`,
+//! shadows `board.md#shadows`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,16 +16,24 @@ use std::time::Duration;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::audio::AudioSource;
+use bevy::audio::Volume;
 use bevy::image::Image;
+use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
+use bevy::sprite_render::Material2dPlugin;
 use bevy::window::PrimaryWindow;
-use insaniquarium_app::assets::{GameImages, TANK1_SONG, load_sound_bytes, render_song};
+use insaniquarium_app::additive::{Additive, AdditiveMaterial};
+use insaniquarium_app::assets::{
+    ALIEN_SONG, GameImages, TANK1_SONG, load_sound_bytes, render_song,
+};
 use insaniquarium_app::text::ImageFont;
+use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::{Dialog, Input};
+use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
-use insaniquarium_sim::sound::Sound;
+use insaniquarium_sim::sound::{Music as MusicCue, Sound};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
@@ -53,6 +63,20 @@ const SHEETS: &[&str] = &[
     "IMAGE_HELPARROW",
     "IMAGE_MONEYFLASH",
     "IMAGE_HATCHANIMATION",
+    "IMAGE_SHADOW",
+    "IMAGE_STINKY",
+    "IMAGE_ZZZ",
+    "IMAGE_SYLV",
+    "IMAGE_WARPHOLE",
+    "IMAGE_WARPGLOW",
+    "IMAGE_LASERS",
+    "IMAGE_CHOMP",
+    "IMAGE_EXPLOSION",
+    "IMAGE_EXPLOSIONSMALL",
+    "IMAGE_EXPLOSIONTINY",
+    "IMAGE_SMOKETINY",
+    "IMAGE_SMOKESMALL",
+    "IMAGE_SMOKEMISSILE",
 ];
 
 fn main() {
@@ -78,12 +102,15 @@ fn main() {
         .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
         .collect();
     // TODO: stream instead of pre-rendering; 5 minutes loops acceptably.
-    let music = if args.iter().any(|a| a == "--no-music") {
-        None
+    let (music, alien_music) = if args.iter().any(|a| a == "--no-music") {
+        (None, None)
     } else {
-        render_song(&data, TANK1_SONG.0, TANK1_SONG.1, 300)
-            .inspect_err(|e| eprintln!("music disabled: {e}"))
-            .ok()
+        let song = |(path, order): (&str, i32)| {
+            render_song(&data, path, order, 300)
+                .inspect_err(|e| eprintln!("music disabled: {e}"))
+                .ok()
+        };
+        (song(TANK1_SONG), song(ALIEN_SONG))
     };
 
     // The sim never reads the clock; the app picks the seed, as the
@@ -97,19 +124,15 @@ fn main() {
         });
     let mut global = MtRand::new(seed);
     let app_rng = MtRand::new(global.next_u31());
-    let mut board = Board::start_level(app_rng, global, 1, 1, &[]);
-    if args.iter().any(|a| a == "--demo-shop") {
-        // Dev shortcut: skip to the point where both buttons are up.
-        board.money = 500;
-        board.guppies[0].stage = 2;
-        board
-            .shop
-            .reveal(insaniquarium_sim::shop::Slot::Guppy, true);
-        board
-            .shop
-            .reveal(insaniquarium_sim::shop::Slot::EggPiece, true);
-        board.arrow_buy_egg = true;
-    }
+    // Level 1-2 owns Stinky (won on 1-1). TODO(M4): profiles and the hatch
+    // screen decide this.
+    let level = arg("--level").and_then(|s| s.parse().ok()).unwrap_or(1);
+    let pets: &[i32] = if level >= 2 {
+        &[insaniquarium_sim::pet::STINKY]
+    } else {
+        &[]
+    };
+    let board = Board::start_level(app_rng, global, 1, level, pets);
 
     App::new()
         .add_plugins(
@@ -125,6 +148,7 @@ fn main() {
                 })
                 .set(ImagePlugin::default_nearest()),
         )
+        .add_plugins(Material2dPlugin::<AdditiveMaterial>::default())
         .insert_resource(Time::<Fixed>::from_duration(TICK))
         .insert_resource(Sim {
             board,
@@ -141,18 +165,30 @@ fn main() {
         ))
         .insert_resource(Sources(images))
         .insert_resource(SoundBytes(sounds))
-        .insert_resource(Music(music))
+        .insert_resource(Music {
+            tank: music,
+            alien: alien_music,
+        })
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold12.txt").ok(),
-            dialog_font: ImageFont::load(&data, "data/JungleFever15outline.txt").ok(),
+            small: ImageFont::load(&data, "data/JungleFever10outline.txt").ok(),
+            labels: HashMap::new(),
+            dialog_fonts: [
+                "data/JungleFever12outline.txt",
+                "data/JungleFever15outline.txt",
+                "data/JungleFever10outline.txt",
+            ]
+            .map(|p| ImageFont::load(&data, p).ok())
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .and_then(|v| v.try_into().ok()),
             tiny: ImageFont::load(&data, "data/Pix118.txt").ok(),
-            prices: HashMap::new(),
             money: None,
             dialog: None,
         })
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse, hud_text, draw, title).chain())
-        .add_systems(FixedUpdate, (step, play_sounds).chain())
+        .add_systems(FixedUpdate, (step, play_sounds, play_music).chain())
         .run();
 }
 
@@ -172,6 +208,17 @@ struct Sources(GameImages);
 struct Grid(HashMap<&'static str, (u32, u32)>);
 
 const ALL_SOUNDS: &[Sound] = &[
+    Sound::Awooga,
+    Sound::Roar,
+    Sound::Zap,
+    Sound::Zzam,
+    Sound::Ricochet,
+    Sound::Hit,
+    Sound::Chomp,
+    Sound::Chomp2,
+    Sound::Explode,
+    Sound::Explosion1,
+    Sound::Diamond,
     Sound::DropFood,
     Sound::Slurp,
     Sound::Slurp2,
@@ -192,28 +239,57 @@ const ALL_SOUNDS: &[Sound] = &[
 #[derive(Resource)]
 struct SoundBytes(HashMap<&'static str, Vec<u8>>);
 
+/// Pre-rendered songs (taken by `setup`).
 #[derive(Resource)]
-struct Music(Option<Vec<u8>>);
+struct Music {
+    tank: Option<Vec<u8>>,
+    alien: Option<Vec<u8>>,
+}
+
+/// The two looping song players and the one fading in (`music.md`: linear
+/// fades, 0.008 out and 0.002 in per update).
+#[derive(Resource)]
+struct Songs {
+    tank: Option<Entity>,
+    alien: Option<Entity>,
+    /// Target: true = alien song.
+    alien_on: bool,
+    tank_vol: f32,
+    alien_vol: f32,
+}
 
 /// Uploaded audio, by sound id.
 #[derive(Resource, Default)]
 struct SoundHandles(HashMap<&'static str, Handle<AudioSource>>);
 
-/// Uploaded sheets plus their cel size.
+/// Uploaded sheets plus their cel size and grid.
 #[derive(Resource)]
-struct Sheets(HashMap<&'static str, (Handle<Image>, UVec2)>);
+struct Sheets(HashMap<&'static str, (Handle<Image>, UVec2, UVec2)>);
 
 /// HUD text, re-rasterised only when the value changes.
 #[derive(Resource)]
 struct Hud {
     font: Option<ImageFont>,
-    dialog_font: Option<ImageFont>,
+    /// Dialog header / body / button fonts (`framework/dialog.md`).
+    dialog_fonts: Option<[ImageFont; 3]>,
     money: Option<(i32, Handle<Image>, UVec2)>,
     dialog: Option<(Dialog, Handle<Image>, UVec2)>,
     /// `FONT_TINY` for button prices.
     tiny: Option<ImageFont>,
-    prices: HashMap<i32, (Handle<Image>, UVec2)>,
+    /// `FONT_JUNGLEFEVER10OUTLINE`: help-arrow captions and the tank label.
+    small: Option<ImageFont>,
+    labels: HashMap<String, (Handle<Image>, UVec2)>,
 }
+
+/// The unit quad additive cels are drawn on.
+#[derive(Resource)]
+struct Quad(Handle<Mesh>);
+
+/// An additive cel: a quad with its own material, kept and updated in
+/// place from frame to frame (materials are GPU resources, too costly to
+/// recreate every frame).
+#[derive(Component)]
+struct Pooled(Handle<AdditiveMaterial>);
 
 /// Per-frame sprites; rebuilt each frame from sim state.
 #[derive(Component)]
@@ -240,14 +316,32 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut music: ResMut<Music>,
     mut audio: ResMut<Assets<AudioSource>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     commands.spawn(Camera2d);
-    if let Some(wav) = music.0.take() {
-        let h = audio.add(AudioSource {
-            bytes: Arc::from(wav),
-        });
-        commands.spawn((AudioPlayer::new(h), PlaybackSettings::LOOP));
-    }
+    commands.insert_resource(Quad(meshes.add(Rectangle::new(1.0, 1.0))));
+    let mut song = |wav: Option<Vec<u8>>, vol: f32| {
+        wav.map(|wav| {
+            let h = audio.add(AudioSource {
+                bytes: Arc::from(wav),
+            });
+            commands
+                .spawn((
+                    AudioPlayer::new(h),
+                    PlaybackSettings::LOOP.with_volume(Volume::Linear(vol)),
+                ))
+                .id()
+        })
+    };
+    let tank = song(music.tank.take(), 1.0);
+    let alien = song(music.alien.take(), 0.0);
+    commands.insert_resource(Songs {
+        tank,
+        alien,
+        alien_on: false,
+        tank_vol: 1.0,
+        alien_vol: 0.0,
+    });
     let mut sheets = HashMap::new();
     for &id in SHEETS {
         let Some(img) = src.0.get(id) else {
@@ -268,13 +362,25 @@ fn setup(
                 | "IMAGE_FOOD"
                 | "IMAGE_MONEY"
         );
-        let cel = if ten_across {
-            let w = img.width / 10;
-            UVec2::new(w, w.min(img.height))
-        } else {
-            UVec2::new(img.width / cols, img.height / rows)
+        // Sheets whose grid the manifest omits: 17 warp frames, 20 smoke.
+        let (cols, rows) = match id {
+            "IMAGE_WARPHOLE" | "IMAGE_WARPGLOW" => (17, 1),
+            "IMAGE_SMOKETINY" | "IMAGE_SMOKESMALL" | "IMAGE_SMOKEMISSILE" => (20, 1),
+            "IMAGE_EXPLOSION" | "IMAGE_EXPLOSIONSMALL" | "IMAGE_EXPLOSIONTINY" => (10, 1),
+            "IMAGE_CHOMP" => (5, 1),
+            _ => (cols, rows),
         };
-        sheets.insert(id, (images.add(to_bevy(img)), cel));
+        let (cel, grid) = if ten_across {
+            let w = img.width / 10;
+            let h = w.min(img.height);
+            (UVec2::new(w, h), UVec2::new(10, img.height / h))
+        } else {
+            (
+                UVec2::new(img.width / cols, img.height / rows),
+                UVec2::new(cols, rows),
+            )
+        };
+        sheets.insert(id, (images.add(to_bevy(img)), cel, grid));
     }
     commands.insert_resource(Sheets(sheets));
 }
@@ -291,8 +397,8 @@ fn play_sounds(
     mut handles: Local<SoundHandles>,
     mut audio: ResMut<Assets<AudioSource>>,
 ) {
-    for s in &sim.board.sounds {
-        let id = s.id();
+    for p in &sim.board.sounds {
+        let id = p.sound.id();
         let h = match handles.0.get(id) {
             Some(h) => h.clone(),
             None => {
@@ -304,7 +410,44 @@ fn play_sounds(
                 h
             }
         };
-        commands.spawn((AudioPlayer::new(h), PlaybackSettings::DESPAWN));
+        commands.spawn((
+            AudioPlayer::new(h),
+            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(p.volume as f32)),
+        ));
+    }
+}
+
+/// Alien/tank song switches with the original's linear fades, one step per
+/// tick: out at 0.008, in at 0.002 (`assets/music.md`).
+fn play_music(sim: Res<Sim>, mut songs: ResMut<Songs>, mut sinks: Query<&mut AudioSink>) {
+    match sim.board.music {
+        Some(MusicCue::Alien) => songs.alien_on = true,
+        Some(MusicCue::Tank) => songs.alien_on = false,
+        None => {}
+    }
+    let restart = sim.board.music.is_some();
+    let on = songs.alien_on;
+    let step = |v: &mut f32, up: bool| {
+        *v = if up {
+            (*v + 0.002).min(1.0)
+        } else {
+            (*v - 0.008).max(0.0)
+        };
+    };
+    let (mut tv, mut av) = (songs.tank_vol, songs.alien_vol);
+    step(&mut tv, !on);
+    step(&mut av, on);
+    songs.tank_vol = tv;
+    songs.alien_vol = av;
+    for (e, vol, starts) in [(songs.tank, tv, !on), (songs.alien, av, on)] {
+        let Some(mut sink) = e.and_then(|e| sinks.get_mut(e).ok()) else {
+            continue;
+        };
+        // The incoming song starts from its beginning (PlayMusic seeks).
+        if restart && starts {
+            let _ = sink.try_seek(Duration::ZERO);
+        }
+        sink.set_volume(Volume::Linear(vol));
     }
 }
 
@@ -345,8 +488,8 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
             None => "",
         };
         let t = format!(
-            "Insaniquarium — tank 1-1 — ${}{note}{note2}",
-            sim.board.money
+            "Insaniquarium — tank {}-{} — ${}{note}{note2}",
+            sim.board.tank, sim.board.level, sim.board.money
         );
         if w.title != t {
             w.title = t;
@@ -356,6 +499,7 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
 
 /// One cel to draw: column/row in `sheet`, top-left at game pixel (`x`, `y`).
 /// Art faces left; `mirror` flips it per cel.
+#[derive(Clone)]
 struct Cel<'a> {
     sheet: &'a str,
     col: i32,
@@ -366,15 +510,99 @@ struct Cel<'a> {
     mirror: bool,
     /// 0..=255 opacity (colourised draw in the original).
     alpha: u8,
+    /// Colourise tint (RGB); white = none.
+    tint: [u8; 3],
+    /// Draw mode 1 (additive).
+    additive: bool,
+    /// Destination size, if stretched (`DrawImageMirror` with a dest rect).
+    size: Option<(i32, i32)>,
 }
 
-impl Cel<'_> {
-    fn bundle(&self, sheets: &Sheets) -> Option<(Drawn, Sprite, Anchor, Transform)> {
-        let (handle, size) = sheets.0.get(self.sheet)?;
-        let cx = self.col.max(0) as u32 * size.x;
-        let cy = self.row.max(0) as u32 * size.y;
+impl<'a> Cel<'a> {
+    fn new(sheet: &'a str, col: i32, row: i32, x: i32, y: i32, z: f32) -> Self {
+        Cel {
+            sheet,
+            col,
+            row,
+            x,
+            y,
+            z,
+            mirror: false,
+            alpha: 255,
+            tint: [255; 3],
+            additive: false,
+            size: None,
+        }
+    }
+
+    fn mirror(mut self, m: bool) -> Self {
+        self.mirror = m;
+        self
+    }
+
+    fn alpha(mut self, a: i32) -> Self {
+        self.alpha = a.clamp(0, 255) as u8;
+        self
+    }
+
+    fn tint(mut self, rgb: [u8; 3]) -> Self {
+        self.tint = rgb;
+        self
+    }
+
+    fn additive(mut self) -> Self {
+        self.additive = true;
+        self
+    }
+
+    /// The cel as a `ColorMaterial` on a unit quad: the UV transform picks
+    /// (and mirrors) the cel; the transform places and sizes the quad.
+    fn additive_parts(&self, sheets: &Sheets) -> Option<(ColorMaterial, Transform)> {
+        let (handle, size, grid) = sheets.0.get(self.sheet)?;
+        if self.col < 0 || self.row < 0 || self.col as u32 >= grid.x || self.row as u32 >= grid.y {
+            return None;
+        }
+        let (gw, gh) = (grid.x as f32, grid.y as f32);
+        let (u0, v0) = (self.col as f32 / gw, self.row as f32 / gh);
+        let (su, sv) = (1.0 / gw, 1.0 / gh);
+        let uv = if self.mirror {
+            Affine2::from_cols(
+                Vec2::new(-su, 0.0),
+                Vec2::new(0.0, sv),
+                Vec2::new(u0 + su, v0),
+            )
+        } else {
+            Affine2::from_cols(Vec2::new(su, 0.0), Vec2::new(0.0, sv), Vec2::new(u0, v0))
+        };
+        let (w, h) = self.size.map_or((size.x as f32, size.y as f32), |(w, h)| {
+            (w as f32, h as f32)
+        });
+        let [r, g, b] = self.tint;
+        let mat = ColorMaterial {
+            color: Color::srgba_u8(r, g, b, self.alpha),
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
+            uv_transform: uv,
+            texture: Some(handle.clone()),
+        };
+        let t = Transform::from_xyz(
+            self.x as f32 + w / 2.0 - W / 2.0,
+            H / 2.0 - self.y as f32 - h / 2.0,
+            self.z,
+        )
+        .with_scale(Vec3::new(w, h, 1.0));
+        Some((mat, t))
+    }
+
+    /// `DrawImageCel` semantics: out-of-range cels draw nothing.
+    fn bundle(&self, sheets: &Sheets) -> Option<(Sprite, Anchor, Transform)> {
+        let (handle, size, grid) = sheets.0.get(self.sheet)?;
+        if self.col < 0 || self.row < 0 || self.col as u32 >= grid.x || self.row as u32 >= grid.y {
+            return None;
+        }
+        let cx = self.col as u32 * size.x;
+        let cy = self.row as u32 * size.y;
+        let [r, g, b] = self.tint;
         Some((
-            Drawn,
             Sprite {
                 image: handle.clone(),
                 rect: Some(Rect::new(
@@ -384,7 +612,8 @@ impl Cel<'_> {
                     (cy + size.y) as f32,
                 )),
                 flip_x: self.mirror,
-                color: Color::srgba_u8(255, 255, 255, self.alpha),
+                color: Color::srgba_u8(r, g, b, self.alpha),
+                custom_size: self.size.map(|(w, h)| Vec2::new(w as f32, h as f32)),
                 ..default()
             },
             Anchor::TOP_LEFT,
@@ -427,16 +656,6 @@ fn guppy_cel_as(f: &Fish, hungry: bool) -> (&'static str, i32, i32, bool) {
 
 /// Shop buttons, help arrows and money flash (shop-bar.md#button-art).
 fn shop_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
-    let one = |sheet, x, y, z| Cel {
-        sheet,
-        col: 0,
-        row: 0,
-        x,
-        y,
-        z,
-        mirror: false,
-        alpha: 255,
-    };
     for slot in Slot::ALL {
         let i = slot as usize;
         let (Some(pos), true) = (b.shop.position[i], b.shop.revealed[i]) else {
@@ -445,70 +664,327 @@ fn shop_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
         let (bx, by) = (BUTTON_X[pos], BUTTON_Y);
         let pop = b.shop.pop[i];
         if pop < 7 {
-            cels.push(one("IMAGE_MENUBTNU", bx, by, 11.0));
+            cels.push(Cel::new("IMAGE_MENUBTNU", 0, 0, bx, by, 11.0));
             match slot {
-                Slot::Guppy => cels.push(Cel {
-                    sheet: "IMAGE_SMALLSWIM",
-                    col: (b.level_ticks / 2) % 10,
-                    row: 0,
-                    x: bx - 12,
-                    y: by - 18,
-                    z: 11.1,
-                    mirror: false,
-                    alpha: 255,
-                }),
-                Slot::EggPiece if (1..=3).contains(&b.egg_count) => cels.push(Cel {
-                    sheet: "IMAGE_EGGPIECES",
-                    col: b.egg_count - 1,
-                    row: 0,
-                    x: bx + 7,
-                    y: by + 3,
-                    z: 11.1,
-                    mirror: false,
-                    alpha: 255,
-                }),
+                Slot::Guppy => cels.push(Cel::new(
+                    "IMAGE_SMALLSWIM",
+                    (b.level_ticks / 2) % 10,
+                    0,
+                    bx - 12,
+                    by - 18,
+                    11.1,
+                )),
+                // Food quality: the next pellet's row (`0x00540724`); at the
+                // cap the button reads MAX and has no icon.
+                Slot::FoodQuality if b.food_level < 2 => cels.push(Cel::new(
+                    "IMAGE_FOOD",
+                    0,
+                    b.food_level + 1,
+                    bx + 9,
+                    by + 3,
+                    11.1,
+                )),
+                Slot::EggPiece if (1..=3).contains(&b.egg_count) => cels.push(Cel::new(
+                    "IMAGE_EGGPIECES",
+                    b.egg_count - 1,
+                    0,
+                    bx + 7,
+                    by + 3,
+                    11.1,
+                )),
                 _ => {}
             }
         }
         if (1..=6).contains(&pop) {
-            cels.push(Cel {
-                sheet: "IMAGE_HATCHANIMATION",
-                col: (6 - pop) / 2,
-                row: 0,
-                x: bx,
-                y: by,
-                z: 11.2,
-                mirror: false,
-                alpha: 255,
-            });
+            cels.push(Cel::new(
+                "IMAGE_HATCHANIMATION",
+                (6 - pop) / 2,
+                0,
+                bx,
+                by,
+                11.2,
+            ));
         }
-        cels.push(one("IMAGE_MENUBUTTONREFLECTION", bx, by, 11.3));
+        cels.push(Cel::new("IMAGE_MENUBUTTONREFLECTION", 0, 0, bx, by, 11.3));
     }
     if b.money_flash > 0 && b.money_flash % 20 < 10 {
-        cels.push(one("IMAGE_MONEYFLASH", 545, 39, 11.4));
+        cels.push(Cel::new("IMAGE_MONEYFLASH", 0, 0, 545, 39, 11.4));
     }
-    if b.arrow_buy_fish {
-        cels.push(one("IMAGE_HELPARROW", 40, 70, 11.5));
-    } else if b.arrow_buy_egg {
-        cels.push(one("IMAGE_HELPARROW", 460, 70, 11.5));
+    for (x, _) in arrows(b) {
+        cels.push(Cel::new("IMAGE_HELPARROW", 0, 0, x, 70, 11.5));
     }
 }
 
-fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image>>) {
-    for slot in Slot::ALL {
-        let price = sim.board.shop.price[slot as usize];
-        if sim.board.shop.revealed[slot as usize]
-            && price > 0
-            && !hud.prices.contains_key(&price)
-            && let Some(f) = &hud.tiny
-        {
-            let img = f.render(format!("${price}").as_bytes());
-            let size = UVec2::new(img.width, img.height);
-            let h = images.add(to_bevy(&img));
-            hud.prices.insert(price, (h, size));
+/// Help arrows and their two caption lines, left x first (`0x0053f6a0`):
+/// tutorial "buy fish"/"buy egg piece", and 1-2's food-quality hint.
+/// A help arrow: its x and two caption lines (text, x, baseline y).
+type Arrow = (i32, [(&'static str, i32, i32); 2]);
+
+fn arrows(b: &Board) -> Vec<Arrow> {
+    let mut v = Vec::new();
+    if b.arrow_buy_fish {
+        v.push((40, [("Click here to", 65, 95), ("buy fish!", 83, 107)]));
+    } else if b.arrow_buy_egg {
+        v.push((
+            460,
+            [("Click here to", 485, 95), ("buy egg piece!", 480, 107)],
+        ));
+    } else if b.arrow_food_quality && b.tank == 1 && b.level == 2 {
+        v.push((110, [("Click here to", 135, 95), ("upgrade!", 152, 107)]));
+    }
+    v
+}
+
+/// Floor shadows (board.md#shadows): tank 1 colour (66, 48, 41).
+fn shadow_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
+    const TINT: [u8; 3] = [66, 48, 41];
+    // Types 0 (fish) and 2 (alien) follow the owner's height and stretch.
+    let mut moving = |ix: i32, iy: i32, kind2: bool| {
+        let dark = (iy - 50) / 2;
+        let x = ix + if kind2 { 40 } else { 0 };
+        let y = 415 - ((370 - iy).max(0) * 30) / 370;
+        let alpha = if kind2 {
+            (2 * dark).clamp(0, 255)
+        } else {
+            dark.clamp(0, 150)
+        };
+        let mut f = ((y - iy) as f32 / 100.0).clamp(0.9, 1.3);
+        if kind2 {
+            f += 0.4;
+        }
+        let g = f - 1.0;
+        let (dx, dy) = ((80.0 * g) as i32, (40.0 * g) as i32);
+        let mut c = Cel::new("IMAGE_SHADOW", 0, 0, x - dx, y - dy, 0.5)
+            .alpha(alpha)
+            .tint(TINT);
+        c.size = Some((80 + 2 * dx, 40 + 2 * dy));
+        cels.push(c);
+    };
+    for f in &b.guppies {
+        moving(f.widget_x, f.widget_y, false);
+    }
+    for a in &b.aliens {
+        if a.warp < 10 {
+            moving(a.widget_x, a.widget_y, true);
         }
     }
-    let money = sim.board.money;
+    // Type 1 (Stinky): fixed floor y, unstretched.
+    for p in &b.pets {
+        let dark = (p.widget_y - 50) / 2;
+        cels.push(
+            Cel::new("IMAGE_SHADOW", 0, 0, p.widget_x, p.shadow_y, 0.5)
+                .alpha(dark.clamp(0, 150))
+                .tint(TINT),
+        );
+    }
+}
+
+/// Stinky (pet-stinky.md#drawing).
+fn pet_cels(p: &Pet, z: f32, cels: &mut Vec<Cel<'static>>) {
+    let mirror = if p.shell > 0 {
+        p.facing >= 0.0
+    } else if p.turn != 0 {
+        p.turn > 0
+    } else {
+        p.vx > 0.0 || (p.vx == 0.0 && p.facing > 0.0)
+    };
+    if p.slow {
+        let zx = if mirror { 55 } else { 25 };
+        cels.push(Cel::new(
+            "IMAGE_ZZZ",
+            0,
+            0,
+            p.widget_x + zx,
+            p.widget_y - 14,
+            z,
+        ));
+    }
+    let row = if p.shell != 0 {
+        2
+    } else if p.turn != 0 {
+        1
+    } else {
+        0
+    };
+    cels.push(
+        Cel::new(
+            "IMAGE_STINKY",
+            p.cel,
+            row,
+            p.widget_x,
+            p.widget_y,
+            z + 0.0001,
+        )
+        .mirror(mirror),
+    );
+}
+
+/// Sylvester (alien-sylvester.md#71-alien).
+fn alien_cels(a: &Alien, z: f32, cels: &mut Vec<Cel<'static>>) {
+    let (row, mirror) = if a.turn != 0 {
+        (1, a.turn > 0)
+    } else {
+        (0, a.vx >= 0.0)
+    };
+    let base = Cel::new("IMAGE_SYLV", a.cel, row, a.widget_x, a.widget_y, z).mirror(mirror);
+    if a.warp > 0 {
+        if a.warp > 9 {
+            return;
+        }
+        let s = (160.0 * a.warp as f32 / 10.0) as i32;
+        let mut c = base;
+        c.x += s / 2;
+        c.y += s / 2;
+        c.size = Some((160 - s, 160 - s));
+        cels.push(c);
+        return;
+    }
+    cels.push(base.clone());
+    if a.cooldown > 0 {
+        cels.push(
+            Cel {
+                z: z + 0.0001,
+                ..base
+            }
+            .additive()
+            .alpha(25 * a.cooldown),
+        );
+    }
+}
+
+/// Laser colours by level (`0x004d9160`, `0x004d9280`).
+fn laser_colours(laser: i32) -> ([u8; 3], [u8; 3]) {
+    let base = match laser {
+        3 | 10 => [255, 0, 0],
+        4 => [255, 55, 0],
+        5 => [255, 200, 0],
+        6 => [125, 255, 90],
+        7 => [10, 200, 35],
+        8 => [5, 150, 250],
+        9 => [160, 0, 255],
+        12 => [235, 0, 215],
+        _ => [50, 180, 200],
+    };
+    let high = match laser {
+        4 | 7 => [255, 255, 100],
+        6 => [255, 255, 0],
+        10 => [100, 255, 255],
+        11 => [180, 225, 70],
+        12 => [0, 255, 0],
+        _ => [255, 255, 255],
+    };
+    (base, high)
+}
+
+/// Shots (alien-sylvester.md#73-shot). Nothing while the start delay runs.
+fn shot_cels(s: &Shot, laser: i32, z: f32, cels: &mut Vec<Cel<'static>>) {
+    if s.delay != 0 {
+        return;
+    }
+    let (x, y) = (s.widget_x, s.widget_y);
+    let one = |sheet| Cel::new(sheet, s.frame, 0, x, y, z).alpha(s.r);
+    match s.kind {
+        0 => {
+            let pair = match laser {
+                ..7 => 0,
+                7..10 => 1,
+                _ => 2,
+            } * 2;
+            let (base, high) = laser_colours(laser);
+            let c = Cel::new("IMAGE_LASERS", s.frame, pair, x, y, z);
+            cels.push(c.clone().tint(base).alpha(100));
+            cels.push(
+                Cel {
+                    z: z + 0.0001,
+                    ..c.clone()
+                }
+                .tint(base)
+                .alpha(s.r)
+                .additive(),
+            );
+            cels.push(
+                Cel {
+                    row: pair + 1,
+                    z: z + 0.0002,
+                    ..c
+                }
+                .tint(high)
+                .alpha(s.r)
+                .additive(),
+            );
+        }
+        1 => cels.push(one("IMAGE_CHOMP")),
+        3 => cels.push(one("IMAGE_EXPLOSION").additive()),
+        4 => cels.push(one("IMAGE_EXPLOSIONSMALL").additive()),
+        5 => cels.push(one("IMAGE_EXPLOSIONTINY")),
+        6 => cels.push(one("IMAGE_SMOKETINY")),
+        7 => cels.push(one("IMAGE_SMOKESMALL")),
+        8 => cels.push(one("IMAGE_SMOKEMISSILE")),
+        // Kind 2 (hit spark) draws nothing.
+        _ => {}
+    }
+}
+
+/// Sinking corpse (alien-sylvester.md#74-dead-alien).
+fn dead_alien_cels(d: &DeadAlien, z: f32, cels: &mut Vec<Cel<'static>>) {
+    let c = Cel::new("IMAGE_SYLV", d.cel, 0, d.widget_x, d.widget_y, z)
+        .mirror(d.facing_right)
+        .alpha((d.fade * 255.0) as i32);
+    cels.push(c.clone());
+    if d.life > 115 {
+        // Five additive passes: a white flash fading over 10 ticks.
+        let a = ((d.life - 115) * 20 * 5).min(255);
+        cels.push(Cel { z: z + 0.0001, ..c }.additive().alpha(a));
+    }
+}
+
+/// Button price text: `$n`, or MAX at a cap (`0x00534450`).
+fn price_text(b: &Board, slot: Slot) -> String {
+    let maxed = match slot {
+        Slot::FoodQuality => b.food_level >= 2,
+        Slot::FoodQuantity => b.max_food >= 9,
+        _ => false,
+    };
+    let price = b.shop.price[slot as usize];
+    if maxed {
+        "MAX".into()
+    } else if price > 0 {
+        format!("${price}")
+    } else {
+        String::new()
+    }
+}
+
+fn hud_text(
+    sim: Res<Sim>,
+    src: Res<Sources>,
+    mut hud: ResMut<Hud>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let b = &sim.board;
+    let mut want: Vec<(String, bool)> = Slot::ALL
+        .into_iter()
+        .filter(|&s| b.shop.revealed[s as usize])
+        .map(|s| (price_text(b, s), true))
+        .collect();
+    for (_, lines) in arrows(b) {
+        for (t, _, _) in lines {
+            want.push((t.to_string(), false));
+        }
+    }
+    for (text, tiny) in want {
+        if text.is_empty() || hud.labels.contains_key(&text) {
+            continue;
+        }
+        let font = if tiny { &hud.tiny } else { &hud.small };
+        if let Some(f) = font {
+            let img = f.render(text.as_bytes());
+            let size = UVec2::new(img.width, img.height);
+            let h = images.add(to_bevy(&img));
+            hud.labels.insert(text, (h, size));
+        }
+    }
+    let money = b.money;
     if hud.money.as_ref().is_none_or(|m| m.0 != money)
         && let Some(f) = &hud.font
     {
@@ -516,16 +992,13 @@ fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image
         let size = UVec2::new(img.width, img.height);
         hud.money = Some((money, images.add(to_bevy(&img)), size));
     }
-    match sim.board.dialog {
+    match b.dialog {
         Some(d) if hud.dialog.as_ref().is_none_or(|x| x.0 != d) => {
-            if let Some(f) = &hud.dialog_font {
-                let text: &[u8] = match d {
-                    Dialog::LastFishDied => b"YOUR LAST FISH HAS DIED! CLICK TO CONTINUE",
-                    Dialog::GameOver => b"GAME OVER",
-                    Dialog::OutOfMoney => b"OUT OF MONEY! CLICK TO CONTINUE",
-                    Dialog::AlienWarning => b"DANGER! AN ALIEN IS COMING! CLICK TO CONTINUE",
-                };
-                let img = f.render(text);
+            if let Some(img) = hud
+                .dialog_fonts
+                .as_ref()
+                .and_then(|f| render_dialog(&src.0, f, d))
+            {
                 let size = UVec2::new(img.width, img.height);
                 hud.dialog = Some((d, images.add(to_bevy(&img)), size));
             }
@@ -534,6 +1007,73 @@ fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image
         _ => {}
     }
 }
+
+/// Header and body of a board dialog (`framework/dialog.md#board-dialogs`).
+fn dialog_text(d: Dialog) -> (&'static str, &'static str) {
+    match d {
+        Dialog::AlienWarning => (
+            "DANGER!",
+            "A vicious alien is about to enter your tank! Defeat it with your laser weapon by clicking on it!",
+        ),
+        Dialog::LastFishDied => (
+            "YOUR LAST FISH HAS DIED!",
+            "Normally this would end your game, but this time we'll give you another fish to keep playing! Make sure you keep it well fed!",
+        ),
+        Dialog::GameOver => ("GAME OVER", "Oops!  All of your fish have died!"),
+        Dialog::OutOfMoney => (
+            "OUT OF MONEY!",
+            "You've run out of money!  Because you're new, we'll float you a loan, but be careful next time!",
+        ),
+    }
+}
+
+/// A `MoneyDialog` rendered to one image (`framework/dialog.md`): the panel
+/// as a 3×3 box, the header, the wrapped body and the "Click to Continue"
+/// button. Drawn at `DIALOG_POS`.
+fn render_dialog(img: &GameImages, [head, body, btn]: &[ImageFont; 3], d: Dialog) -> Option<Rgba> {
+    let panel = img.get("IMAGE_DIALOG")?;
+    let button = img.get("IMAGE_DIALOGBUTTON")?;
+    let (header, text) = dialog_text(d);
+    let (left, top, right, bottom) = (36, 15, 36, 36);
+    let w = (head.width(header.as_bytes()) + 150).max(348);
+    let inner = w - left - right;
+    let lines = body.wrap(text, inner - 4);
+    let bh = button.height as i32;
+    let h =
+        top + head.line_spacing() + 10 + lines.len() as i32 * body.line_spacing() + 8 + bh + bottom;
+    let mut out = Rgba::new_transparent(w as u32, h as u32);
+    out.draw_image_box(panel, (0, 0, w, h));
+    let centred = |f: &ImageFont, t: &str| left + (inner - f.width(t.as_bytes())) / 2;
+    let mut y = top + head.ascent();
+    head.draw(
+        &mut out,
+        header.as_bytes(),
+        centred(head, header),
+        y,
+        [255, 200, 0],
+    );
+    y += head.line_spacing() + 10;
+    for l in &lines {
+        body.draw(&mut out, l.as_bytes(), centred(body, l), y, [255, 255, 255]);
+        y += body.line_spacing();
+    }
+    // The button: its normal-state third of DIALOGBUTTON as a 3×3 box.
+    let normal = button.crop(0, 0, button.width / 3, button.height);
+    let (bx, by, bw) = (left, h - bottom - bh, inner);
+    out.draw_image_box(&normal, (bx, by, bw, bh));
+    let label = "Click to Continue";
+    btn.draw(
+        &mut out,
+        label.as_bytes(),
+        bx + (bw - btn.width(label.as_bytes())) / 2,
+        by + (bh + btn.ascent()) / 2 - 2,
+        [255, 255, 100],
+    );
+    Some(out)
+}
+
+/// `NewDialog` places board dialogs at (143, 142).
+const DIALOG_POS: (f32, f32) = (143.0, 142.0);
 
 fn text_sprite(
     handle: &Handle<Image>,
@@ -549,102 +1089,128 @@ fn text_sprite(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Bevy system parameters.
 fn draw(
     mut commands: Commands,
     sim: Res<Sim>,
     sheets: Res<Sheets>,
     hud: Res<Hud>,
+    quad: Res<Quad>,
+    mut materials: ResMut<Assets<AdditiveMaterial>>,
     old: Query<Entity, With<Drawn>>,
+    mut pool: Query<(&Pooled, &mut Transform, &mut Visibility)>,
 ) {
     for e in &old {
         commands.entity(e).despawn();
     }
     let b = &sim.board;
-    let mut cels = vec![Cel {
-        sheet: "IMAGE_AQUARIUM1",
-        col: 0,
-        row: 0,
-        x: 0,
-        y: 0,
-        z: 0.0,
-        mirror: false,
-        alpha: 255,
-    }];
-    // Back to front as in Board::RebuildZOrder: food, guppies, coins.
+    let mut cels = vec![Cel::new("IMAGE_AQUARIUM1", 0, 0, 0, 0, 0.0)];
+    // Back to front as in Board::RebuildZOrder (board.md): shadows, dead
+    // aliens, warps, food, guppies, aliens, pets, shots, coins.
+    shadow_cels(b, &mut cels);
+    for (i, d) in b.dead_aliens.iter().enumerate() {
+        dead_alien_cels(d, 0.6 + i as f32 * 0.001, &mut cels);
+    }
+    for (i, w) in b.warps.iter().enumerate() {
+        let (f, z) = (w.frame(), 0.8 + i as f32 * 0.001);
+        cels.push(Cel::new(
+            "IMAGE_WARPHOLE",
+            f,
+            0,
+            w.widget_x + 20,
+            w.widget_y,
+            z,
+        ));
+        cels.push(Cel::new("IMAGE_WARPGLOW", f, 0, w.widget_x, w.widget_y, z + 0.0001).additive());
+    }
     for f in &b.foods {
-        cels.push(Cel {
-            sheet: "IMAGE_FOOD",
-            col: f.anim / f.anim_speed.max(1),
-            row: f.level,
-            x: f.widget_x - 5,
-            y: f.widget_y - 4,
-            z: 1.0,
-            mirror: false,
-            alpha: 255,
-        });
+        cels.push(Cel::new(
+            "IMAGE_FOOD",
+            f.anim / f.anim_speed.max(1),
+            f.level,
+            f.widget_x - 5,
+            f.widget_y - 4,
+            1.0,
+        ));
     }
     for (i, f) in b.guppies.iter().enumerate() {
         let (sheet, col, row, mirror) = guppy_cel(f);
-        cels.push(Cel {
-            sheet,
-            col,
-            row,
-            x: f.widget_x,
-            y: f.widget_y,
-            z: 2.0 + i as f32 * 0.001,
-            mirror,
-            alpha: 255,
-        });
+        let z = 2.0 + i as f32 * 0.001;
+        cels.push(Cel::new(sheet, col, row, f.widget_x, f.widget_y, z).mirror(mirror));
         // Hungry↔fed colour fade: the hungry sheet over the fed one at
         // fade·255/5 (fish-guppy.md#animation-and-drawing).
         if f.fade > 0 {
             let (sheet, col, row, mirror) = guppy_cel_as(f, true);
-            cels.push(Cel {
-                sheet,
-                col,
-                row,
-                x: f.widget_x,
-                y: f.widget_y,
-                z: 2.0005 + i as f32 * 0.001,
-                mirror,
-                alpha: (f.fade.clamp(0, 5) * 255 / 5) as u8,
-            });
+            cels.push(
+                Cel::new(sheet, col, row, f.widget_x, f.widget_y, z + 0.0005)
+                    .mirror(mirror)
+                    .alpha(f.fade.clamp(0, 5) * 255 / 5),
+            );
         }
     }
+    for (i, a) in b.aliens.iter().enumerate() {
+        alien_cels(a, 2.5 + i as f32 * 0.001, &mut cels);
+    }
+    for (i, p) in b.pets.iter().enumerate() {
+        pet_cels(p, 2.7 + i as f32 * 0.001, &mut cels);
+    }
+    for (i, s) in b.shots.iter().enumerate() {
+        shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);
+    }
     for (i, c) in b.coins.iter().enumerate() {
-        // Silver row 0, gold row 1 (coin.md); other kinds not drawn yet.
+        // `IMAGE_MONEY` rows (`0x004dd7a0`, normal game): silver 0, gold 1,
+        // star 2, diamond 3. Other kinds not drawn yet.
         let row = match c.kind {
             1 | 8 => 0,
             2 | 9 => 1,
+            3 | 10 => 2,
+            4 | 5 | 11 | 12 => 3,
             _ => continue,
         };
-        cels.push(Cel {
-            sheet: "IMAGE_MONEY",
-            col: c.cel,
+        cels.push(Cel::new(
+            "IMAGE_MONEY",
+            c.cel,
             row,
-            x: c.widget_x,
-            y: c.widget_y,
-            z: 3.0 + i as f32 * 0.001,
-            mirror: false,
-            alpha: 255,
-        });
+            c.widget_x,
+            c.widget_y,
+            3.0 + i as f32 * 0.001,
+        ));
     }
-    cels.push(Cel {
-        sheet: "IMAGE_MENUBAR",
-        col: 0,
-        row: 0,
-        x: 0,
-        y: 0,
-        z: 10.0,
-        mirror: false,
-        alpha: 255,
-    });
+    cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, 10.0));
     shop_cels(b, &mut cels);
-    commands.spawn_batch(
-        cels.iter()
-            .filter_map(|c| c.bundle(&sheets))
-            .collect::<Vec<_>>(),
-    );
+    let mut slots = pool.iter_mut();
+    for c in &cels {
+        if !c.additive {
+            if let Some(b) = c.bundle(&sheets) {
+                commands.spawn((Drawn, b.0, b.1, b.2));
+            }
+            continue;
+        }
+        let Some((mat, transform)) = c.additive_parts(&sheets) else {
+            continue;
+        };
+        if let Some((p, mut tf, mut vis)) = slots.next() {
+            if let Some(mut m) = materials.get_mut(&p.0) {
+                m.base = mat;
+            }
+            *tf = transform;
+            *vis = Visibility::Inherited;
+        } else {
+            let h = materials.add(AdditiveMaterial {
+                base: mat,
+                extension: Additive {},
+            });
+            commands.spawn((
+                Pooled(h.clone()),
+                Mesh2d(quad.0.clone()),
+                MeshMaterial2d(h),
+                transform,
+            ));
+        }
+    }
+    for (_, _, mut vis) in slots {
+        vis.set_if_neq(Visibility::Hidden);
+    }
     // Money label: rect (535, 40, 80, h), right-aligned → right edge 615
     // (shop-bar.md#bar-money-counter-flash-help-arrows). The rendered
     // bitmap has a 4 px pad on each side.
@@ -660,15 +1226,26 @@ fn draw(
         let (Some(pos), true) = (b.shop.position[i], b.shop.revealed[i]) else {
             continue;
         };
-        if let Some((h, size)) = hud.prices.get(&b.shop.price[i]) {
+        let text = price_text(b, slot);
+        if let Some((h, size)) = hud.labels.get(&text) {
             let x = BUTTON_X[pos] as f32 + (58.0 - size.x as f32) / 2.0;
             let mut t = text_sprite(h, x, BUTTON_Y as f32 + 45.0 - 4.0, 11.25);
             t.1.color = Color::srgb_u8(110, 250, 110);
             commands.spawn(t);
         }
     }
-    if let Some((_, h, size)) = &hud.dialog {
-        let x = (W - size.x as f32) / 2.0;
-        commands.spawn(text_sprite(h, x, 230.0, 12.0));
+    // Help-arrow captions (JungleFever10outline, (110, 250, 110)) at their
+    // baselines; the bitmap's top is ascent above the baseline.
+    for (_, lines) in arrows(b) {
+        for (text, x, y) in lines {
+            if let Some((h, _)) = hud.labels.get(text) {
+                let mut t = text_sprite(h, x as f32 - 4.0, (y - 11) as f32 - 4.0, 11.55);
+                t.1.color = Color::srgb_u8(110, 250, 110);
+                commands.spawn(t);
+            }
+        }
+    }
+    if let Some((_, h, _)) = &hud.dialog {
+        commands.spawn(text_sprite(h, DIALOG_POS.0, DIALOG_POS.1, 12.0));
     }
 }

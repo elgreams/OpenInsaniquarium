@@ -40,6 +40,66 @@ impl ImageFont {
         Ok(Self { layer, sheet })
     }
 
+    /// `Font::GetAscent`.
+    pub fn ascent(&self) -> i32 {
+        self.layer.ascent
+    }
+
+    /// `Font::GetLineSpacing`: ascent + line-spacing offset (+ padding is
+    /// already in the glyph rects).
+    pub fn line_spacing(&self) -> i32 {
+        self.height()
+    }
+
+    /// Greedy word wrap to `width` pixels.
+    pub fn wrap(&self, text: &str, width: i32) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            let candidate = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
+            if self.width(candidate.as_bytes()) > width && !line.is_empty() {
+                lines.push(std::mem::take(&mut line));
+                line = word.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+        lines
+    }
+
+    /// Draw `text` onto `dst` with its baseline at `y` and its left edge at
+    /// `x`, tinted `colour` (the glyph sheet is white).
+    pub fn draw(&self, dst: &mut Rgba, text: &[u8], x: i32, y: i32, colour: [u8; 3]) {
+        let top = y - self.layer.ascent;
+        let mut pen = 0;
+        let mut prev = None;
+        let full = (0, 0, dst.width as i32, dst.height as i32);
+        for &c in text {
+            if let Some(p) = prev {
+                pen += self.layer.kerning.get(&(p, c)).copied().unwrap_or(0);
+            }
+            if let Some(g) = self.layer.glyphs.get(&c) {
+                let r = g.rect;
+                dst.blit(
+                    &self.sheet,
+                    (r.x, r.y, r.w, r.h),
+                    (x + pen + g.offset.0, top + g.offset.1),
+                    colour,
+                    full,
+                );
+                pen += g.width;
+            }
+            prev = Some(c);
+        }
+    }
+
     /// Line height used for the bitmap.
     pub fn height(&self) -> i32 {
         (self.layer.ascent + self.layer.line_spacing_offset).max(1)

@@ -333,6 +333,125 @@ Sub-costs:
   That is 4–5 global draws, and it happens even in Adventure. The earlier observation "global RNG untouched in tank play" only holds without aliens.
 - Click shot, Warp, Shot/Warp updates, Coin ctor, DeadAlien ctor, sounds: no RNG.
 
+## 7. Drawing and sound (presentation)
+
+`static` unless noted. Positions are relative to the object's widget top-left `(+0x30, +0x34)`. "Additive" means SexyApp draw mode 1 (`SetDrawMode(1)`): source colour × tint is added to the destination. "Tint" is `SetColorizeImages(1)` with the given RGBA, which multiplies the image.
+
+Image globals were resolved by matching the writes in `WinFish::ExtractLoadingThreadResources` against the `IMAGE_*` id strings.
+
+### 7.1 Alien (`Alien` slot 26 @ `0x004db210` → `Alien::DrawSprite` @ `0x004dae20`), kind 1
+
+- Mirror (art faces left): `vx ≥ 0` → mirrored.
+- Sheet `IMAGE_SYLV` (160×160 cels, 10×2). Column = cel `+0x1c0`. Row:
+  - 1 while turning (`+0x1b4 ≠ 0`); then mirror = `turn > 0` instead.
+  - 0 otherwise.
+- **Warp-in** (`+0x158` = w > 0): w ≥ 10 → not drawn. For 1..9, draw stretched, centred in the 160 box: `s = trunc(160 · w/10)`, dest rect `(s/2, s/2, 160 − s, 160 − s)`. It grows as w counts down (w = 9 → 16 px, w = 1 → 144 px).
+  - Filtered stretch (`SetFastStretch(!is3D)`) on the 3D renderer, which is what the original uses on modern systems.
+  - Sylvester appears on the tick his counter reaches 9.
+- **Otherwise** draw the cel normally. While the hit cooldown `+0x200` = c > 0, also draw the same cel again **additive with white at alpha `25·c`**: a white flash that fades over 10 ticks.
+- The boss/health-bar branch (`+0x1ec == 0x15` or a boss present) doesn't apply on tank 1.
+
+### 7.2 Warp hole (`Warp`, type 0x21, list `+0xf0`)
+
+- Ctor `0x004ecf00`: widget at **(alien.ix + 30, alien.iy − 40)**, size 100×220, counter `+0x15c = 36`. No RNG.
+- `Warp::Update` (`0x004f3e70`): runs only while the board is unpaused. If the counter < 1, remove the warp. Then `counter −= 1`. The warp lives 37 updates (36 → −1).
+  - Confirmed: `tank1-2_full_02` shows the counter 35 → 0 alongside the alien's warp 14 → 0.
+- Draw (`0x004da690`): frame `f = 17 − counter/2` (int division):
+  - `IMAGE_WARPHOLE` (60×220 cels, 17 across) at (20, 0), cel f;
+  - then `IMAGE_WARPGLOW` (100×220, 17 across) additive at (0, 0), cel f.
+
+  Out-of-range cels (f ≥ 17 at counter 0 or −1) are skipped by `DrawImageCel` (it ignores column/row outside the sheet).
+- Z-order: warps are after coins(sub) and before food (`board.md`), so behind fish and the alien.
+
+### 7.3 Shot (`Shot` slot 26 @ `0x004d9340`)
+
+Nothing is drawn while the start delay `+0x164` is non-zero. Otherwise the base tint is (255,255,255, `r`), where `r` = `+0x168` (255 for click flashes, 50..249 for effect shots).
+
+- **Kind 0, click flash** (80×80): `IMAGE_LASERS` (80×80 cels, 10×6). Laser row pair `p` = 0 for laser < 7, 1 for 7..9, 2 for ≥ 10. Frame `+0x15c` (= age − 1, so 0..13).
+  1. Tinted with the laser colour (laser 2 = (50,180,200)) at alpha 100: cel (frame, 2p).
+  2. Additive, same colour, alpha `r`: cel (frame, 2p).
+  3. Additive, laser-specific highlight (laser 2: white, alpha `r`): cel (frame, 2p + 1).
+
+  Frames ≥ 10 are past the sheet's 10 columns and draw nothing. The flash is visible for its first 10 ticks and lives 15.
+
+  Laser colour table (`0x004d9160`, alpha arg):
+
+  | Laser | RGB |
+  |---|---|
+  | 2, 11 | (50, 180, 200) |
+  | 3, 10 | (255, 0, 0) |
+  | 4 | (255, 55, 0) |
+  | 5 | (255, 200, 0) |
+  | 6 | (125, 255, 90) |
+  | 7 | (10, 200, 35) |
+  | 8 | (5, 150, 250) |
+  | 9 | (160, 0, 255) |
+  | 12 | (235, 0, 215) |
+
+  Highlight (`0x004d9280`): white for most levels, (255,255,100) at 4/7, (255,255,0) at 6, (100,255,255) at 10, (180,225,70) at 11, (0,255,0) at 12.
+- **Kind 1, gore** (50×30): `IMAGE_CHOMP` (30×30 cels, 5 across), cel `frame` = age/2 − 1, tinted alpha `r`.
+- **Kind 2, hit spark**: draws **nothing**. It sets and clears draw modes without drawing an image.
+- **Kind 3** (80×80): `IMAGE_EXPLOSION`, additive, cel `frame`.
+- **Kind 4** (60×60): `IMAGE_EXPLOSIONSMALL`, additive.
+- **Kind 5** (80): `IMAGE_EXPLOSIONTINY`, normal blend.
+- **Kind 6** (40): `IMAGE_SMOKETINY`, normal blend.
+- **Kind 7** (60): `IMAGE_SMOKESMALL`, normal blend.
+- **Kind 8** (40): `IMAGE_SMOKEMISSILE`, normal blend. Other kinds draw nothing.
+
+  Frames past a sheet's column count draw nothing (`DrawImageCel` uses `cel % cols, cel / cols`, then bounds-checks the row).
+
+### 7.4 Dead alien (`DeadAlien` slot 26 @ `0x004dddb0`)
+
+DeadAlien fields: drift x/y velocity `+0x170/+0x178`, fade `+0x190` (f64, starts 1.0), cel `+0x188`, mirrored `+0x158` (byte), kind `+0x1a0`. Positions are x `+0x168` and y `+0x160` (doubles; note the order).
+
+- `Board::AddDeadAlien(trunc(x), trunc(y), cel, kind, mirrored = vx > 0)` (`0x005442c0`, from `0x004fa6db`) passes the alien's **current cel** and facing. The position is the alien's float position, **not** its widget position: the stroke animation can move x/y after the widget was set that tick. Confirmed: corpse position, drift, fade and warp counters replay exactly in `tank1-2_full_01`/`_02`.
+- **Update** (`0x004f6050`, after the debris RNG of §4.4):
+  - Lifetime `life −= 1`. Once life < 105, `fade −= 0.02` (floored at 0).
+  - Every 5th life above 50: sample `0x11d` (`SOUND_EXPLODE`), throttled 3, volume `clamp(lerp(25 → 100 over life−50 ∈ [0,75]), 25, 100) / 100`. It plays only if this corpse has the highest life among the dead aliens (`0x004e54f0`).
+  - x velocity decays toward 0 by 0.03 per tick (`vx ≤ 0 → +0.03`, else −0.03). Since it starts at 0 it dithers ±0.03 around 0.
+  - y velocity +0.05 per tick up to 2.0.
+  - Clamp x to [−10, 490]. (Kinds 5/6 also clamp y; n/a.) Then `x += vx`, `y += vy`. The widget is at trunc.
+  - Confirmed in `tank1-2_full_02`: y gains 0.05, 0.10, … up to 2.0 per tick (from y 204 to 407 over the lifetime).
+- **Draw:** tint alpha `trunc(fade · 255)`. The kind 1/2 sheet is `IMAGE_SYLV` (through the image-id table, `0x5e0a10[0xbd]`), row 0, column = cel, mirrored per the flag.
+  - While life > 115: also draw the same cel **additive white at alpha `(life − 115)·20`, five times over**. This is a bright flash on death that fades in 10 ticks.
+
+### 7.5 Shadows
+
+See `sim/board.md#shadows`. The alien's shadow is type 2.
+
+### 7.6 Sounds (sample ids = manifest `<Sound>` order + 0x105)
+
+| Event | Sample | Throttle | RNG |
+|---|---|---|---|
+| Warning (countdown 275) | 0x106 `SOUND_AWOOGA` | 3 | – |
+| Alien spawned (kinds 1–3, `0x00545928`) | `SOUND_ROAR` (direct, unthrottled) | – | – |
+| Click while aliens present (`0x00538ae0`) | 0x144 `ZAP`; if `r & 1`: also 0x145 `ZZAM`; if `r2 % 10 == 0`: 0x132 `RICOCHET` | 3 each | 2 draws (§4.1) |
+| Hit (`Alien::Hit`) | 0x126 `HIT` | 3 | – |
+| Alien ate a fish (`0x00538560`) | `r % 3 == 0` → 0x114 `CHOMP2`, else 0x113 `CHOMP` (`neg/sbb` + 0x114) | 3 (on 0x113) | 1 draw |
+| Death (`0x4fa01e`, `0x4fa03e`) | 0x11d `EXPLODE`, 0x11e `EXPLOSION1` | 3 each | – |
+| Dead-alien rumble | 0x11d at the volume above | 3 | – |
+| Diamond collected (`0x00538470`) | 0x116 `DIAMOND` | 3 | – |
+
+Correction to §3.2: the eat sound picks `CHOMP2` when `r % 3 == 0` and `CHOMP` otherwise.
+
+The `0x00538230(id, gap, volume)` helper plays a sample only if the board clock is ≥ `gap` past that sample's last play (`board+0x1a4 + 4·(id − 0x106)`), and records the play. The sim already models this throttle for RNG purposes.
+
+### 7.7 Music
+
+- Warning (countdown 275): `PlayAlienMusic` (`0x0054c480`): fade the tank song out (speed 0.008/update) and start `Alien.mo3` from the start, fading in at 0.002/update.
+- Last alien gone (`0x00539c90`, from death): `PlayTankMusic(1)`: back to the tank song.
+- Fade (`BassMusicInterface` slot 19 @ `0x004997d0`) is linear: `volume += speed` per update, clamped to [0, max]. A song that reaches 0 while fading out is stopped.
+
+### 7.8 Danger reticles
+
+Board draw (`0x0053ffa2`..): while the countdown is in 1..225 and `board+0x178` is non-zero, the board draws `IMAGE_CROSSHAIR` (5 cels) additively:
+- at (A.x + 40, 320), cel `(board+0x444 / 4) % 5`;
+- for wave kinds 9..12 only, a second one at B.
+
+The draw code **writes A.y = 280** (`+0x2d0 = 0x118`), and for kind 11 B.y too, so with `+0x178` set the alien spawns at y 280. It also plays sample 0x13c `SONAR` at countdown 225.
+
+`board+0x178` is not set on 1-2: in `tank1-2_full_02` both aliens spawned at the drawn A.y (297 and 116), not 280. TODO: what sets it (likely a pet or a later level), and moving this gameplay write out of the draw path when it's implemented.
+
 ## Note: the 1-2 "DANGER!" dialog
 
 On tank 1-2 (tutorial not completed), **every wave**, when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01` and `_02`. Modelled as `Dialog::AlienWarning`; objects skip the tick that raises it.

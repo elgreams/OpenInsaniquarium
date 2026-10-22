@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
+use insaniquarium_sim::alien::{Alien, DeadAlien, Shot, Warp};
 use insaniquarium_sim::board::Input;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
@@ -146,6 +146,7 @@ pub fn pet_from_raw(b: &[u8]) -> Pet {
         unk_1bc: rd_i32(b, 0x1bc),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
+        shadow_y: 410,
     }
 }
 
@@ -197,7 +198,13 @@ pub fn dead_alien_from_raw(b: &[u8]) -> DeadAlien {
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
         kind: rd_i32(b, 0x1a0),
-        facing_right: false,
+        facing_right: b[0x158] != 0,
+        cel: rd_i32(b, 0x188),
+        x: rd_f64(b, 0x168),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x170),
+        vy: rd_f64(b, 0x178),
+        fade: rd_f64(b, 0x190),
     }
 }
 
@@ -287,6 +294,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
     board.dead_aliens = raw_list(first, "dead_alien")
         .iter()
         .map(|b| dead_alien_from_raw(b))
+        .collect();
+    board.warps = raw_list(first, "warp")
+        .iter()
+        .map(|b| warp_from_raw(b))
         .collect();
     if let Some(w) = first.state.get("board").and_then(|b| b.get("wave")) {
         let g = |k: &str| w.get(k).and_then(Value::as_i64).unwrap_or(0) as i32;
@@ -399,6 +410,26 @@ fn alien_json(a: &Alien) -> Value {
     })
 }
 
+fn dead_alien_json(d: &DeadAlien) -> Value {
+    json!({
+        "life": d.life, "x": d.x, "y": d.y, "v": [d.vx, d.vy], "fade": d.fade,
+        "cel": d.cel, "mirror": d.facing_right, "widget": [d.widget_x, d.widget_y],
+    })
+}
+
+fn warp_json(w: &Warp) -> Value {
+    json!({ "counter": w.counter, "widget": [w.widget_x, w.widget_y] })
+}
+
+/// A warp hole from its raw bytes (counter at `+0x158`).
+pub fn warp_from_raw(b: &[u8]) -> Warp {
+    Warp {
+        counter: rd_i32(b, 0x158),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
 fn shot_json(s: &Shot) -> Value {
     json!({ "kind": s.kind, "widget": [s.widget_x, s.widget_y] })
 }
@@ -445,6 +476,14 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "shots".into(),
         Value::Array(board.shots.iter().map(shot_json).collect()),
+    );
+    state.insert(
+        "dead_aliens".into(),
+        Value::Array(board.dead_aliens.iter().map(dead_alien_json).collect()),
+    );
+    state.insert(
+        "warps".into(),
+        Value::Array(board.warps.iter().map(warp_json).collect()),
     );
     state.insert(
         "waves".into(),
@@ -503,6 +542,16 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| shot_json(&shot_from_raw(b)))
                 .collect();
             s.state.insert("shots".into(), Value::Array(shots));
+            let dead = raw_list(&s, "dead_alien")
+                .iter()
+                .map(|b| dead_alien_json(&dead_alien_from_raw(b)))
+                .collect();
+            s.state.insert("dead_aliens".into(), Value::Array(dead));
+            let warps = raw_list(&s, "warp")
+                .iter()
+                .map(|b| warp_json(&warp_from_raw(b)))
+                .collect();
+            s.state.insert("warps".into(), Value::Array(warps));
             if let Some(w) = s.state.get("board").and_then(|b| b.get("wave")).cloned() {
                 let g = |k: &str| w.get(k).cloned().unwrap_or(Value::Null);
                 s.state.insert(
