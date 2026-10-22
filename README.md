@@ -1,4 +1,4 @@
-# Insaniquarium engine
+# OpenInsaniquarium
 
 An open-source, clean-room reimplementation of **Insaniquarium Deluxe 1.1** in Rust (Bevy for presentation), in the spirit of OpenMW. The goal is an engine that plays *identically* to the original (same inputs, same outcomes), verified tick by tick against the real game. It's meant as a base for mods and for new games that aren't bound by the original's limits.
 
