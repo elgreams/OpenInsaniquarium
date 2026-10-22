@@ -30,6 +30,9 @@ local LISTS = {
 -- Lists dumped as raw bytes: {board offset, name, bytes}.
 local RAW_LISTS = {
   {0xac,"food",0x200},{0xa8,"coin",0x200},{0xe8,"coin_b",0x200},{0xec,"coin_c",0x200},
+  {0xb8,"alien",0x210},{0xbc,"alien_b",0x210},{0xd8,"shot",0x170},{0x9c,"dead_alien",0x1a8},
+  {0x98,"dead_fish",0x1a8},{0xf0,"warp",0x170},{0xb0,"pet_other",0x1d0},{0xb4,"pet_fish",0x268},
+  {0xe4,"shadow",0x170},
 }
 
 local out_path = CAPTURE_OUT or "/tmp/trace.jsonl"
@@ -155,6 +158,11 @@ while captured < max_ticks and polls < max_ticks * 40 do
       samples = hex_block(board + 0x1a4, 0x100)
       bclock = bclock .. string.format(',"eggs":%d,"revealed":"%s","flash":%d',
         i32(board + 0x43c), hex_block(board + 0x3a4, 12), i32(board + 0x450))
+      -- Alien waves and weapon (alien-sylvester.md#board-fields).
+      bclock = bclock .. string.format(',"wave":{"kind":%d,"countdown":%d,"t2c4":%d,"lockout":%d,"ax":%d,"ay":%d,"bx":%d,"by":%d,"waves":%d},"laser":%d,"food_level":%d,"max_food":%d',
+        i32(board + 0x2bc), i32(board + 0x2c0), i32(board + 0x2c4), i32(board + 0x2c8),
+        i32(board + 0x2cc), i32(board + 0x2d0), i32(board + 0x2d4), i32(board + 0x2d8),
+        i32(board + 0x45c), i32(board + 0x3e4), i32(0x5e89dc), i32(0x5df58c))
     end
     emit(string.format('{"tick":%d,"board":{"money":%s,"clock":%s,"samples":"%s"},"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
       t, tostring(board and i32(board + OFF.money) or "null"), bclock, samples, table.concat(counts, ","), table.concat(fish, ","),
