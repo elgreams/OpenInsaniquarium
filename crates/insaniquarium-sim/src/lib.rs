@@ -6,7 +6,10 @@ pub mod board;
 pub mod coin;
 pub mod fish;
 pub mod food;
+pub mod game;
+pub mod hatch;
 pub mod pet;
+pub mod profile;
 pub mod shop;
 pub mod sound;
 

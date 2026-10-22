@@ -17,6 +17,9 @@ use sexy_core::sound::{Pcm, decode_au};
 /// remap 0,22 → 4,0).
 pub const TANK1_SONG: (&str, i32) = ("music/Insaniq2.mo3", 0);
 
+/// The hatch-screen song: track (2, 54) → `Insaniq2.mo3` order 49.
+pub const HATCH_SONG: (&str, i32) = ("music/Insaniq2.mo3", 49);
+
 /// The alien song: `Alien.mo3` (track 1) from the start (`music.md`).
 pub const ALIEN_SONG: (&str, i32) = ("music/Alien.mo3", 0);
 

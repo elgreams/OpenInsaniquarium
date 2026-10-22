@@ -31,6 +31,7 @@ pub enum Sound {
     Explode,
     Explosion1,
     Diamond,
+    Hatch,
 }
 
 impl Sound {
@@ -63,6 +64,7 @@ impl Sound {
             Sound::Explode => "SOUND_EXPLODE",
             Sound::Explosion1 => "SOUND_EXPLOSION1",
             Sound::Diamond => "SOUND_DIAMOND",
+            Sound::Hatch => "SOUND_HATCH",
         }
     }
 

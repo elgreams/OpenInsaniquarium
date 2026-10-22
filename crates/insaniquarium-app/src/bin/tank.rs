@@ -1,13 +1,16 @@
-//! Playable tank prototype (levels 1-1 and 1-2): runs `insaniquarium-sim` at
-//! the original's 28 ms tick and draws its state. Click to drop food, collect
-//! coins and shoot aliens.
+//! Playable Adventure prototype (tank 1): runs `insaniquarium-sim` at the
+//! original's 28 ms tick and draws its state. Click to drop food, collect
+//! coins and shoot aliens; the last egg piece leads to the hatch screen and
+//! on to the next level (progress lasts for the session).
 //!
-//! Usage: `cargo run --bin tank -- --data <install> [--level 1|2] [--seed N] [--no-music]`
+//! Usage: `cargo run --bin tank -- --data <install> [--level N] [--seed N] [--no-music] [--finish]`
+//! (`--finish` buys the last egg piece at once, to reach the hatch screen.)
 //!
 //! Draw rules come from the specs: guppies `fish-guppy.md#animation-and-drawing`,
 //! food `food.md`, coins `coin.md`, Stinky `pet-stinky.md#drawing`, aliens,
 //! warps, shots and corpses `alien-sylvester.md#7-drawing-and-sound-presentation`,
-//! shadows `board.md#shadows`.
+//! shadows `board.md#shadows`, dialogs `framework/dialog.md`, hatch screen
+//! `screens/hatch-screen.md`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,14 +29,17 @@ use bevy::sprite_render::Material2dPlugin;
 use bevy::window::PrimaryWindow;
 use insaniquarium_app::additive::{Additive, AdditiveMaterial};
 use insaniquarium_app::assets::{
-    ALIEN_SONG, GameImages, TANK1_SONG, load_sound_bytes, render_song,
+    ALIEN_SONG, GameImages, HATCH_SONG, TANK1_SONG, load_sound_bytes, render_song,
 };
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::{Dialog, Input};
+use insaniquarium_sim::game::{Game, HatchInput, Screen};
+use insaniquarium_sim::hatch::Hatch;
 use insaniquarium_sim::pet::Pet;
+use insaniquarium_sim::profile::Profile;
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
-use insaniquarium_sim::sound::{Music as MusicCue, Sound};
+use insaniquarium_sim::sound::{Music as MusicCue, Played, Sound};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
@@ -77,6 +83,15 @@ const SHEETS: &[&str] = &[
     "IMAGE_SMOKETINY",
     "IMAGE_SMOKESMALL",
     "IMAGE_SMOKEMISSILE",
+    "IMAGE_HATCHSCREEN",
+    "IMAGE_HATCHREFLECTION",
+    "IMAGE_EGGCRACK1",
+    "IMAGE_EGGCRACK2",
+    "IMAGE_EGGSHARDS",
+    "IMAGE_NIKO",
+    "IMAGE_ITCHY",
+    "IMAGE_PREGO",
+    "IMAGE_ZORF",
 ];
 
 fn main() {
@@ -102,15 +117,15 @@ fn main() {
         .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
         .collect();
     // TODO: stream instead of pre-rendering; 5 minutes loops acceptably.
-    let (music, alien_music) = if args.iter().any(|a| a == "--no-music") {
-        (None, None)
+    let (music, alien_music, hatch_music) = if args.iter().any(|a| a == "--no-music") {
+        (None, None, None)
     } else {
         let song = |(path, order): (&str, i32)| {
             render_song(&data, path, order, 300)
                 .inspect_err(|e| eprintln!("music disabled: {e}"))
                 .ok()
         };
-        (song(TANK1_SONG), song(ALIEN_SONG))
+        (song(TANK1_SONG), song(ALIEN_SONG), song(HATCH_SONG))
     };
 
     // The sim never reads the clock; the app picks the seed, as the
@@ -124,15 +139,23 @@ fn main() {
         });
     let mut global = MtRand::new(seed);
     let app_rng = MtRand::new(global.next_u31());
-    // Level 1-2 owns Stinky (won on 1-1). TODO(M4): profiles and the hatch
-    // screen decide this.
-    let level = arg("--level").and_then(|s| s.parse().ok()).unwrap_or(1);
-    let pets: &[i32] = if level >= 2 {
-        &[insaniquarium_sim::pet::STINKY]
-    } else {
-        &[]
-    };
-    let board = Board::start_level(app_rng, global, 1, level, pets);
+    // Session-only progress (TODO(M4): profiles and saves). `--level N`
+    // starts at 1-N as if the earlier tank-1 levels were won.
+    let level: i32 = arg("--level").and_then(|s| s.parse().ok()).unwrap_or(1);
+    let mut profile = Profile::default();
+    for l in 1..level.clamp(1, 5) {
+        profile.finish_level(1, l);
+    }
+    let mut game = Game::new(profile, app_rng, global);
+    if args.iter().any(|a| a == "--finish") {
+        // Dev shortcut: buy the last egg piece now (→ hatch screen).
+        if let Screen::Tank(b) = &mut game.screen {
+            b.money = 10_000;
+            b.egg_count = 3;
+            b.shop.reveal(Slot::EggPiece, false);
+        }
+        game.step_tank(&[Input::Buy(Slot::EggPiece)]);
+    }
 
     App::new()
         .add_plugins(
@@ -151,8 +174,10 @@ fn main() {
         .add_plugins(Material2dPlugin::<AdditiveMaterial>::default())
         .insert_resource(Time::<Fixed>::from_duration(TICK))
         .insert_resource(Sim {
-            board,
+            game,
             pending: Vec::new(),
+            hatch_inputs: Vec::new(),
+            hatch_sound: false,
         })
         .insert_resource(Grid(
             SHEETS
@@ -168,6 +193,7 @@ fn main() {
         .insert_resource(Music {
             tank: music,
             alien: alien_music,
+            hatch: hatch_music,
         })
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold12.txt").ok(),
@@ -185,6 +211,18 @@ fn main() {
             tiny: ImageFont::load(&data, "data/Pix118.txt").ok(),
             money: None,
             dialog: None,
+            dialog_button: None,
+            hatch_fonts: [
+                "data/JungleFever17outline.txt",
+                "data/JungleFever15outline.txt",
+                "data/JungleFever12outline.txt",
+                "data/JungleFever10outline.txt",
+            ]
+            .map(|p| ImageFont::load(&data, p).ok())
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .and_then(|v| v.try_into().ok()),
+            hatch: None,
         })
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse, hud_text, draw, title).chain())
@@ -194,10 +232,20 @@ fn main() {
 
 #[derive(Resource)]
 struct Sim {
-    board: Board,
+    game: Game,
     /// Clicks since the last tick, applied before it (like the original's
     /// message pump running between updates).
     pending: Vec<Input>,
+    hatch_inputs: Vec<HatchInput>,
+    /// The hatch screen asked for its sound this tick.
+    hatch_sound: bool,
+}
+
+impl Sim {
+    /// The tank, when it's the current screen.
+    fn board(&self) -> Option<&Board> {
+        self.game.board()
+    }
 }
 
 #[derive(Resource)]
@@ -208,6 +256,7 @@ struct Sources(GameImages);
 struct Grid(HashMap<&'static str, (u32, u32)>);
 
 const ALL_SOUNDS: &[Sound] = &[
+    Sound::Hatch,
     Sound::Awooga,
     Sound::Roar,
     Sound::Zap,
@@ -244,6 +293,7 @@ struct SoundBytes(HashMap<&'static str, Vec<u8>>);
 struct Music {
     tank: Option<Vec<u8>>,
     alien: Option<Vec<u8>>,
+    hatch: Option<Vec<u8>>,
 }
 
 /// The two looping song players and the one fading in (`music.md`: linear
@@ -252,6 +302,10 @@ struct Music {
 struct Songs {
     tank: Option<Entity>,
     alien: Option<Entity>,
+    /// The hatch screen's song: starts at once, no fade, while it's shown.
+    hatch: Option<Entity>,
+    /// The screen the songs were last set up for (true = hatch screen).
+    on_hatch: bool,
     /// Target: true = alien song.
     alien_on: bool,
     tank_vol: f32,
@@ -274,6 +328,14 @@ struct Hud {
     dialog_fonts: Option<[ImageFont; 3]>,
     money: Option<(i32, Handle<Image>, UVec2)>,
     dialog: Option<(Dialog, Handle<Image>, UVec2)>,
+    /// The dialog's button rect in screen pixels (x, y, w, h).
+    dialog_button: Option<(i32, i32, i32, i32)>,
+    /// Hatch-screen fonts: 17, 15, 12 and 10 outline.
+    hatch_fonts: Option<[ImageFont; 4]>,
+    /// Hatch screen for a pet: title bar with "You have found:", the name,
+    /// the description, and the Continue button ("Please Wait..." /
+    /// "Click Here to Continue"), each a full 640×480 overlay.
+    hatch: Option<(i32, [Handle<Image>; 4])>,
     /// `FONT_TINY` for button prices.
     tiny: Option<ImageFont>,
     /// `FONT_JUNGLEFEVER10OUTLINE`: help-arrow captions and the tank label.
@@ -335,9 +397,12 @@ fn setup(
     };
     let tank = song(music.tank.take(), 1.0);
     let alien = song(music.alien.take(), 0.0);
+    let hatch = song(music.hatch.take(), 0.0);
     commands.insert_resource(Songs {
         tank,
         alien,
+        hatch,
+        on_hatch: false,
         alien_on: false,
         tank_vol: 1.0,
         alien_vol: 0.0,
@@ -387,7 +452,12 @@ fn setup(
 
 fn step(mut sim: ResMut<Sim>) {
     let inputs = std::mem::take(&mut sim.pending);
-    sim.board.step(&inputs);
+    let hatch_inputs = std::mem::take(&mut sim.hatch_inputs);
+    sim.hatch_sound = false;
+    match sim.game.screen {
+        Screen::Tank(_) => sim.game.step_tank(&inputs),
+        Screen::Hatch(_) => sim.hatch_sound = sim.game.step_hatch(&hatch_inputs).sound,
+    }
 }
 
 fn play_sounds(
@@ -397,7 +467,12 @@ fn play_sounds(
     mut handles: Local<SoundHandles>,
     mut audio: ResMut<Assets<AudioSource>>,
 ) {
-    for p in &sim.board.sounds {
+    let hatch = sim.hatch_sound.then_some(Played {
+        sound: Sound::Hatch,
+        volume: 1.0,
+    });
+    let sounds = sim.board().map_or(&[][..], |b| &b.sounds[..]);
+    for p in sounds.iter().chain(&hatch) {
         let id = p.sound.id();
         let h = match handles.0.get(id) {
             Some(h) => h.clone(),
@@ -420,12 +495,29 @@ fn play_sounds(
 /// Alien/tank song switches with the original's linear fades, one step per
 /// tick: out at 0.008, in at 0.002 (`assets/music.md`).
 fn play_music(sim: Res<Sim>, mut songs: ResMut<Songs>, mut sinks: Query<&mut AudioSink>) {
-    match sim.board.music {
+    // Screen changes stop all music and start the new screen's song at
+    // full volume (hatch: `0x0054b1a0(2, 54)`; level start: tank song).
+    let on_hatch = sim.board().is_none();
+    if on_hatch != songs.on_hatch {
+        songs.on_hatch = on_hatch;
+        songs.alien_on = false;
+        let (t, h) = if on_hatch { (0.0, 1.0) } else { (1.0, 0.0) };
+        songs.tank_vol = t;
+        songs.alien_vol = 0.0;
+        for (e, vol) in [(songs.tank, t), (songs.alien, 0.0), (songs.hatch, h)] {
+            if let Some(mut sink) = e.and_then(|e| sinks.get_mut(e).ok()) {
+                let _ = sink.try_seek(Duration::ZERO);
+                sink.set_volume(Volume::Linear(vol));
+            }
+        }
+    }
+    let Some(board) = sim.board() else { return };
+    match board.music {
         Some(MusicCue::Alien) => songs.alien_on = true,
         Some(MusicCue::Tank) => songs.alien_on = false,
         None => {}
     }
-    let restart = sim.board.music.is_some();
+    let restart = board.music.is_some();
     let on = songs.alien_on;
     let step = |v: &mut f32, up: bool| {
         *v = if up {
@@ -454,46 +546,50 @@ fn play_music(sim: Res<Sim>, mut songs: ResMut<Songs>, mut sinks: Query<&mut Aud
 fn mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     window: Query<&Window, With<PrimaryWindow>>,
+    hud: Res<Hud>,
     mut sim: ResMut<Sim>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
     let Ok(w) = window.single() else { return };
-    if sim.board.dialog.is_some() {
-        // TODO: draw the dialog; any click presses its button for now.
-        sim.pending.push(Input::DismissDialog);
+    let Some(p) = w.cursor_position() else { return };
+    let (x, y) = (p.x as i32, p.y as i32);
+    let Some(board) = sim.board() else {
+        // Hatch screen: holding the button down on the screen skips the
+        // egg; the Continue button acts on release (`hatch-screen.md#6`).
+        let (bx, by, bw, bh) = HATCH_CONTINUE;
+        let on_button = (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y);
+        if on_button && buttons.just_released(MouseButton::Left) {
+            sim.hatch_inputs.push(HatchInput::Continue);
+        } else if !on_button && buttons.pressed(MouseButton::Left) {
+            sim.hatch_inputs.push(HatchInput::Held);
+        }
+        return;
+    };
+    if board.dialog.is_some() {
+        // Only the dialog's button closes it, on release (`dialog.md`).
+        // Before its image exists, any click does.
+        let on_button = hud.dialog_button.is_none_or(|(bx, by, bw, bh)| {
+            (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y)
+        });
+        if buttons.just_released(MouseButton::Left) && on_button {
+            sim.pending.push(Input::DismissDialog);
+        }
         return;
     }
-    if let Some(p) = w.cursor_position() {
-        sim.pending.push(Input::Click {
-            x: p.x as i32,
-            y: p.y as i32,
-        });
+    if buttons.just_pressed(MouseButton::Left) {
+        sim.pending.push(Input::Click { x, y });
     }
 }
 
 fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
-    if let Ok(mut w) = window.single_mut() {
-        let note = if sim.board.level_complete {
-            " — Level complete! (hatch screen not implemented)"
-        } else {
-            ""
-        };
-        let note2 = match sim.board.dialog {
-            Some(Dialog::LastFishDied) => " — Your last fish has died! Click to continue",
-            Some(Dialog::GameOver) => " — Game over",
-            Some(Dialog::OutOfMoney) => " — Out of money! Click to continue",
-            Some(Dialog::AlienWarning) => " — DANGER! An alien is coming. Click to continue",
-            None => "",
-        };
-        let t = format!(
-            "Insaniquarium — tank {}-{} — ${}{note}{note2}",
-            sim.board.tank, sim.board.level, sim.board.money
-        );
-        if w.title != t {
-            w.title = t;
-        }
+    let Ok(mut w) = window.single_mut() else {
+        return;
+    };
+    let t = match sim.board() {
+        Some(b) => format!("Insaniquarium — tank {}-{} — ${}", b.tank, b.level, b.money),
+        None => "Insaniquarium".into(),
+    };
+    if w.title != t {
+        w.title = t;
     }
 }
 
@@ -961,7 +1057,18 @@ fn hud_text(
     mut hud: ResMut<Hud>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let b = &sim.board;
+    if let Screen::Hatch(h) = &sim.game.screen {
+        let hatch = &h.hatch;
+        if hud.hatch.as_ref().is_none_or(|h| h.0 != hatch.pet)
+            && let Some(fonts) = &hud.hatch_fonts
+            && let Some(imgs) = render_hatch_text(&src.0, fonts, hatch.pet)
+        {
+            let [a, b, c, d] = imgs.map(|i| images.add(to_bevy(&i)));
+            hud.hatch = Some((hatch.pet, [a, b, c, d]));
+        }
+        return;
+    }
+    let Some(b) = sim.board() else { return };
     let mut want: Vec<(String, bool)> = Slot::ALL
         .into_iter()
         .filter(|&s| b.shop.revealed[s as usize])
@@ -994,16 +1101,20 @@ fn hud_text(
     }
     match b.dialog {
         Some(d) if hud.dialog.as_ref().is_none_or(|x| x.0 != d) => {
-            if let Some(img) = hud
+            if let Some((img, button)) = hud
                 .dialog_fonts
                 .as_ref()
                 .and_then(|f| render_dialog(&src.0, f, d))
             {
                 let size = UVec2::new(img.width, img.height);
                 hud.dialog = Some((d, images.add(to_bevy(&img)), size));
+                hud.dialog_button = Some(button);
             }
         }
-        None => hud.dialog = None,
+        None => {
+            hud.dialog = None;
+            hud.dialog_button = None;
+        }
         _ => {}
     }
 }
@@ -1030,7 +1141,11 @@ fn dialog_text(d: Dialog) -> (&'static str, &'static str) {
 /// A `MoneyDialog` rendered to one image (`framework/dialog.md`): the panel
 /// as a 3×3 box, the header, the wrapped body and the "Click to Continue"
 /// button. Drawn at `DIALOG_POS`.
-fn render_dialog(img: &GameImages, [head, body, btn]: &[ImageFont; 3], d: Dialog) -> Option<Rgba> {
+fn render_dialog(
+    img: &GameImages,
+    [head, body, btn]: &[ImageFont; 3],
+    d: Dialog,
+) -> Option<(Rgba, (i32, i32, i32, i32))> {
     let panel = img.get("IMAGE_DIALOG")?;
     let button = img.get("IMAGE_DIALOGBUTTON")?;
     let (header, text) = dialog_text(d);
@@ -1069,7 +1184,8 @@ fn render_dialog(img: &GameImages, [head, body, btn]: &[ImageFont; 3], d: Dialog
         by + (bh + btn.ascent()) / 2 - 2,
         [255, 255, 100],
     );
-    Some(out)
+    let (px, py) = (DIALOG_POS.0 as i32, DIALOG_POS.1 as i32);
+    Some((out, (px + bx, py + by, bw, bh)))
 }
 
 /// `NewDialog` places board dialogs at (143, 142).
@@ -1103,7 +1219,51 @@ fn draw(
     for e in &old {
         commands.entity(e).despawn();
     }
-    let b = &sim.board;
+    let cels = match &sim.game.screen {
+        Screen::Tank(b) => tank_cels(b),
+        Screen::Hatch(h) => hatch_cels(&h.hatch),
+    };
+    let mut slots = pool.iter_mut();
+    for c in &cels {
+        if !c.additive {
+            if let Some(b) = c.bundle(&sheets) {
+                commands.spawn((Drawn, b.0, b.1, b.2));
+            }
+            continue;
+        }
+        let Some((mat, transform)) = c.additive_parts(&sheets) else {
+            continue;
+        };
+        if let Some((p, mut tf, mut vis)) = slots.next() {
+            if let Some(mut m) = materials.get_mut(&p.0) {
+                m.base = mat;
+            }
+            *tf = transform;
+            *vis = Visibility::Inherited;
+        } else {
+            let h = materials.add(AdditiveMaterial {
+                base: mat,
+                extension: Additive {},
+            });
+            commands.spawn((
+                Pooled(h.clone()),
+                Mesh2d(quad.0.clone()),
+                MeshMaterial2d(h),
+                transform,
+            ));
+        }
+    }
+    for (_, _, mut vis) in slots {
+        vis.set_if_neq(Visibility::Hidden);
+    }
+    match &sim.game.screen {
+        Screen::Tank(b) => tank_text(&mut commands, b, &hud),
+        Screen::Hatch(h) => hatch_text(&mut commands, &h.hatch, &hud),
+    }
+}
+
+/// The tank: back to front as in `Board::RebuildZOrder` (board.md).
+fn tank_cels(b: &Board) -> Vec<Cel<'static>> {
     let mut cels = vec![Cel::new("IMAGE_AQUARIUM1", 0, 0, 0, 0, 0.0)];
     // Back to front as in Board::RebuildZOrder (board.md): shadows, dead
     // aliens, warps, food, guppies, aliens, pets, shots, coins.
@@ -1178,39 +1338,10 @@ fn draw(
     }
     cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, 10.0));
     shop_cels(b, &mut cels);
-    let mut slots = pool.iter_mut();
-    for c in &cels {
-        if !c.additive {
-            if let Some(b) = c.bundle(&sheets) {
-                commands.spawn((Drawn, b.0, b.1, b.2));
-            }
-            continue;
-        }
-        let Some((mat, transform)) = c.additive_parts(&sheets) else {
-            continue;
-        };
-        if let Some((p, mut tf, mut vis)) = slots.next() {
-            if let Some(mut m) = materials.get_mut(&p.0) {
-                m.base = mat;
-            }
-            *tf = transform;
-            *vis = Visibility::Inherited;
-        } else {
-            let h = materials.add(AdditiveMaterial {
-                base: mat,
-                extension: Additive {},
-            });
-            commands.spawn((
-                Pooled(h.clone()),
-                Mesh2d(quad.0.clone()),
-                MeshMaterial2d(h),
-                transform,
-            ));
-        }
-    }
-    for (_, _, mut vis) in slots {
-        vis.set_if_neq(Visibility::Hidden);
-    }
+    cels
+}
+
+fn tank_text(commands: &mut Commands, b: &Board, hud: &Hud) {
     // Money label: rect (535, 40, 80, h), right-aligned → right edge 615
     // (shop-bar.md#bar-money-counter-flash-help-arrows). The rendered
     // bitmap has a 4 px pad on each side.
@@ -1248,4 +1379,246 @@ fn draw(
     if let Some((_, h, _)) = &hud.dialog {
         commands.spawn(text_sprite(h, DIALOG_POS.0, DIALOG_POS.1, 12.0));
     }
+}
+
+/// The hatch screen's Continue button rect (`hatch-screen.md#3`).
+const HATCH_CONTINUE: (i32, i32, i32, i32) = (186, 445, 264, 29);
+
+/// Name and description of a pet on the hatch screen (tank 1 for now).
+/// TODO(spec): the other pets' text.
+fn pet_text(pet: i32) -> (&'static str, &'static [&'static str]) {
+    match pet {
+        0 => (
+            "STINKY the Snail",
+            &[
+                "STINKY roams around the",
+                "bottom of your tank, catching",
+                "any coins you may have missed.",
+            ],
+        ),
+        1 => (
+            "NIKO the Oyster",
+            &[
+                "NIKO produces pearls that",
+                "you can click on for a",
+                "hefty sum of money.",
+            ],
+        ),
+        2 => (
+            "ITCHY the Swordfish",
+            &["ITCHY helps you by attacking", "aliens when they appear."],
+        ),
+        3 => (
+            "PREGO the Momma Fish",
+            &[
+                "PREGO helps populate your",
+                "tank by giving birth to a new",
+                "baby guppy every so often.",
+            ],
+        ),
+        4 => (
+            "ZORF the Sea Horse",
+            &["ZORF gives you a hand in", "keeping your fish fed."],
+        ),
+        _ => ("", &[]),
+    }
+}
+
+/// The hatch screen's text layers, each 640×480 (`hatch-screen.md#5`):
+/// [title bar + "You have found:", name, description + "saved", the
+/// Continue button "Please Wait..." / "Click Here to Continue"].
+/// Text x is centred as `(650 − width) / 2 − 3`; y is the baseline.
+fn render_hatch_text(
+    img: &GameImages,
+    [f17, f15, f12, f10]: &[ImageFont; 4],
+    pet: i32,
+) -> Option<[Rgba; 4]> {
+    let centre = |f: &ImageFont, t: &str| ((650 - f.width(t.as_bytes())) >> 1) - 3;
+    let layer = || Rgba::new_transparent(W as u32, H as u32);
+    let (name, lines) = pet_text(pet);
+    let mut title = layer();
+    if let Some(t) = img.get("IMAGE_SCREENTITLE") {
+        title.draw_image_box(t, (20, 0, 600, t.height as i32));
+    }
+    f17.draw(&mut title, b"You have found:", 215, 25, [255, 200, 0]);
+    let mut n = layer();
+    let nf = if matches!(pet, 9 | 11 | 14 | 21) {
+        f12
+    } else {
+        f15
+    };
+    nf.draw(
+        &mut n,
+        name.as_bytes(),
+        centre(nf, name),
+        260,
+        [255, 200, 0],
+    );
+    let mut desc = layer();
+    for (i, l) in lines.iter().enumerate() {
+        f10.draw(
+            &mut desc,
+            l.as_bytes(),
+            centre(f10, l),
+            300 + 20 * i as i32,
+            [255; 3],
+        );
+    }
+    f10.draw(
+        &mut desc,
+        b"Your game has been saved.",
+        221,
+        390,
+        [255, 255, 100],
+    );
+    // Both button labels in one layer: "Please Wait..." on top, the
+    // clickable label 30 px lower (the draw picks one by clipping).
+    let mut button = layer();
+    if let Some(b) = img.get("IMAGE_MAINBUTTON") {
+        let (x, y, w, h) = HATCH_CONTINUE;
+        let up = b.crop(0, 0, b.width / 3, b.height);
+        for (k, label) in ["Please Wait...", "Click Here to Continue"]
+            .iter()
+            .enumerate()
+        {
+            let yy = y - 30 * (1 - k as i32);
+            button.draw_image_box(&up, (x, yy, w, h));
+            let tx = x + (w - f12.width(label.as_bytes())) / 2;
+            f12.draw(
+                &mut button,
+                label.as_bytes(),
+                tx,
+                yy + (h + f12.ascent()) / 2 - 3,
+                [255, 240, 0],
+            );
+        }
+    }
+    Some([title, n, desc, button])
+}
+
+/// Egg bob by `T % 32` (`hatch-screen.md#5` step 5).
+fn egg_bob(t: i32) -> i32 {
+    [0, -1, -2, -1, 0, 1, 2, 1][(t % 32 / 4) as usize]
+}
+
+/// Shard velocities (px per tick) for the 8 `IMAGE_EGGSHARDS` cels.
+const SHARDS: [(i32, i32); 8] = [
+    (1, -10),
+    (-11, -15),
+    (-14, 3),
+    (12, -13),
+    (-15, 10),
+    (11, 5),
+    (13, 14),
+    (-1, 12),
+];
+
+/// The hatch screen's images (`hatch-screen.md#5`), `T` = updates so far.
+fn hatch_cels(h: &Hatch) -> Vec<Cel<'static>> {
+    let t = h.t;
+    let (jx, jy) = h.jitter;
+    let b = egg_bob(t);
+    let mut cels = vec![Cel::new("IMAGE_HATCHSCREEN", 0, 0, 0, 0, 0.0)];
+    if t <= 80 {
+        let cel = if t < 56 { 0 } else { (t - 56) / 2 };
+        cels.push(Cel::new("IMAGE_EGGCRACK1", cel, 0, 258, 60 + b, 1.0));
+    } else if t < 140 {
+        // (At T = 140 the original asks for cel 10 of 10: nothing drawn.)
+        let cel = if t < 120 { 0 } else { (t - 120) / 2 };
+        cels.push(Cel::new(
+            "IMAGE_EGGCRACK2",
+            cel,
+            0,
+            258 + jx,
+            60 + jy + b,
+            1.0,
+        ));
+    } else if t > 140 {
+        // The pet swims in the incubator window: a clip of its sheet.
+        if let Some(sheet) = pet_sheet(h.pet) {
+            let y = match h.pet {
+                0 | 5 => 100,
+                1 => 70,
+                _ => 90,
+            };
+            let f = match h.pet {
+                5 | 10 | 11 | 14 | 20 => (t % 40) / 4,
+                1 | 6 => {
+                    let f = t % 20;
+                    if f > 9 { 19 - f } else { f }
+                }
+                _ => (t % 20) / 2,
+            };
+            cels.push(Cel::new(sheet, f, 0, 278, y, 1.0));
+        }
+    }
+    // The overlay, on top of everything: reflection, then flying shards.
+    cels.push(Cel::new("IMAGE_HATCHREFLECTION", 0, 0, 240, 60, 20.0));
+    if (140..200).contains(&t) {
+        let s = t - 140;
+        for (i, (vx, vy)) in SHARDS.iter().enumerate() {
+            cels.push(Cel::new(
+                "IMAGE_EGGSHARDS",
+                i as i32,
+                0,
+                268 + vx * s,
+                70 + vy * s,
+                20.1,
+            ));
+        }
+    }
+    cels
+}
+
+/// A pet's full-size swim sheet (tank 1 pets for now).
+fn pet_sheet(pet: i32) -> Option<&'static str> {
+    Some(match pet {
+        0 => "IMAGE_STINKY",
+        1 => "IMAGE_NIKO",
+        2 => "IMAGE_ITCHY",
+        3 => "IMAGE_PREGO",
+        4 => "IMAGE_ZORF",
+        _ => return None,
+    })
+}
+
+fn hatch_text(commands: &mut Commands, h: &Hatch, hud: &Hud) {
+    let Some((_, [title, name, desc, button])) = &hud.hatch else {
+        return;
+    };
+    let full = |img: &Handle<Image>, z: f32, rect: Option<Rect>| {
+        let mut s = Sprite::from_image(img.clone());
+        s.rect = rect;
+        let (x, y) = rect.map_or((0.0, 0.0), |r| (r.min.x, r.min.y));
+        (
+            Drawn,
+            s,
+            Anchor::TOP_LEFT,
+            Transform::from_xyz(x - W / 2.0, H / 2.0 - y, z),
+        )
+    };
+    commands.spawn(full(title, 5.0, None));
+    if h.t > 140 {
+        commands.spawn(full(name, 5.1, None));
+    }
+    if h.t > 170 {
+        commands.spawn(full(desc, 5.2, None));
+    }
+    // The button: "Please Wait..." until clickable, then the real label
+    // (drawn 30 px lower in the layer, so shift its source rect).
+    let (x, y, w, bh) = HATCH_CONTINUE;
+    let (x, w, bh) = (x as f32, w as f32, bh as f32);
+    let src_y = if h.can_continue() {
+        y as f32
+    } else {
+        y as f32 - 30.0
+    };
+    let mut s = Sprite::from_image(button.clone());
+    s.rect = Some(Rect::new(x, src_y, x + w, src_y + bh));
+    commands.spawn((
+        Drawn,
+        s,
+        Anchor::TOP_LEFT,
+        Transform::from_xyz(x - W / 2.0, H / 2.0 - y as f32, 19.0),
+    ));
 }

@@ -191,7 +191,7 @@ TODO: RNG inside the spawn functions for slots 1, 4, 6–9 (not reachable on 1-1
    3. Adventure without `profile+0x59`: record the level (`0x00514510`), advance the profile tank/level (`0x00501370`), unlock the pet with index `tank*5 + level − 6` (`0x00501420`; tank 5 uses 0x13 instead), and **open the hatch screen with `App::ShowHatchScreen` @ `0x0054be80`**.
    4. With `profile+0x59` set, the path goes through `0x0053dc10` instead.
 
-**Steps 1–7 use no RNG**, so egg pieces 1 and 2 consume zero draws. RNG inside the hatch screen is out of sim scope (TODO).
+**Steps 1–7 use no RNG**, so egg pieces 1 and 2 consume zero draws. Step 8 doesn't draw either. The hatch screen itself draws 2 app values per tick (`screens/hatch-screen.md#7-rng`).
 
 ## Button art
 
@@ -272,4 +272,4 @@ The Menu button `board+0x114` (id 0x7b, `IMAGE_OPTIONSBUTTON`/`…D`) sits at (5
 - Where a mouse-down purchase falls relative to `Board::Update` within a frame (CE).
 - Whether ButtonWidget hit testing is per-pixel or rectangular.
 - The loan amount and mechanism behind the OUT OF MONEY dialog (`0x00537e20` clears `+0x450`).
-- RNG inside `ShowHatchScreen` and the other fish-spawn functions.
+- RNG inside the other fish-spawn functions. (`ShowHatchScreen`: see `screens/hatch-screen.md`.)
