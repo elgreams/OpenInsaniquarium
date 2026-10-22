@@ -1,6 +1,7 @@
 //! Deterministic Insaniquarium simulation. No Bevy, no I/O, no wall clock:
 //! state advances only via fixed ticks and input events.
 
+pub mod alien;
 pub mod board;
 pub mod coin;
 pub mod fish;

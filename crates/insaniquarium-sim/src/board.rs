@@ -5,6 +5,7 @@
 
 use sexy_core::rand::MtRand;
 
+use crate::alien::{Alien, AlienOut, DeadAlien, Shot};
 use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
@@ -90,9 +91,26 @@ pub struct Board {
     /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
     /// 150 ticks instead of 20.
     pub tutorial: bool,
-    /// Aliens present (`board+0xb8`/`+0xf4` non-empty). Aliens aren't
-    /// modelled yet; this flag lets traces with aliens be represented.
+    /// Aliens present (`board+0xb8`/`+0xf4` non-empty); kept in sync with
+    /// `aliens`.
     pub has_aliens: bool,
+    /// `board+0xb8`: aliens.
+    pub aliens: Vec<Alien>,
+    /// `board+0xd8`: shots (click flashes, effect sparks).
+    pub shots: Vec<Shot>,
+    /// `board+0x9c`: dead aliens.
+    pub dead_aliens: Vec<DeadAlien>,
+    /// Alien waves (`alien-sylvester.md#1`): `+0x2bc` kind, `+0x2c0`
+    /// countdown, `+0x2c4`, `+0x2c8` food lockout, spawn positions, count.
+    pub wave_kind: i32,
+    pub wave_countdown: i32,
+    pub wave_2c4: i32,
+    pub food_lockout: i32,
+    pub wave_a: (i32, i32),
+    pub wave_b: (i32, i32),
+    pub waves: i32,
+    /// `+0x3e4`: laser level (damage 3 × laser per hit).
+    pub laser: i32,
     /// App RNG (`[app+0x7b0]`) — almost all gameplay randomness.
     pub rng: MtRand,
     /// Global RNG (`0x005eb928`).
@@ -134,6 +152,17 @@ impl Board {
             pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
+            aliens: Vec::new(),
+            shots: Vec::new(),
+            dead_aliens: Vec::new(),
+            wave_kind: 0,
+            wave_countdown: 3000,
+            wave_2c4: 0,
+            food_lockout: 0,
+            wave_a: (0, 0),
+            wave_b: (0, 0),
+            waves: 0,
+            laser: 2,
             rng,
             global_rng,
             tick: 0,
@@ -183,6 +212,15 @@ impl Board {
         b.money = 200;
         b.shop = Shop::adventure(tank, level);
         b.tutorial = tank == 1 && level == 1;
+        // SetupShop's alien table, tank 1 (`alien-sylvester.md#level-setup`).
+        if tank == 1 {
+            (b.wave_kind, b.wave_countdown) = match level {
+                1 => (0, 3000),
+                2 => (1, 1750),
+                3 => (2, 3000),
+                _ => (3, 3000),
+            };
+        }
         // `Board::Board` (`0x00542150`): three background x positions,
         // `r % 640` each (cosmetic).
         for _ in 0..3 {
@@ -236,9 +274,14 @@ impl Board {
         if let Some(slot) = self.shop.hit(x, y) {
             return self.purchase(slot);
         }
+        // With aliens present, clicks are shots (`alien-sylvester.md#41`).
+        // TODO(spec): coins inside an alien's rect re-dispatch here too.
+        if !self.aliens.is_empty() {
+            return self.shoot(x, y);
+        }
         // Widgets on top get the click first: coins are in front of fish
         // and food (z-order), last-added on top.
-        // TODO(spec): aliens, pets, fish clicks and buttons.
+        // TODO(spec): pets, fish clicks.
         if let Some(i) = self.coins.iter().rposition(|c| c.hit(x, y)) {
             let c = &mut self.coins[i];
             if !c.collected {
@@ -248,7 +291,7 @@ impl Board {
             }
             return ClickResult::CoinCollected;
         }
-        if !(31..=586).contains(&x) || !(61..=399).contains(&y) {
+        if !(31..=586).contains(&x) || !(61..=399).contains(&y) || self.food_lockout > 0 {
             return ClickResult::Ignored;
         }
         if self.money < self.food_price {
@@ -257,6 +300,177 @@ impl Board {
         }
         self.money -= self.food_price;
         self.add_food(x - 10, y - 10)
+    }
+
+    /// Board mouse-down with aliens present.
+    fn shoot(&mut self, x: i32, y: i32) -> ClickResult {
+        if y > 40 {
+            for i in 0..self.aliens.len() {
+                if let Some(killed) = self.aliens[i].hit(x, y, self.laser) {
+                    // `EffectShot(x − 40, y − 40, 2)` and the hit sound.
+                    self.add_effect_shot(x - 40, y - 40, 2);
+                    if killed {
+                        self.kill_alien(i);
+                        break;
+                    }
+                }
+            }
+        }
+        // Click flash `Shot` (no RNG), then the shot sound (2 draws).
+        self.shots.push(Shot {
+            kind: 0,
+            delay: 0,
+            age: 0,
+            frame: 0,
+            r: 255,
+            widget_x: x - 40,
+            widget_y: y - 40,
+        });
+        self.rng.next_u31();
+        self.rng.next_range(10);
+        ClickResult::Ignored
+    }
+
+    /// `EffectShot` (`0x005436f0`): only while fewer than 20 shots.
+    /// The Shot ctor reads its kind before writing it; a fresh block that
+    /// held a kind other than 0/2 draws an extra `% 3` delay. Freed Shot
+    /// and Shadow blocks are reused, so in practice that read is 0 or 2.
+    /// TODO(spec): heap-dependent; confirmed 1 draw on every tank 1-2 hit.
+    fn add_effect_shot(&mut self, x: i32, y: i32, kind: i32) {
+        if self.shots.len() >= 20 {
+            return;
+        }
+        let r = self.rng.next_range(200) as i32 + 50;
+        self.shots.push(Shot {
+            kind,
+            delay: 0,
+            age: 0,
+            frame: 0,
+            r,
+            widget_x: x,
+            widget_y: y,
+        });
+    }
+
+    /// `Alien` death (`0x004f9c70`), kind 1.
+    fn kill_alien(&mut self, i: usize) {
+        let a = self.aliens.remove(i);
+        let (ix, iy) = (a.widget_x, a.widget_y);
+        // Diamond drop.
+        let mut c = Coin::new(ix + 25, iy + 25, crate::coin::kind::DIAMOND);
+        c.vy = -1.0;
+        self.coins.push(c);
+        if self.aliens.is_empty() {
+            self.food_lockout = 36;
+            self.has_aliens = false;
+        }
+        // Debris (§4.3 step 5). Bubbles draw the global stream (not modelled).
+        let n = self.rng.next_u31() & 1;
+        for _ in 0..n {
+            self.rng.next_range(70);
+            self.rng.next_range(70);
+            self.rng.next_range(50);
+            self.rng.next_range(50);
+        }
+        let n = self.rng.next_range(3);
+        for _ in 0..n {
+            let k = self.rng.next_range(3) as i32 + 3;
+            let y = self.rng.next_range(50) as i32 + 20 + iy;
+            let x = self.rng.next_range(50) as i32 + 20 + ix;
+            self.add_effect_shot(x, y, k);
+            let k = self.rng.next_range(3) as i32 + 3;
+            let y = self.rng.next_range(30) as i32 + 40 + iy;
+            let x = self.rng.next_range(30) as i32 + 40 + ix;
+            self.add_effect_shot(x, y, k);
+        }
+        let n = self.rng.next_u31() & 1;
+        for _ in 0..n {
+            let k = (self.rng.next_u31() & 1) as i32 + 6;
+            let y = self.rng.next_range(50) as i32 + 20 + iy;
+            let x = self.rng.next_range(50) as i32 + 20 + ix;
+            self.add_effect_shot(x, y, k);
+            let k = (self.rng.next_u31() & 1) as i32 + 6;
+            let y = self.rng.next_range(30) as i32 + 40 + iy;
+            let x = self.rng.next_range(30) as i32 + 40 + ix;
+            self.add_effect_shot(x, y, k);
+        }
+        self.dead_aliens.push(DeadAlien {
+            life: 125,
+            widget_x: ix,
+            widget_y: iy,
+            kind: a.kind,
+            facing_right: a.vx > 0.0,
+        });
+    }
+
+    /// `DeadAlien::Update` (`0x004f6050`): debris bursts every 7 ticks.
+    fn update_dead_aliens(&mut self) {
+        let mut i = 0;
+        while i < self.dead_aliens.len() {
+            let d = &mut self.dead_aliens[i];
+            if d.life < 1 {
+                self.dead_aliens.remove(i);
+                continue;
+            }
+            d.life -= 1;
+            let (life, ix, iy) = (d.life, d.widget_x, d.widget_y);
+            if life % 7 == 0 && life > 50 {
+                // Two bubbles (positions only; bubbles draw global RNG).
+                self.rng.next_range(70);
+                self.rng.next_range(70);
+                self.rng.next_range(50);
+                self.rng.next_range(50);
+                for (k6, wide) in [(false, true), (false, false), (true, true), (true, false)] {
+                    let k = if k6 {
+                        (self.rng.next_u31() & 1) as i32 + 6
+                    } else {
+                        self.rng.next_range(3) as i32 + 3
+                    };
+                    let (m, o) = if wide { (50, 20) } else { (30, 40) };
+                    let y = self.rng.next_range(m) as i32 + o + iy;
+                    let x = self.rng.next_range(m) as i32 + o + ix;
+                    self.add_effect_shot(x, y, k);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// Wave countdown (`Board::Update` `0x005481c4`..`0x00548e05`), tank 1.
+    fn update_waves(&mut self) {
+        if self.wave_2c4 != 0 {
+            self.wave_2c4 -= 1;
+        }
+        if !self.aliens.is_empty() || self.wave_kind == 0 {
+            return;
+        }
+        self.wave_countdown -= 1;
+        match self.wave_countdown {
+            275 => {
+                self.wave_a = (
+                    self.rng.next_range(450) as i32 + 20,
+                    self.rng.next_range(195) as i32 + 105,
+                );
+                self.wave_b = (
+                    self.rng.next_range(450) as i32 + 20,
+                    self.rng.next_range(195) as i32 + 105,
+                );
+            }
+            c if c <= 0 => {
+                self.wave_2c4 = 35;
+                let a = Alien::new(self.wave_a.0, self.wave_a.1, self.wave_kind, &mut self.rng);
+                self.aliens.push(a);
+                // Its shadow.
+                self.rng.next_range(5);
+                self.has_aliens = true;
+                if self.tank == 1 && self.level == 5 {
+                    self.wave_kind = if self.rng.next_u31() & 1 != 0 { 3 } else { 9 };
+                }
+                self.waves += 1;
+                self.wave_countdown = 3000;
+            }
+            _ => {}
+        }
     }
 
     /// Coin-collect sounds (`0x004e51f0`); silver/gold pick a variant with
@@ -505,7 +719,14 @@ impl Board {
                 self.rng.next_range(6);
             }
         }
-        // Objects update in RebuildZOrder order: food, guppies, then coins.
+        // After the ambient check: `+0x2c4`, then the wave countdown.
+        self.update_waves();
+        if self.food_lockout > 0 {
+            self.food_lockout -= 1;
+        }
+        // Objects update in RebuildZOrder order: dead aliens, food, guppies,
+        // aliens, pets, shots, coins.
+        self.update_dead_aliens();
         self.foods.retain_mut(|f| f.update() == FoodStep::Keep);
         let env = FishEnv {
             paused: self.paused,
@@ -528,7 +749,27 @@ impl Board {
         for s in stage_ups {
             self.on_stage_up(s);
         }
-        // Pets (`+0xb0`) update after fish and before coins (z-order).
+        self.guppies.retain(|f| !f.dead);
+        // Aliens (`+0xb8`, pass 1).
+        let mut i = 0;
+        while i < self.aliens.len() {
+            let mut out = AlienOut::default();
+            self.aliens[i].update(&self.guppies, &mut self.rng, &mut out);
+            if let Some(g) = out.ate {
+                self.guppies.remove(g);
+                // Eat sound (`0x00538560`): one draw when not throttled.
+                if self.sample_ready(0x113, 3) {
+                    self.rng.next_range(3);
+                }
+                // TODO(spec): gore burst when `app+0x882` is set.
+            }
+            if out.died {
+                self.kill_alien(i);
+                continue;
+            }
+            i += 1;
+        }
+        // Pets (`+0xb0`) update after aliens and before coins (z-order).
         for i in 0..self.pets.len() {
             let mut out = PetOut::default();
             self.pets[i].update(self.has_aliens, &self.coins, &mut self.rng, &mut out);
@@ -539,7 +780,7 @@ impl Board {
                 self.play_collect_sound(c.kind);
             }
         }
-        self.guppies.retain(|f| !f.dead);
+        self.shots.retain_mut(Shot::update);
         let mut banked = 0;
         let long_rest = self.tutorial;
         self.coins.retain_mut(|c| match c.update(long_rest) {

@@ -79,7 +79,7 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
 1. Return if the board is paused. Run `PreUpdate`.
 2. (Drop-in flag and y < 380: vy += 0.1. Not the case at level start.)
 3. **Coin chase** (`0x004efe80`). For pet 0 it runs only when the coin list `+0xa8` is non-empty, **no aliens** are present, and the slow flag `+0x1b0` is clear. See [Coin chasing](#coin-chasing). In that case it **always reports "chasing"**, even if no coin is eligible (e.g. all are collected and flying to the counter), so step 4 is skipped and vx keeps its value. Confirmed by `tank1-2_partial`.
-4. **Wander:** set target vx from the mode: 0 → 0, 1 → −0.5, 2 → +0.5, ≥ 3 → unchanged. Then step vx toward the target by 0.1 per tick, snapping to the target if it would overshoot.
+4. **Wander:** set target vx from the mode: 0 → 0, 1 → −0.5, 2 → +0.5, ≥ 3 → unchanged; **but while in his shell (`+0x1b4 > 0`) the target is 0**. Then step vx toward the target by 0.1 per tick, snapping to the target if it would overshoot. Finally, **while in his shell, vx = 0** (whether chasing or not). Confirmed by `tank1-2_full_01`.
 5. Reroll and timers:
    - `+0x194 += 1`; `+0x198 += 1`.
    - If `+0x198 > 20`, or (`x ≤ 10` and target vx ≤ 0), or (`x ≥ 540` and target vx > 0): `+0x198 = 0`, then **app RNG `Next() % 10`**. If that is 0, **app RNG `mode = Next() % 3`**.

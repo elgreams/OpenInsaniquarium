@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::Input;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
@@ -148,6 +149,58 @@ pub fn pet_from_raw(b: &[u8]) -> Pet {
     }
 }
 
+/// An alien from its raw bytes (offsets: docs/re/objects/alien-sylvester.md).
+pub fn alien_from_raw(b: &[u8]) -> Alien {
+    Alien {
+        kind: rd_i32(b, 0x1ec),
+        warp: rd_i32(b, 0x158),
+        x: rd_f64(b, 0x160),
+        y: rd_f64(b, 0x168),
+        vx: rd_f64(b, 0x170),
+        vy: rd_f64(b, 0x178),
+        tvx: rd_f64(b, 0x180),
+        tvy: rd_f64(b, 0x188),
+        eat_delay: rd_i32(b, 0x1a0),
+        anim: rd_i32(b, 0x1b0),
+        turn: rd_i32(b, 0x1b4),
+        cel: rd_i32(b, 0x1c0),
+        divisor: rd_f64(b, 0x1b8),
+        last_vx: rd_f64(b, 0x1c8),
+        mode: rd_i32(b, 0x1d0),
+        counter: rd_i32(b, 0x1d4),
+        reroll: rd_i32(b, 0x1d8),
+        health: rd_f64(b, 0x1f0),
+        max_health: rd_f64(b, 0x1f8),
+        cooldown: rd_i32(b, 0x200),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
+/// A shot from its raw bytes.
+pub fn shot_from_raw(b: &[u8]) -> Shot {
+    Shot {
+        kind: rd_i32(b, 0x160),
+        delay: rd_i32(b, 0x164),
+        age: rd_i32(b, 0x158),
+        frame: rd_i32(b, 0x15c),
+        r: rd_i32(b, 0x168),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
+/// A dead alien from its raw bytes (lifetime at `+0x198`).
+pub fn dead_alien_from_raw(b: &[u8]) -> DeadAlien {
+    DeadAlien {
+        life: rd_i32(b, 0x198),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+        kind: rd_i32(b, 0x1a0),
+        facing_right: false,
+    }
+}
+
 fn raw_list(s: &Snapshot, list: &str) -> Vec<Vec<u8>> {
     s.state
         .get("raw")
@@ -222,6 +275,41 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| pet_from_raw(b))
         .collect();
+    board.aliens = raw_list(first, "alien")
+        .iter()
+        .map(|b| alien_from_raw(b))
+        .collect();
+    board.has_aliens = !board.aliens.is_empty();
+    board.shots = raw_list(first, "shot")
+        .iter()
+        .map(|b| shot_from_raw(b))
+        .collect();
+    board.dead_aliens = raw_list(first, "dead_alien")
+        .iter()
+        .map(|b| dead_alien_from_raw(b))
+        .collect();
+    if let Some(w) = first.state.get("board").and_then(|b| b.get("wave")) {
+        let g = |k: &str| w.get(k).and_then(Value::as_i64).unwrap_or(0) as i32;
+        board.wave_kind = g("kind");
+        board.wave_countdown = g("countdown");
+        board.wave_2c4 = g("t2c4");
+        board.food_lockout = g("lockout");
+        board.wave_a = (g("ax"), g("ay"));
+        board.wave_b = (g("bx"), g("by"));
+        board.waves = g("waves");
+    }
+    if let Some(b) = first.state.get("board") {
+        let g = |k: &str| b.get(k).and_then(Value::as_i64).map(|v| v as i32);
+        if let Some(v) = g("laser") {
+            board.laser = v;
+        }
+        if let Some(v) = g("food_level") {
+            board.food_level = v;
+        }
+        if let Some(v) = g("max_food") {
+            board.max_food = v;
+        }
+    }
     // Shop: captures record `board.revealed` (12 bytes) and `board.eggs`
     // when available; older ones are inferred from the largest guppy (the
     // tank 1-1 reveal triggers are stage-ups: medium → guppy, large → egg).
@@ -299,6 +387,20 @@ fn pet_json(p: &Pet) -> Value {
     })
 }
 
+fn alien_json(a: &Alien) -> Value {
+    json!({
+        "kind": a.kind, "warp": a.warp, "x": a.x, "y": a.y, "vx": a.vx, "vy": a.vy,
+        "tv": [a.tvx, a.tvy], "eat": a.eat_delay, "anim": [a.anim, a.turn, a.cel],
+        "last_vx": a.last_vx, "mode": [a.mode, a.counter, a.reroll],
+        "hp": a.health, "cool": a.cooldown, "widget": [a.widget_x, a.widget_y],
+    })
+}
+
+fn shot_json(s: &Shot) -> Value {
+    json!({ "kind": s.kind, "delay": s.delay, "age": s.age, "frame": s.frame, "r": s.r,
+            "widget": [s.widget_x, s.widget_y] })
+}
+
 fn coin_json(c: &Coin) -> Value {
     json!({
         "x": c.x, "y": c.y, "anim": [c.anim, c.age, c.cel], "expire": c.expire,
@@ -333,6 +435,19 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "pets".into(),
         Value::Array(board.pets.iter().map(pet_json).collect()),
+    );
+    state.insert(
+        "aliens".into(),
+        Value::Array(board.aliens.iter().map(alien_json).collect()),
+    );
+    state.insert(
+        "shots".into(),
+        Value::Array(board.shots.iter().map(shot_json).collect()),
+    );
+    state.insert(
+        "waves".into(),
+        json!({ "countdown": board.wave_countdown, "lockout": board.food_lockout,
+                "a": [board.wave_a.0, board.wave_a.1], "n": board.waves }),
     );
     // The global stream's `mti` isn't compared: the board's cosmetic bubble
     // systems draw from it and aren't modelled yet (board.md, open questions).
@@ -376,6 +491,24 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| pet_json(&pet_from_raw(b)))
                 .collect();
             s.state.insert("pets".into(), Value::Array(pets));
+            let aliens = raw_list(&s, "alien")
+                .iter()
+                .map(|b| alien_json(&alien_from_raw(b)))
+                .collect();
+            s.state.insert("aliens".into(), Value::Array(aliens));
+            let shots = raw_list(&s, "shot")
+                .iter()
+                .map(|b| shot_json(&shot_from_raw(b)))
+                .collect();
+            s.state.insert("shots".into(), Value::Array(shots));
+            if let Some(w) = s.state.get("board").and_then(|b| b.get("wave")).cloned() {
+                let g = |k: &str| w.get(k).cloned().unwrap_or(Value::Null);
+                s.state.insert(
+                    "waves".into(),
+                    json!({ "countdown": g("countdown"), "lockout": g("lockout"),
+                            "a": [g("ax"), g("ay")], "n": g("waves") }),
+                );
+            }
             // Raw hex is decoded above; drop it (and the capture's summary
             // fields) so long traces stay small in memory.
             s.state.remove("raw");
@@ -518,6 +651,50 @@ pub fn first_burst(t: &Trace, from: u32) -> Option<u32> {
         .map(|w| w[0].tick)
 }
 
+/// Snapshots read mid-update ("torn"): the board clock advanced by one but
+/// every guppy is exactly where it was while a later-updating object (a pet)
+/// moved. The capture reads guppies before pets, so a read that lands inside
+/// Board::Update shows pre-update guppies with post-update pets. Such
+/// snapshots match no whole-tick state; mask them.
+pub fn torn_snapshots(t: &Trace) -> Vec<u32> {
+    let fish_x = |s: &Snapshot| -> Vec<u64> {
+        s.state
+            .get("guppies")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|g| g.get("raw")?.as_str().and_then(hex_bytes))
+                    .map(|b| rd_f64(&b, 0x158).to_bits())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let pet_x = |s: &Snapshot| {
+        raw_list(s, "pet_other")
+            .first()
+            .map(|b| rd_f64(b, 0x158).to_bits())
+    };
+    let clock = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("clock"))
+            .and_then(Value::as_i64)
+    };
+    t.snapshots
+        .windows(2)
+        .filter(|w| {
+            let (a, b) = (&w[0], &w[1]);
+            let fa = fish_x(a);
+            clock(b).zip(clock(a)).is_some_and(|(cb, ca)| cb - ca == 1)
+                && !fa.is_empty()
+                && fa == fish_x(b)
+                && pet_x(a).is_some()
+                && pet_x(a) != pet_x(b)
+        })
+        .map(|w| w[1].tick)
+        .collect()
+}
+
 /// Inputs recovered from a capture, plus snapshot ticks that caught a click
 /// mid-frame (processed after that tick's update but before the capture
 /// read it) and so match no whole-tick sim state.
@@ -642,6 +819,31 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .or_default()
                 .push(Input::DismissDialog);
         }
+        // Shots while aliens are present: each click leaves a click-flash
+        // Shot (kind 0) at `(x − 40, y − 40)`. A new one with age 1 was made
+        // before this tick's update; age 0 means after it (mid-frame).
+        if !raw_list(s, "alien").is_empty() || !raw_list(s, "dead_alien").is_empty() {
+            let shots: Vec<Shot> = raw_list(s, "shot")
+                .iter()
+                .map(|b| shot_from_raw(b))
+                .collect();
+            let prev_n = prev_snap.map_or(0, |p| {
+                raw_list(p, "shot")
+                    .iter()
+                    .filter(|b| shot_from_raw(b).kind == 0)
+                    .count()
+            });
+            let flashes: Vec<&Shot> = shots.iter().filter(|x| x.kind == 0).collect();
+            let fresh = flashes.iter().filter(|x| x.age <= 1).count();
+            let _ = prev_n;
+            for f in flashes.iter().filter(|x| x.age <= 1).take(fresh) {
+                let click = Input::Click {
+                    x: f.widget_x + 40,
+                    y: f.widget_y + 40,
+                };
+                push(s.tick, f.age == 0, click, &mut out);
+            }
+        }
         // Egg pieces: the board's egg counter steps up.
         let eggs = |s: Option<&Snapshot>| {
             s.and_then(|s| s.state.get("board"))
@@ -659,6 +861,7 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
         prev_prev_snap = prev_snap;
         prev_snap = Some(s);
     }
+    out.dirty.extend(torn_snapshots(t));
     out
 }
 

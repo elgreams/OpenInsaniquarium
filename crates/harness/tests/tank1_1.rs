@@ -285,3 +285,69 @@ fn tank_1_2_until_alien_matches() {
         panic!("{d}");
     }
 }
+
+/// Sylvester on tank 1-2: from just before the warning through the first
+/// wave's kill, with the player's shots inferred from click flashes.
+#[test]
+fn sylvester_wave_matches() {
+    use harness::replay::{first_burst, rebase_rng, window};
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-2_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let cd = |s: &harness::trace::Snapshot| s.state["board"]["wave"]["countdown"].as_i64();
+    // On 1-2 the countdown stops at 276 for the "DANGER!" hint dialog
+    // (board paused). Dismissing it resumes the board mid-update: that tick
+    // runs Board::Update (countdown 275, warning draws) but not the objects.
+    // Start on that snapshot, where the state is consistent.
+    // The capture straddles a catch-up burst right after the dialog closes
+    // (one tick shows pets moved but not guppies, the next guppies moved
+    // twice), so start two snapshots later.
+    let warn = full
+        .snapshots
+        .iter()
+        .position(|s| cd(s) == Some(275))
+        .unwrap();
+    let mut start = warn + 2;
+    while let Some(b) = first_burst(&full, full.snapshots[start].tick) {
+        if b > full.snapshots[warn].tick + 400 {
+            break;
+        }
+        start = full.snapshots.iter().position(|s| s.tick > b).unwrap() + 1;
+    }
+    let from = full.snapshots[start].tick;
+    let end = first_burst(&full, from).unwrap_or(u32::MAX);
+    // Stop before the dead alien's first debris burst: its effect-spark
+    // constructors read a stale heap field (see alien-sylvester.md, open
+    // questions), which we don't model yet.
+    let killed = full.snapshots[start..]
+        .iter()
+        .find(|s| s.state["raw"].get("dead_alien").is_some())
+        .map_or(u32::MAX, |s| s.tick + 3);
+    let to = end.min(killed);
+    let mut t = window(&full, from, to);
+    for stream in ["app", "global"] {
+        t.header
+            .rng
+            .insert(stream.into(), rebase_rng(&full, stream, from).unwrap());
+    }
+    if let Some(serde_json::Value::Object(b)) = t.snapshots[0].state.get_mut("board") {
+        b.insert("paused".into(), serde_json::Value::Bool(false));
+    }
+    let inferred = inferred_clicks(&t);
+    let expected = inferred.clean(&decode_capture(&t));
+    let mut board = board_from_capture(&t).unwrap();
+    board.tank = 1;
+    board.level = 2;
+    board.shop = insaniquarium_sim::shop::Shop::adventure(1, 2);
+    board.paused = false;
+    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    eprintln!(
+        "sylvester: ticks {from}..={to}, {} inputs, {} masked",
+        inferred.inputs.values().map(Vec::len).sum::<usize>(),
+        inferred.dirty.len()
+    );
+    if let Some(d) = diff(&expected, &actual) {
+        panic!("{d}");
+    }
+}

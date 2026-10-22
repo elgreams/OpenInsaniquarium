@@ -102,7 +102,9 @@ impl Pet {
             self.chase(coins, out);
         }
         if !chasing {
+            // In his shell (`+0x1b4 > 0`) the target is 0, whatever the mode.
             match self.mode {
+                _ if self.shell != 0 => self.target_vx = 0.0,
                 0 => self.target_vx = 0.0,
                 1 => self.target_vx = -0.5,
                 2 => self.target_vx = 0.5,
@@ -119,6 +121,10 @@ impl Pet {
                     self.vx = self.target_vx;
                 }
             }
+        }
+        // In his shell he stops dead.
+        if self.shell != 0 {
+            self.vx = 0.0;
         }
         self.counter += 1;
         self.reroll_timer += 1;

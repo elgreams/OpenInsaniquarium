@@ -1,6 +1,6 @@
 # Alien: Sylvester (`Sexy::Alien`, type `0x16`, kind 1)
 
-Status: `draft`, static analysis only. Nothing here has been CE-confirmed yet. Addresses are inner-PE VAs; offsets are raw `this`-relative.
+Status: `draft`. **Confirmed** against `tank1-2_full_01` from the warning through the kill (420 ticks, bit-exact): countdown, warning position draws, spawn (ctor + shadow draws), warp-in, chase, every hit (damage, knockback, cooldown, click-flash and effect-shot draws), death, and the diamond drop. Not yet confirmed: the DeadAlien debris bursts (heap-dependent, below) and eating (no fish was eaten in the capture). Addresses are inner-PE VAs; offsets are raw `this`-relative.
 
 Sylvester is the first alien. In Adventure he first appears in **tank 1-2**; tank 1-1 has no alien waves. `Sexy::Alien` is one class shared by all the "simple" aliens. Its kind code is at `alien+0x1ec`, and Sylvester is **kind 1**. Kind 2 (tank 1-3) uses the same sprite with other stats (§2 table). Most of this spec also holds for kind 2.
 
@@ -333,8 +333,13 @@ Sub-costs:
   That is 4–5 global draws, and it happens even in Adventure. The earlier observation "global RNG untouched in tank play" only holds without aliens.
 - Click shot, Warp, Shot/Warp updates, Coin ctor, DeadAlien ctor, sounds: no RNG.
 
+## Note: the 1-2 "DANGER!" dialog
+
+On tank 1-2 (tutorial not completed), when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01`. Not modelled yet (`TODO`: add as a `Dialog`).
+
 ## Open questions / TODO
 
+- **Heap-dependent behaviour (measured).** In `tank1-2_full_01` every *hit* effect shot cost exactly 1 draw (its block had held kind 2 or 0). The dead alien's debris sparks (kinds 3–7) cost 1 or 2 draws each, and a simple LIFO or FIFO free-list model of the Shot blocks predicts only some ticks correctly (the allocator also recycles 0x170-byte Shadow blocks and others). Next step: watch `HeapAlloc` returns with CE on a kill and model the allocator's bin reuse.
 - **Heap-dependent behaviour.**
   - (a) The Shot ctor reads uninitialised `+0x160`, so each effect shot takes 1 or 2 draws. Shot and Shadow blocks are both `0x170` bytes, so freed blocks get reused. Measure with CE how many draws a hit costs.
   - (b) Nearest-prey and eat order iterate a `std::set` keyed by **object address**. Ties, and two fish inside the eat box at once, are resolved by heap address. We need a model (allocation order + free-list reuse) or CE evidence.
