@@ -8,6 +8,7 @@ use sexy_core::rand::MtRand;
 use crate::coin::{Coin, CoinStep};
 use crate::fish::{Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
+use crate::pet::{Pet, PetOut, STINKY};
 use crate::shop::{EGG_DONE, Shop, Slot};
 use crate::sound::Sound;
 
@@ -84,6 +85,8 @@ pub struct Board {
     pub foods: Vec<Food>,
     /// `board+0xa8`: coins in insertion order.
     pub coins: Vec<Coin>,
+    /// `board+0xb0`: `OtherTypePet` pets (Stinky) in insertion order.
+    pub pets: Vec<Pet>,
     /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
     /// 150 ticks instead of 20.
     pub tutorial: bool,
@@ -128,6 +131,7 @@ impl Board {
             guppies: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
+            pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
             rng,
@@ -166,7 +170,13 @@ impl Board {
     /// A board at the start of an Adventure level: `Board::InitLevel` then
     /// `Board::PopulateLevel` (`sim/level-start.md`). `pets` are the owned
     /// pet ids, added in id order. TODO(spec): pets other than none.
-    pub fn start_level(rng: MtRand, global_rng: MtRand, tank: i32, level: i32) -> Self {
+    pub fn start_level(
+        rng: MtRand,
+        global_rng: MtRand,
+        tank: i32,
+        level: i32,
+        pets: &[i32],
+    ) -> Self {
         let mut b = Board::new(rng, global_rng);
         b.tank = tank;
         b.level = level;
@@ -184,7 +194,10 @@ impl Board {
             b.rng.next_range(22);
             b.rng.next_range(6);
         }
-        // TODO(spec): owned pets (`AddPet`), before the fish.
+        // Owned pets in id order (`AddPet`), before the fish.
+        for &id in pets {
+            b.add_pet(id);
+        }
         for _ in 0..2 {
             let x = b.rng.next_range(520) as i32 + 20;
             let y = b.rng.next_range(265) as i32 + 105;
@@ -194,6 +207,18 @@ impl Board {
             g.growth = 2;
         }
         b
+    }
+
+    /// `Board::AddPet(id, -1, -1)` (`0x00544a90`): 2 position draws, the
+    /// pet ctor, then the shadow draw. TODO(spec): pets other than Stinky.
+    pub fn add_pet(&mut self, id: i32) {
+        let a = self.rng.next_range(265) as i32 + 105;
+        let _b = self.rng.next_range(520) as i32 + 20;
+        if id == STINKY {
+            let p = Pet::stinky(a, _b, &mut self.rng);
+            self.pets.push(p);
+        }
+        self.rng.next_range(5);
     }
 
     /// `Board::AddGuppyAt` (`0x00546ef0`): constructed in place, plus shadow.
@@ -502,6 +527,17 @@ impl Board {
         }
         for s in stage_ups {
             self.on_stage_up(s);
+        }
+        // Pets (`+0xb0`) update after fish and before coins (z-order).
+        for i in 0..self.pets.len() {
+            let mut out = PetOut::default();
+            self.pets[i].update(self.has_aliens, &self.coins, &mut self.rng, &mut out);
+            if let Some(ci) = out.picked {
+                // `0x004ddc40`: bank the coin, remove it, play its sound.
+                let c = self.coins.remove(ci);
+                self.money = (self.money + c.value() * c.multiplier).min(9_999_999);
+                self.play_collect_sound(c.kind);
+            }
         }
         self.guppies.retain(|f| !f.dead);
         let mut banked = 0;

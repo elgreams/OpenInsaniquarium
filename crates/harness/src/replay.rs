@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use insaniquarium_sim::board::Input;
+use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::{Board, Coin, Fish, Food};
 use serde_json::{Value, json};
@@ -119,6 +120,34 @@ pub fn coin_from_raw(b: &[u8]) -> Coin {
     }
 }
 
+/// A pet from its raw bytes (offsets: docs/re/objects/pet-stinky.md).
+pub fn pet_from_raw(b: &[u8]) -> Pet {
+    Pet {
+        id: rd_i32(b, 0x1c4),
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x168),
+        vy: rd_f64(b, 0x170),
+        facing: rd_f64(b, 0x178),
+        target_vx: rd_f64(b, 0x180),
+        divisor: rd_f64(b, 0x188),
+        mode: rd_i32(b, 0x190),
+        counter: rd_i32(b, 0x194),
+        reroll_timer: rd_i32(b, 0x198),
+        turn: rd_i32(b, 0x19c),
+        anim: rd_i32(b, 0x1a0),
+        cel: rd_i32(b, 0x1a4),
+        counter_1a8: rd_i32(b, 0x1a8),
+        countdown_1ac: rd_i32(b, 0x1ac),
+        slow: b[0x1b0] != 0,
+        shell: rd_i32(b, 0x1b4),
+        unk_1b8: rd_i32(b, 0x1b8),
+        unk_1bc: rd_i32(b, 0x1bc),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
 fn raw_list(s: &Snapshot, list: &str) -> Vec<Vec<u8>> {
     s.state
         .get("raw")
@@ -189,6 +218,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| coin_from_raw(b))
         .collect();
+    board.pets = raw_list(first, "pet_other")
+        .iter()
+        .map(|b| pet_from_raw(b))
+        .collect();
     // Shop: captures record `board.revealed` (12 bytes) and `board.eggs`
     // when available; older ones are inferred from the largest guppy (the
     // tank 1-1 reveal triggers are stage-ups: medium → guppy, large → egg).
@@ -257,6 +290,15 @@ fn fish_json(f: &Fish) -> Value {
     })
 }
 
+fn pet_json(p: &Pet) -> Value {
+    json!({
+        "id": p.id, "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy, "facing": p.facing,
+        "tvx": p.target_vx, "mode": p.mode,
+        "timers": [p.counter, p.reroll_timer, p.counter_1a8, p.countdown_1ac, p.shell],
+        "anim": [p.turn, p.anim, p.cel], "widget": [p.widget_x, p.widget_y],
+    })
+}
+
 fn coin_json(c: &Coin) -> Value {
     json!({
         "x": c.x, "y": c.y, "anim": [c.anim, c.age, c.cel], "expire": c.expire,
@@ -287,6 +329,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "coins".into(),
         Value::Array(board.coins.iter().map(coin_json).collect()),
+    );
+    state.insert(
+        "pets".into(),
+        Value::Array(board.pets.iter().map(pet_json).collect()),
     );
     // The global stream's `mti` isn't compared: the board's cosmetic bubble
     // systems draw from it and aren't modelled yet (board.md, open questions).
@@ -325,6 +371,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| coin_json(&coin_from_raw(b)))
                 .collect();
             s.state.insert("coins".into(), Value::Array(coins));
+            let pets = raw_list(&s, "pet_other")
+                .iter()
+                .map(|b| pet_json(&pet_from_raw(b)))
+                .collect();
+            s.state.insert("pets".into(), Value::Array(pets));
             // Raw hex is decoded above; drop it (and the capture's summary
             // fields) so long traces stay small in memory.
             s.state.remove("raw");
@@ -435,6 +486,36 @@ pub fn rebase_rng(full: &Trace, stream: &str, start_tick: u32) -> Option<RngStat
         mt: mt.to_vec(),
         mti: mti as u32,
     })
+}
+
+/// The first snapshot tick (at or after `from`) where the capture missed or
+/// tore logic updates: the board clock (`+0x28`, +1 per running update)
+/// advanced by a different amount than the capture's tick. This happens in
+/// the game's catch-up bursts, when several updates run back to back faster
+/// than the capture polls (`docs/re/dynamic-analysis.md`).
+pub fn first_burst(t: &Trace, from: u32) -> Option<u32> {
+    let clock = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("clock"))
+            .and_then(Value::as_i64)
+    };
+    let paused = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("paused"))
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    };
+    t.snapshots
+        .windows(2)
+        .filter(|w| w[0].tick >= from && !paused(&w[0]) && !paused(&w[1]))
+        .find(|w| {
+            clock(&w[1])
+                .zip(clock(&w[0]))
+                .is_some_and(|(b, a)| b - a != i64::from(w[1].tick - w[0].tick))
+        })
+        .map(|w| w[0].tick)
 }
 
 /// Inputs recovered from a capture, plus snapshot ticks that caught a click

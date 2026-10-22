@@ -74,20 +74,73 @@ So `AddPet(0, -1, -1, 0, 0)` costs **5 app-RNG draws**: x, (discarded) y, mode, 
 
 ## `Update` (`0x004f2e80`), pet 0, normal game
 
-TODO
+Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, target vx `+0x180`, divisor `+0x188` (1.2), mode `+0x190`, counter `+0x194`, reroll timer `+0x198`, turn `+0x19c`, anim `+0x1a0`, cel `+0x1a4`, `+0x1a8`, `+0x1ac`, slow `+0x1b0`, shell `+0x1b4`.
+
+1. Return if the board is paused. Run `PreUpdate`.
+2. (Drop-in flag and y < 380: vy += 0.1. Not the case at level start.)
+3. **Coin chase** (`0x004efe80`). For pet 0 it runs only when the coin list `+0xa8` is non-empty, **no aliens** are present, and the slow flag `+0x1b0` is clear. See [Coin chasing](#coin-chasing). In that case it **always reports "chasing"**, even if no coin is eligible (e.g. all are collected and flying to the counter), so step 4 is skipped and vx keeps its value. Confirmed by `tank1-2_partial`.
+4. **Wander:** set target vx from the mode: 0 → 0, 1 → −0.5, 2 → +0.5, ≥ 3 → unchanged. Then step vx toward the target by 0.1 per tick, snapping to the target if it would overshoot.
+5. Reroll and timers:
+   - `+0x194 += 1`; `+0x198 += 1`.
+   - If `+0x198 > 20`, or (`x ≤ 10` and target vx ≤ 0), or (`x ≥ 540` and target vx > 0): `+0x198 = 0`, then **app RNG `Next() % 10`**. If that is 0, **app RNG `mode = Next() % 3`**.
+   - `+0x1ac −= 1` if non-zero; `+0x1a8 += 1` while < 20.
+6. **Shell** (`0x004e2a20`, pet 0): while an alien is present, shell `+0x1b4` counts up to 9 and `+0x1bc = 0`; otherwise it counts down to 0. No RNG.
+7. **Clamp:** x ∈ [10, 550] (pet 0's right bound is 550); y ≤ 370 (sets vy = 0); y ≥ 95.
+8. Edge modes: if x > 535 and vx > 0.1: mode = 1 (head left). If x < 15 and vx < −0.1: mode = 2 (head right).
+9. **Animation** (`0x004eb7c0`, pet 0 path). See [Animation](#animation).
+10. **Move:** `x += vx / div`, `y += vy / div`. With the slow flag the divisor is `div × 5`.
+11. Widget position = `trunc(x), trunc(y)`.
 
 ## Coin chasing
 
-TODO
+`0x004ebc80`, gated by step 3:
+
+1. **Target** (`0x004e7270`): over coins `+0xa8` in list order, skip:
+   - collected coins (`+0x198`)
+   - kinds `0x11` and `0x12`
+   - kinds 3 and 10 (stars), unless no starcatcher exists (`+0xd0` empty)
+
+   For each remaining coin: `dx = trunc((coin.wx + 36) − (x + 40))`, `dy = trunc((coin.wy + 36) − (y + 40))`. Keep the first coin with the strictly smallest `dx² + dy²`.
+2. Steering only happens when the counter `+0x194 > 4`. Then the counter is reset to 0 and, with `cx = x + 40` and `w = coin.wx` (int), the first matching rule applies:
+
+   | Condition | Change to vx |
+   |---|---|
+   | `cx > w + 48` and `vx > −2.3` | −1.0 |
+   | `cx < w + 24` and `vx < 2.3` | +1.0 |
+   | `cx > w + 40` and `vx > −1.3` | −0.5 |
+   | `cx < w + 32` and `vx < 1.3` | +0.5 |
+   | `cx > w + 36` and `vx > −0.3` | set to 0 |
+   | `cx < w + 36` and `vx < 0.3` | set to 0 |
+
+   (The comparisons nest like a binary search; this table reproduces them. When `cx` is within `[w+32, w+40]`, vx goes to 0 once it's small.)
+3. If there is a target, **collect** (`0x004e7c30`): for coins `+0xa8` in list order with the same skip rules, the first coin with `w + 16 < cx < w + 56` and `wy + 16 < cy < wy + 56` (`cy = y + 40`) and kind < 15 is picked up. Pickup (`0x004ddc40`):
+   - **bank it** (`0x004d54e0`: money += value),
+   - remove the coin,
+   - set `+0x1bc = 0`,
+   - play the collect sound: silver/gold/star use `0x005383d0`, which makes **1 app draw `Next() & 3` if not throttled**, exactly as a player click does (`coin.md`).
+
+   Only one coin is collected per tick.
+4. (The return value is ignored for pet 0; see Update step 3.)
 
 ## Animation
 
-TODO
+`0x004eb7c0`, pet 0. No RNG.
+
+1. Turn: facing > 0 and vx < 0 → turn = 20; facing < 0 and vx > 0 → turn = −20. Then the turn counter steps 1 toward 0.
+2. Turn 0:
+   - |vx| ≥ 0.3: `anim = (anim + 1) % 20`, cel = anim / 2.
+   - Otherwise: `anim = (anim + 1) % 40`, cel = anim / 4.
+3. Turn > 0: cel = 9 − turn / 2. Turn < 0: cel = turn / 2 + 9.
+4. If shell > 0: cel = shell (hiding).
+5. If vx ≠ facing, vx ≠ 0, facing ≠ 0 and shell == 0: facing = vx.
 
 ## Interactions
 
-TODO
+- **Aliens:** while any alien is present, Stinky stops chasing coins and hides in his shell (cel = shell counter 1..9). Aliens target fish only (`alien-sylvester.md#31`), so Stinky can't be eaten.
+- **Clicks** (slot 54 @ `0x004f3a70`): TODO. Probably a click-through to the board.
+- **Food:** none.
 
 ## Summary / open questions
 
-TODO
+- Stinky costs **5 app draws** when added (2 position, 2 ctor, 1 shadow). After that he draws every 21 ticks while wandering (`% 10`, then `% 3` w.p. 1/10), on every edge bump, and when collecting coins (the points sound).
+- TODO: confirm with a tank 1-2 capture.

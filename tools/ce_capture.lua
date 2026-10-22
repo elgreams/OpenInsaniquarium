@@ -13,7 +13,9 @@
 local APP_PTR      = 0x5eb680
 local GLOBAL_RAND  = 0x5eb928
 local OFF = {
-  update_count = 0x484, board = 0x730, app_rand = 0x7b0,
+  -- app+0x47c = logic updates (one per UpdateApp tick; timing.md). +0x484
+  -- is a frame counter and can skip updates when the game catches up.
+  update_count = 0x47c, board = 0x730, app_rand = 0x7b0,
   money = 0x3f0,
   obj_type = 0x8c,
 }
@@ -143,6 +145,10 @@ while captured < max_ticks and polls < max_ticks * 40 do
         for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
           gf:write(string.format("C %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0))
         end
+        for _, a in ipairs(vec_ptrs(u32(board + 0xb8))) do
+          gf:write(string.format("A %d %d\n", i32(a + 0x30), i32(a + 0x34)))
+        end
+        gf:write(string.format("R %s\n", hex_block(board + 0x3a4, 12)))
         gf:close()
         os.rename(CAPTURE_GPOS .. ".tmp", CAPTURE_GPOS)
       end

@@ -97,7 +97,7 @@ fn main() {
         });
     let mut global = MtRand::new(seed);
     let app_rng = MtRand::new(global.next_u31());
-    let mut board = Board::start_level(app_rng, global, 1, 1);
+    let mut board = Board::start_level(app_rng, global, 1, 1, &[]);
     if args.iter().any(|a| a == "--demo-shop") {
         // Dev shortcut: skip to the point where both buttons are up.
         board.money = 500;

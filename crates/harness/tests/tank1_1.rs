@@ -194,7 +194,7 @@ fn level_start_matches_original() {
         }
         harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
     };
-    let mut b = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 1, 1);
+    let mut b = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 1, 1, &[]);
     // The capture's first level snapshot is after one board update.
     b.tick = before;
     b.update();
@@ -206,4 +206,82 @@ fn level_start_matches_original() {
         expected.snapshots[0].state["rng_mti"]["app"],
         actual.state["rng_mti"]["app"]
     );
+}
+
+/// Tank 1-2 start with Stinky: our `start_level` reproduces the original's
+/// pet and starting guppies from the pre-populate RNG state.
+#[test]
+fn level_1_2_start_with_stinky() {
+    use harness::replay::rebase_rng;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-2_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| s.state["board"]["paused"].as_bool() == Some(false))
+        .unwrap();
+    let before = full.snapshots[i - 1].tick;
+    let rng = |stream: &str| match rebase_rng(&full, stream, before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    let mut b = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 1, 2, &[0]);
+    b.tick = before;
+    b.update();
+    let expected = decode_capture(&harness::replay::window(&full, b.tick, b.tick));
+    let actual = harness::replay::snapshot(&b);
+    let e = &expected.snapshots[0].state;
+    assert_eq!(e["pets"], actual.state["pets"], "Stinky");
+    assert_eq!(e["fish"], actual.state["fish"], "starting guppies");
+    assert_eq!(e["rng_mti"]["app"], actual.state["rng_mti"]["app"]);
+}
+
+/// Tank 1-2 with Stinky, from level start until the alien warning (the
+/// wave countdown is checked separately once Sylvester is modelled).
+#[test]
+fn tank_1_2_until_alien_matches() {
+    use harness::replay::{rebase_rng, window};
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-2_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| s.state["board"]["paused"].as_bool() == Some(false))
+        .unwrap();
+    let from = full.snapshots[i].tick;
+    // Stop before the warning (countdown 275 draws spawn positions).
+    let to = full.snapshots[i..]
+        .iter()
+        .find(|s| s.state["board"]["wave"]["countdown"].as_i64() == Some(276))
+        .map(|s| s.tick)
+        .unwrap();
+    // ...or the first catch-up burst, where snapshots tear.
+    let to = harness::replay::first_burst(&full, from).map_or(to, |b| b.min(to));
+    let mut t = window(&full, from, to);
+    for stream in ["app", "global"] {
+        t.header
+            .rng
+            .insert(stream.into(), rebase_rng(&full, stream, from).unwrap());
+    }
+    let inferred = inferred_clicks(&t);
+    let expected = inferred.clean(&decode_capture(&t));
+    let mut board = board_from_capture(&t).unwrap();
+    board.tank = 1;
+    board.level = 2;
+    board.shop = insaniquarium_sim::shop::Shop::adventure(1, 2);
+    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    eprintln!(
+        "1-2: ticks {from}..={to}, {} inputs, {} masked",
+        inferred.inputs.values().map(Vec::len).sum::<usize>(),
+        inferred.dirty.len()
+    );
+    if let Some(d) = diff(&expected, &actual) {
+        panic!("{d}");
+    }
 }
