@@ -97,20 +97,7 @@ fn main() {
         });
     let mut global = MtRand::new(seed);
     let app_rng = MtRand::new(global.next_u31());
-    let mut board = Board::new(app_rng, global);
-    board.money = 200;
-    board.tutorial = true;
-    // TODO(spec): level-start sequence (board-update.md); tank 1-1 starts
-    // with two guppies.
-    board.add_random_guppy();
-    board.add_random_guppy();
-    // TODO(spec): level start (InitLevel) places its guppies without the
-    // surface splash; until that's specced, settle them mid-tank.
-    for g in &mut board.guppies {
-        g.y = 200.0;
-        g.vy = 0.0;
-        g.vy_damp_timer = 0;
-    }
+    let mut board = Board::start_level(app_rng, global, 1, 1);
     if args.iter().any(|a| a == "--demo-shop") {
         // Dev shortcut: skip to the point where both buttons are up.
         board.money = 500;

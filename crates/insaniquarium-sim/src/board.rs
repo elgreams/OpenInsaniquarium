@@ -142,6 +142,8 @@ impl Board {
         let x = self.rng.next_range(520) as i32 + 20;
         let y = self.rng.next_range(265) as i32 + 105;
         let mut f = Fish::new(x, y, &mut self.rng);
+        // Fish ctor: `+0x228` = tutorial level (`0x00537b80`).
+        f.announces = self.tutorial;
         // The new guppy splashes in from the top: it starts at y = 30 moving
         // down fast, and the vy damping (×0.9 per tick) slows it over
         // 45..54 ticks, emitting bubbles while vy > 0 (fish-guppy.md#spawn).
@@ -155,6 +157,47 @@ impl Board {
         // `0x00544800` gives it a floor shadow; `Shadow::Shadow` (`0x004ec4f0`)
         // draws its y as `410 + r % 5`. Shadows are cosmetic otherwise.
         // TODO(spec): Shadow::Update, if it ever draws.
+        self.rng.next_range(5);
+    }
+
+    /// A board at the start of an Adventure level: `Board::InitLevel` then
+    /// `Board::PopulateLevel` (`sim/level-start.md`). `pets` are the owned
+    /// pet ids, added in id order. TODO(spec): pets other than none.
+    pub fn start_level(rng: MtRand, global_rng: MtRand, tank: i32, level: i32) -> Self {
+        let mut b = Board::new(rng, global_rng);
+        b.tank = tank;
+        b.level = level;
+        b.money = 200;
+        b.shop = Shop::adventure(tank, level);
+        b.tutorial = tank == 1 && level == 1;
+        // `Board::Board` (`0x00542150`): three background x positions,
+        // `r % 640` each (cosmetic).
+        for _ in 0..3 {
+            b.rng.next_range(640);
+        }
+        // Start bubble burst: (r & 3) + 3 bubbles, two draws each.
+        let n = (b.rng.next_u31() & 3) + 3;
+        for _ in 0..n {
+            b.rng.next_range(22);
+            b.rng.next_range(6);
+        }
+        // TODO(spec): owned pets (`AddPet`), before the fish.
+        for _ in 0..2 {
+            let x = b.rng.next_range(520) as i32 + 20;
+            let y = b.rng.next_range(265) as i32 + 105;
+            b.add_guppy_at(x, y);
+        }
+        for g in &mut b.guppies {
+            g.growth = 2;
+        }
+        b
+    }
+
+    /// `Board::AddGuppyAt` (`0x00546ef0`): constructed in place, plus shadow.
+    pub fn add_guppy_at(&mut self, x: i32, y: i32) {
+        let mut f = Fish::new(x, y, &mut self.rng);
+        f.announces = self.tutorial;
+        self.guppies.push(f);
         self.rng.next_range(5);
     }
 

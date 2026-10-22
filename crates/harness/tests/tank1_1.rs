@@ -170,3 +170,40 @@ fn full_level_replays_exactly() {
         "third egg piece completes tank 1-1"
     );
 }
+
+/// Level start: from the RNG state just before tank 1-1 is populated, our
+/// `Board::start_level` places the same two guppies with the same state.
+#[test]
+fn level_start_matches_original() {
+    use harness::replay::rebase_rng;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-1_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    // First snapshot of the level (board present, unpaused) and the one
+    // before it (no board yet: the level was populated in between).
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| s.state["board"]["paused"].as_bool() == Some(false))
+        .unwrap();
+    let before = full.snapshots[i - 1].tick;
+    let rng = |stream: &str| match rebase_rng(&full, stream, before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    let mut b = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 1, 1);
+    // The capture's first level snapshot is after one board update.
+    b.tick = before;
+    b.update();
+    let expected = decode_capture(&harness::replay::window(&full, b.tick, b.tick));
+    let actual = harness::replay::snapshot(&b);
+    let exp_fish = &expected.snapshots[0].state["fish"];
+    assert_eq!(exp_fish, &actual.state["fish"], "starting guppies");
+    assert_eq!(
+        expected.snapshots[0].state["rng_mti"]["app"],
+        actual.state["rng_mti"]["app"]
+    );
+}
