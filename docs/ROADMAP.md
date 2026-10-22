@@ -51,7 +51,7 @@ Build the proof machinery before the gameplay it will prove.
 The smallest real game, provably 1:1.
 
 - [~] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink, upgrades), coins (types, fall, collect), money. *(Done and trace-verified: swim, animation, hunger, feeding, growth 0→2, silver/gold drops, fall/expiry/collect/bank, ambient RNG. Remaining: death → DeadFish + mercy guppy, food upgrades, shop.)*
-- [ ] Sim: the first alien (Sylvester): spawn timing, targeting, health, click damage.
+- [ ] Sim: the first alien (Sylvester): spawn timing, targeting, health, click damage. *(Spec done: `objects/alien-sylvester.md`. Note Sylvester first appears on **tank 1-2**; 1-1 has no aliens.)*
 - [~] App: tank render, cursor, click-to-feed/collect, the minimal shop bar for this level, win condition (egg pieces). *(`cargo run --bin tank`: render + click-to-feed/collect. Remaining: HUD/shop bar, egg pieces.)*
 - [~] Trace-based tests for all of the above. *(`crates/harness/tests/tank1_1.rs`: ~11k ticks across 4 captures.)*
 
