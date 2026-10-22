@@ -448,11 +448,13 @@ impl Fish {
         let was_hungry = self.looks_hungry();
         w.play_slurp();
         self.timer_f8 = 0;
-        // TODO(spec): food levels ≥ 2 and potions.
-        let (gain, cap, growth) = if food.level == 1 {
-            (700, 1000, 2)
-        } else {
-            (500, 800, 1)
+        // Pellet levels (`0x004f1ba0`): 0 +500 cap 800 growth 1; 1 +700 cap
+        // 1000 growth 2; 2 +1100 cap 1400 growth 3. TODO(spec): level 3
+        // (star potion: stage-ups and explosions, tank 2).
+        let (gain, cap, growth) = match food.level {
+            0 => (500, 800, 1),
+            1 => (700, 1000, 2),
+            _ => (1100, 1400, 3),
         };
         self.hunger += gain;
         if food.level == 0 && self.announces {

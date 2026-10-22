@@ -102,7 +102,11 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
 1. `was_hungry_look` = `0x004d6f30` (hunger < 301 and colour fade 0).
 2. **Slurp sound** (`0x005384c0`). If sample `0x138` is off cooldown (≥ 3 board ticks since it last played, `0x005381f0`), **RNG `Next() % 5`** picks one of three slurp samples. No draw when it's throttled.
 3. `+0xf8 = 0`. (The hunger floor of 300 in `0x004d6a30` doesn't apply to guppies, since `+0xac < 0`.)
-4. Level-0 food: `hunger += 500`, plus 200 more with `+0x228`. **Clamp at 800.** `growth (+0x1a4) += 1`. (Level 1 adds 700, cap 1000, growth +2. Higher levels are not modelled.)
+4. By food level (outside Virtual Tank):
+   - Level 0: `hunger += 500`, plus 200 more with `+0x228`. **Clamp at 800.** `growth (+0x1a4) += 1`.
+   - Level 1: +700, cap 1000, growth +2.
+   - Level 2: +1100, cap 1400, growth +3 (the fall-through branch at `0x004f2079`).
+   - Level 3 (star potion): grows medium/large guppies to stage 3; small ones explode. Not modelled yet.
 5. **Grow:** if `growth ≥ growth_needed (+0x1a8)` and stage < 2: stage += 1, growth = 0, pulse `+0x1cc = 10`, sound `SOUND_GROW`, tutorial messages (`0x004f1840`). If `growth ≥ 15·growth_needed`, stage ≥ 2, stage ≠ 4 and `+0x1d0` is clear: stage = 4 (crowned).
 6. If `was_hungry_look` and the fish no longer looks hungry: `+0xa8 = 0`, `fade = 5` (fade back to the fed colours).
 

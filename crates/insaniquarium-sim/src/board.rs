@@ -74,6 +74,8 @@ pub struct Board {
     /// Tutorial help arrows: `+0x4b2` (buy fish), `+0x4d8` (buy egg).
     pub arrow_buy_fish: bool,
     pub arrow_buy_egg: bool,
+    /// `+0x4bf`: "upgrade food quality" hint on 1-2.
+    pub arrow_food_quality: bool,
     /// The modal dialog raised by the board, if any.
     pub dialog: Option<Dialog>,
     /// `board+0xa0`: guppies in insertion order.
@@ -121,6 +123,7 @@ impl Board {
             level_ticks: 0,
             arrow_buy_fish: false,
             arrow_buy_egg: false,
+            arrow_food_quality: false,
             dialog: None,
             guppies: Vec::new(),
             foods: Vec::new(),
@@ -330,6 +333,8 @@ impl Board {
         let ok = match slot {
             Slot::Guppy => self.buy_guppy(price),
             Slot::EggPiece => self.buy_egg_piece(price),
+            Slot::FoodQuality => self.buy_food_quality(price),
+            Slot::FoodQuantity => self.buy_food_quantity(price),
             // TODO(spec): other slots (not on tank 1-1).
             _ => return ClickResult::Ignored,
         };
@@ -354,6 +359,36 @@ impl Board {
         }
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r));
+        true
+    }
+
+    /// Slot 2: food quality +1 (cap 2). On 1-2 it reveals quantity and
+    /// the egg (`shop-bar.md#per-slot-behaviour`). No RNG.
+    fn buy_food_quality(&mut self, price: i32) -> bool {
+        if self.food_level >= 2 || !self.try_spend(price) {
+            return false;
+        }
+        self.arrow_food_quality = false;
+        self.food_level += 1;
+        if self.tank == 1 && self.level == 2 && !self.shop.revealed[Slot::EggPiece as usize] {
+            self.shop.reveal(Slot::FoodQuantity, true);
+            self.shop.reveal(Slot::EggPiece, true);
+        }
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy);
+        }
+        true
+    }
+
+    /// Slot 3: food quantity +1 (cap 9). No RNG.
+    fn buy_food_quantity(&mut self, price: i32) -> bool {
+        if self.max_food >= 9 || !self.try_spend(price) {
+            return false;
+        }
+        self.max_food += 1;
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy);
+        }
         true
     }
 
@@ -391,7 +426,18 @@ impl Board {
                 self.arrow_buy_fish = false;
                 self.arrow_buy_egg = true;
             }
-            // TODO(spec): other levels' reveal lists.
+            2 if self.tank == 1 && self.level == 2 => {
+                if !self.shop.revealed[Slot::FoodQuality as usize] {
+                    self.arrow_food_quality = true;
+                    self.shop.reveal(Slot::FoodQuality, true);
+                }
+            }
+            2 if self.tank == 1 && self.level >= 3 => {
+                self.shop.reveal(Slot::FoodQuality, true);
+                self.shop.reveal(Slot::FoodQuantity, true);
+                self.shop.reveal(Slot::Carnivore, true);
+            }
+            // TODO(spec): tanks 2–4 reveal lists (`0x004f1840`).
             _ => {}
         }
     }
