@@ -3,7 +3,7 @@
 --
 -- Usage (from CE's Lua engine or the MCP bridge), after attaching to the game:
 --   CAPTURE_OUT = "/tmp/trace.jsonl"; CAPTURE_TICKS = 300
---   dofile("/home/three/fsf/aquarium/tools/ce_capture.lua")
+--   dofile("<repo>/tools/ce_capture.lua")
 --
 -- Read-only by design: no allocations, hooks, or code injection (injection
 -- previously tripped the game's crash handler; see docs/re/dynamic-analysis.md).
