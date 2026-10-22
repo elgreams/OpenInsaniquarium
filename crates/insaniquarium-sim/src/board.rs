@@ -367,7 +367,10 @@ impl Board {
 
     /// One logic tick (28 ms).
     pub fn update(&mut self) {
+        // `tick` mirrors the app's update counter, which runs while the
+        // board is paused; the board clock (`+0x28`) does not.
         if self.paused {
+            self.tick += 1;
             return;
         }
         self.clock += 1;

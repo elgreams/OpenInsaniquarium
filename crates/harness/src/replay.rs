@@ -325,6 +325,13 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| coin_json(&coin_from_raw(b)))
                 .collect();
             s.state.insert("coins".into(), Value::Array(coins));
+            // Raw hex is decoded above; drop it (and the capture's summary
+            // fields) so long traces stay small in memory.
+            s.state.remove("raw");
+            s.state.remove("guppies");
+            if let Some(Value::Object(b)) = s.state.get_mut("board") {
+                b.remove("samples");
+            }
             s
         })
         .collect();
@@ -388,6 +395,48 @@ fn until_pause_inner(t: Trace) -> Trace {
     out
 }
 
+/// The snapshots with `from <= tick <= to`, keeping the header (whose RNG
+/// state is only valid for the capture's first snapshot; see
+/// [`rebase_rng`]).
+pub fn window(t: &Trace, from: u32, to: u32) -> Trace {
+    Trace {
+        header: t.header.clone(),
+        snapshots: t
+            .snapshots
+            .iter()
+            .filter(|s| (from..=to).contains(&s.tick))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Rewrite the header RNG so it's valid at the trace's first snapshot, by
+/// replaying the original capture's RNG streams forward. Only the app
+/// stream's draw count per tick is known (`rng_mti`), so this advances the
+/// generator from the original header state until its `mti` and the number
+/// of 624-word regenerations match. Works because the capture starts at the
+/// header state and records `mti` every tick.
+pub fn rebase_rng(full: &Trace, stream: &str, start_tick: u32) -> Option<RngState> {
+    let mut rng = rng_from(full.header.rng.get(stream)?);
+    let mut prev = rng.state().1;
+    for s in &full.snapshots {
+        if s.tick > start_tick {
+            break;
+        }
+        let m = s.state.get("rng_mti")?.get(stream)?.as_u64()? as usize;
+        let draws = (m + 624 - prev) % 624;
+        for _ in 0..draws {
+            rng.next_u31();
+        }
+        prev = m;
+    }
+    let (mt, mti) = rng.state();
+    Some(RngState::Full {
+        mt: mt.to_vec(),
+        mti: mti as u32,
+    })
+}
+
 /// Inputs recovered from a capture, plus snapshot ticks that caught a click
 /// mid-frame (processed after that tick's update but before the capture
 /// read it) and so match no whole-tick sim state.
@@ -400,9 +449,15 @@ pub struct Inferred {
 impl Inferred {
     /// `expected` without the dirty snapshots.
     pub fn clean(&self, expected: &Trace) -> Trace {
-        let mut t = expected.clone();
-        t.snapshots.retain(|s| !self.dirty.contains(&s.tick));
-        t
+        Trace {
+            header: expected.header.clone(),
+            snapshots: expected
+                .snapshots
+                .iter()
+                .filter(|s| !self.dirty.contains(&s.tick))
+                .cloned()
+                .collect(),
+        }
     }
 }
 
@@ -470,8 +525,10 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .iter()
                 .any(|p| !p.collected && p.kind == c.kind && p.age + 1 == c.age);
             if was_free {
-                #[allow(clippy::float_cmp)]
-                let mid = c.x == f64::from(c.from_x) && c.y == f64::from(c.from_y);
+                // Collection records trunc(x), trunc(y); if the coin still
+                // sits there it hasn't glided yet, i.e. the click came after
+                // this tick's update (mid-frame).
+                let mid = c.x as i32 == c.from_x && c.y as i32 == c.from_y;
                 let click = Input::Click {
                     x: c.from_x + 36,
                     y: c.from_y + 36,
@@ -496,6 +553,27 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .entry(s.tick)
                 .or_default()
                 .push(Input::Buy(Slot::Guppy));
+        } else if guppies > prev_guppies && prev_guppies == 0 {
+            // A free guppy into an empty tank: the "last fish died" dialog
+            // was dismissed (mercy guppy).
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::DismissDialog);
+        }
+        // Egg pieces: the board's egg counter steps up.
+        let eggs = |s: Option<&Snapshot>| {
+            s.and_then(|s| s.state.get("board"))
+                .and_then(|b| b.get("eggs"))
+                .and_then(Value::as_i64)
+        };
+        if let (Some(e), Some(p)) = (eggs(Some(s)), eggs(prev_snap))
+            && e > p
+        {
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::EggPiece));
         }
         prev_prev_snap = prev_snap;
         prev_snap = Some(s);
@@ -517,7 +595,12 @@ pub fn replay_from(
 ) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
+    let first = board.tick;
     while board.tick < last {
+        assert!(
+            board.tick - first <= last - first,
+            "replay ran past the capture (tick not advancing?)"
+        );
         let next = board.tick + 1;
         board.step(inputs.get(&next).map_or(&[][..], Vec::as_slice));
         snapshots.push(snapshot(&board));

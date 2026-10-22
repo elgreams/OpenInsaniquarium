@@ -125,22 +125,23 @@ while captured < max_ticks and polls < max_ticks * 40 do
         if #items > 0 then raws[#raws+1] = string.format('"%s":[%s]', l[2], table.concat(items, ",")) end
       end
     end
-    -- Optional: publish the first guppy's widget position for a scripted
-    -- clicker (e.g. to keep it fed during long captures).
+    -- Optional: publish board state for a scripted player (CAPTURE_GPOS).
+    -- Line 1: "S paused money eggs revealed_guppy revealed_egg foods"
+    -- then "G x y hunger" per guppy, "C x y collected" per coin.
     if CAPTURE_GPOS and board and board ~= 0 then
-      local g = vec_ptrs(u32(board + 0xa0))[1]
-      if g then
-        local gf = io.open(CAPTURE_GPOS, "w")
-        if gf then
-          gf:write(string.format("%d %d %d\n", i32(g + 0x30), i32(g + 0x34), readBytes(board + 0x94, 1) or 0))
-          -- Uncollected coins, one "x y" per line, for a collecting clicker.
-          for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
-            if (readBytes(c + 0x198, 1) or 1) == 0 then
-              gf:write(string.format("%d %d\n", i32(c + 0x30), i32(c + 0x34)))
-            end
-          end
-          gf:close()
+      local gf = io.open(CAPTURE_GPOS .. ".tmp", "w")
+      if gf then
+        gf:write(string.format("S %d %d %d %d %d %d\n", readBytes(board + 0x94, 1) or 0,
+          i32(board + OFF.money), i32(board + 0x43c), readBytes(board + 0x3a4, 1) or 0,
+          readBytes(board + 0x3a4 + 11, 1) or 0, #vec_ptrs(u32(board + 0xac))))
+        for _, g in ipairs(vec_ptrs(u32(board + 0xa0))) do
+          gf:write(string.format("G %d %d %d\n", i32(g + 0x30), i32(g + 0x34), i32(g + 0x9c)))
         end
+        for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
+          gf:write(string.format("C %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0))
+        end
+        gf:close()
+        os.rename(CAPTURE_GPOS .. ".tmp", CAPTURE_GPOS)
       end
     end
     local _, ami2 = rand_state(u32(app + OFF.app_rand))

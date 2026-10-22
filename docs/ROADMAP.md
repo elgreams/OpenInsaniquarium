@@ -50,12 +50,12 @@ Build the proof machinery before the gameplay it will prove.
 
 The smallest real game, provably 1:1.
 
-- [~] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink, upgrades), coins (types, fall, collect), money. *(Done and trace-verified: swim, animation, hunger, feeding, growth 0→2, silver/gold drops, fall/expiry/collect/bank, ambient RNG. Remaining: death → DeadFish + mercy guppy, food upgrades, shop.)*
+- [x] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink), coins (types, fall, collect), money, shop (guppy, egg pieces), mercy guppy. *(Food-quality/quantity upgrades and DeadFish visuals deferred: not on 1-1.)*
 - [ ] Sim: the first alien (Sylvester): spawn timing, targeting, health, click damage. *(Spec done: `objects/alien-sylvester.md`. Note Sylvester first appears on **tank 1-2**; 1-1 has no aliens.)*
-- [~] App: tank render, cursor, click-to-feed/collect, the minimal shop bar for this level, win condition (egg pieces). *(`cargo run --bin tank`: render + click-to-feed/collect. Remaining: HUD/shop bar, egg pieces.)*
-- [~] Trace-based tests for all of the above. *(`crates/harness/tests/tank1_1.rs`: ~11k ticks across 4 captures.)*
+- [x] App: tank render, click-to-feed/collect, shop bar, money counter, help arrows, sounds, music, win condition (egg pieces). *(`cargo run --bin tank`. Hatch screen is M4.)*
+- [x] Trace-based tests for all of the above. *(`crates/harness/tests/tank1_1.rs`: 6 captures, ~16k ticks, incl. a full level.)*
 
-**Exit:** a recorded play of Tank 1-1 on the original replays in our sim with zero divergence for its full length.
+**Exit:** a recorded play of Tank 1-1 on the original replays in our sim with zero divergence for its full length. ✅ *`tank1-1_full_01`: 5222 ticks from level start (after the mercy guppy) to the third egg piece, 48 inferred inputs, bit-exact (app RNG, all guppy/food/coin fields, money, shop). Played by `tools/autoplay_tank11.py`.*
 
 ## M4 — Adventure mode complete
 
