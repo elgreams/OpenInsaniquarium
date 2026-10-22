@@ -4,6 +4,7 @@ description = "Deterministic, headless Insaniquarium game simulation"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 sexy-core.workspace = true

@@ -4,6 +4,7 @@ description = "Game-agnostic reimplementation of the PopCap SexyApp framework la
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "2"

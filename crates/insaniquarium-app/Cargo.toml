@@ -4,6 +4,7 @@ description = "Bevy frontend for the Insaniquarium reimplementation"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 sexy-core.workspace = true

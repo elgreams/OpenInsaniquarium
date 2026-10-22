@@ -13,7 +13,7 @@ An **OpenMW-style, clean-room reimplementation of Insaniquarium Deluxe 1.1** in 
 - Shipping, embedding, or redistributing any original game content.
 - Building for PvZ now. A future PvZ engine may reuse the `sexy-*` framework crates (both games are built on PopCap's SexyApp framework), so keep those crates game-agnostic — but don't add speculative PvZ features.
 
-**License:** not yet decided. Do not add license headers or a LICENSE file until it is.
+**License:** dual-licensed **MIT OR Apache-2.0** (same as Bevy): `LICENSE-MIT`, `LICENSE-APACHE`, and `license.workspace = true` in every crate. Don't add per-file license headers. The license covers our code and docs only, never the original game's content (see below).
 
 ## Bring your own assets (hard rule)
 

@@ -4,6 +4,7 @@ description = "Differential testing: replay traces captured from the original ag
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "2"

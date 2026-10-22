@@ -89,11 +89,11 @@ Mostly content now; the hard problems are solved.
 
 ## M7 — Modding platform
 
-Turn the faithful engine into a foundation for other games.
+Turn the faithful engine into a foundation for other games. Modding works in layers. Forking the engine works from day one (MIT/Apache, clean code); data packs come next. Scripting is optional.
 
-- [ ] Move hardcoded fish/alien/pet/level definitions into data files; the original becomes the "base" content pack.
-- [ ] Content pack format and load order (OpenMW-style); user-asset overrides.
-- [ ] Scripting API for new behaviors (Lua or Rhai — decide later), sandboxed.
+- [ ] **Forking:** keep game rules (`insaniquarium-sim`) separate from engine plumbing (`sexy-core`, app) so a fork can swap rules without touching the rest. Document how to build your own game on the engine.
+- [ ] **Data packs (main mod path):** move hardcoded fish/alien/pet/level/shop definitions into data files (TOML/RON). The original becomes the "base" content pack. Content folder with an OpenMW-style load order, so mods override files and stack. User-asset overrides (sprites, sounds).
+- [ ] **Scripting (optional, decide later):** only if data packs plus forking leave a real gap (stackable new *behaviours*). Lua is the likely choice if we do it; Rhai is the alternative. Sandboxed, with a stable API.
 - [ ] Remove limits as opt-in options: resolution and widescreen, tank size, object caps.
 - [ ] Example mod + modding docs.
 
@@ -102,7 +102,7 @@ Turn the faithful engine into a foundation for other games.
 ## M8 — Release
 
 - [ ] Packaging for Windows, Linux, and macOS; first-run setup that points the engine at a user install.
-- [ ] Decide the license (blocking for public release).
+- [x] Decide the license: MIT OR Apache-2.0, like Bevy.
 - [ ] User docs, contributor docs, a public spec index.
 
 ---
@@ -113,4 +113,4 @@ Turn the faithful engine into a foundation for other games.
 - Is the demo recording functional? If not, how much CE instrumentation will capture need?
 - Does the screensaver build's sim differ from `Insaniquarium.exe`, or is it the same code?
 - Save-file compatibility: worth it, or import-only?
-- Scripting language for mods.
+- Scripting for mods: maybe never needed (see M7). Lua if so.

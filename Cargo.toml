@@ -7,6 +7,7 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.97.1"
 publish = false
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 sexy-core = { path = "crates/sexy-core" }
