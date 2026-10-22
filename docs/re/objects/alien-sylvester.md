@@ -335,13 +335,13 @@ Sub-costs:
 
 ## Note: the 1-2 "DANGER!" dialog
 
-On tank 1-2 (tutorial not completed), when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01`. Not modelled yet (`TODO`: add as a `Dialog`).
+On tank 1-2 (tutorial not completed), **every wave**, when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01` and `_02`. Modelled as `Dialog::AlienWarning`; objects skip the tick that raises it.
 
 ## Deviations
 
 Implementation artifacts we deliberately don't reproduce (CLAUDE.md, "Bugs"):
 
-- **Effect-shot start delay.** `Shot::Shot` (`0x004ec660`) tests its kind field `+0x160` *before* assigning it. If the recycled heap block still holds a kind other than 0/2, it draws `rand(3)` as a start delay (`+0x164`). The result depends on allocator history, so it isn't reproducible even in the original. We never draw it; sparks start immediately. Effect: the dead alien's debris sparks and any later RNG consumers differ from a given run of the original. The harness re-syncs the app RNG after each burst (`harness::replay`, `Resync`).
+- **Effect-shot start delay.** `Shot::Shot` (`0x004ec660`) tests its kind field `+0x160` *before* assigning it. If the recycled heap block still holds a kind other than 0/2, it draws `rand(3)` as a start delay (`+0x164`). The result depends on allocator history, so it isn't reproducible even in the original. We never draw it; sparks start immediately. Effect: the dead alien's debris sparks and any later RNG consumers differ from a given run of the original. The harness re-syncs the app RNG on every tick that creates an effect shot (debris, hit sparks, gore), and ignores the shot list while a delayed spark is alive (it outlives ours by its delay).
 - **Prey and eat order by object address** (§3.1, §3.2). We iterate guppies in list order. This differs only on exact distance ties or two fish inside the eat box on the same tick.
 
 ## Open questions / TODO

@@ -341,6 +341,7 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
             Some(Dialog::LastFishDied) => " — Your last fish has died! Click to continue",
             Some(Dialog::GameOver) => " — Game over",
             Some(Dialog::OutOfMoney) => " — Out of money! Click to continue",
+            Some(Dialog::AlienWarning) => " — DANGER! An alien is coming. Click to continue",
             None => "",
         };
         let t = format!(
@@ -522,6 +523,7 @@ fn hud_text(sim: Res<Sim>, mut hud: ResMut<Hud>, mut images: ResMut<Assets<Image
                     Dialog::LastFishDied => b"YOUR LAST FISH HAS DIED! CLICK TO CONTINUE",
                     Dialog::GameOver => b"GAME OVER",
                     Dialog::OutOfMoney => b"OUT OF MONEY! CLICK TO CONTINUE",
+                    Dialog::AlienWarning => b"DANGER! AN ALIEN IS COMING! CLICK TO CONTINUE",
                 };
                 let img = f.render(text);
                 let size = UVec2::new(img.width, img.height);

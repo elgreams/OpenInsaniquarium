@@ -62,6 +62,8 @@ Per logic tick (28 ms, see `framework/timing.md`):
 2. **`Board::Update`** (`0x00547610`) runs first among the game widgets (TODO: confirm Board precedes all objects in the WM list). It handles timers, alien-wave countdown, spawns, ambient RNG, mode logic, and finally calls `Board::RebuildZOrder` (`0x0053aa40`).
 3. **Each GameObject** then gets its `Update()` in the rebuilt list order.
 
+**Paused board** (dialogs, focus loss): the board clock `+0x28` still advances by one per update, and nothing else runs. When `Board::Update` raises a dialog itself (the 1-2 "DANGER!" hint at countdown 276), the objects don't update on that tick either. Confirmed in `tank1-2_full_02`.
+
 Removal during iteration is safe: `WidgetContainer` keeps the iteration cursor in the container (`+0x18/+0x1c`) plus a "removed current" flag (`+0x14`).
 
 ### `Board::RebuildZOrder` (`0x0053aa40`) order, back → front

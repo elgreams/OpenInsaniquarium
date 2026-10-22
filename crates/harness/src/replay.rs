@@ -697,6 +697,74 @@ pub fn torn_snapshots(t: &Trace) -> Vec<u32> {
         .collect()
 }
 
+/// Re-key a window by the board clock (`+0x28`): snapshot tick =
+/// `start_tick + (clock − first clock)`. Drops snapshots that repeat a clock
+/// value (no update happened between reads) and leaves gaps where the
+/// capture missed updates; the diff skips missing ticks. Use for running
+/// windows only (the clock stops while paused).
+pub fn by_board_clock(t: &Trace) -> Trace {
+    let clock = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("clock"))
+            .and_then(Value::as_i64)
+    };
+    let Some(base) = t.snapshots.first().and_then(clock) else {
+        return t.clone();
+    };
+    let tick0 = t.snapshots[0].tick;
+    let mut out = Trace {
+        header: t.header.clone(),
+        snapshots: Vec::new(),
+    };
+    for s in &t.snapshots {
+        let Some(c) = clock(s) else { continue };
+        let tick = tick0 + (c - base) as u32;
+        // A repeated clock value: a later read of the same board update. Keep
+        // the latest (an earlier one may have been torn mid-update).
+        match out.snapshots.last_mut() {
+            Some(prev) if prev.tick == tick => {
+                *prev = s.clone();
+                prev.tick = tick;
+                continue;
+            }
+            Some(prev) if prev.tick > tick => continue,
+            _ => {}
+        }
+        let mut s = s.clone();
+        s.tick = tick;
+        out.snapshots.push(s);
+    }
+    out
+}
+
+/// Ticks right after a gap in a [`by_board_clock`] trace: the capture
+/// missed updates there (a catch-up burst), so its read may be torn.
+pub fn after_gaps(t: &Trace) -> Vec<u32> {
+    t.snapshots
+        .windows(2)
+        .filter(|w| w[1].tick > w[0].tick + 1)
+        .map(|w| w[1].tick)
+        .collect()
+}
+
+/// The original capture tick whose board clock equals `clock_tick`'s clock
+/// in a trace re-keyed by [`by_board_clock`] (`raw` is the un-rekeyed window).
+pub fn original_tick(raw: &Trace, clock_tick: u32) -> Option<u32> {
+    let clock = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("clock"))
+            .and_then(Value::as_i64)
+    };
+    let c0 = clock(raw.snapshots.first()?)?;
+    let want = c0 + i64::from(clock_tick - raw.snapshots[0].tick);
+    raw.snapshots
+        .iter()
+        .find(|s| clock(s) == Some(want))
+        .map(|s| s.tick)
+}
+
 /// Inputs recovered from a capture, plus snapshot ticks that caught a click
 /// mid-frame (processed after that tick's update but before the capture
 /// read it) and so match no whole-tick sim state.
@@ -822,29 +890,98 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .push(Input::DismissDialog);
         }
         // Shots while aliens are present: each click leaves a click-flash
-        // Shot (kind 0) at `(x − 40, y − 40)`. A new one with age 1 was made
-        // before this tick's update; age 0 means after it (mid-frame).
+        // Shot (kind 0, age 0 or 1) at `(x − 40, y − 40)`. Count only flashes
+        // that weren't in the previous snapshot (an age-0 flash is seen again
+        // at age 1). Age 1 means the click came before this tick's update,
+        // age 0 after it (mid-frame).
         if !raw_list(s, "alien").is_empty() || !raw_list(s, "dead_alien").is_empty() {
-            let shots: Vec<Shot> = raw_list(s, "shot")
-                .iter()
-                .map(|b| shot_from_raw(b))
-                .collect();
-            let prev_n = prev_snap.map_or(0, |p| {
-                raw_list(p, "shot")
-                    .iter()
-                    .filter(|b| shot_from_raw(b).kind == 0)
-                    .count()
-            });
-            let flashes: Vec<&Shot> = shots.iter().filter(|x| x.kind == 0).collect();
-            let fresh = flashes.iter().filter(|x| x.age <= 1).count();
-            let _ = prev_n;
-            for f in flashes.iter().filter(|x| x.age <= 1).take(fresh) {
+            let flashes = |snap: Option<&Snapshot>| -> Vec<Shot> {
+                snap.map(|x| {
+                    raw_list(x, "shot")
+                        .iter()
+                        .map(|b| shot_from_raw(b))
+                        .filter(|x| x.kind == 0)
+                        .collect()
+                })
+                .unwrap_or_default()
+            };
+            let before = flashes(prev_snap);
+            for f in flashes(Some(s)).iter().filter(|f| f.age <= 1) {
+                let seen = before.iter().any(|p| {
+                    p.widget_x == f.widget_x && p.widget_y == f.widget_y && p.age + 1 == f.age
+                });
+                if seen {
+                    continue;
+                }
                 let click = Input::Click {
                     x: f.widget_x + 40,
                     y: f.widget_y + 40,
                 };
                 push(s.tick, f.age == 0, click, &mut out);
             }
+        }
+        // The 1-2 "DANGER!" dialog: the board unpauses with the countdown at
+        // 276 → the player dismissed it before this tick.
+        let cd = |s: Option<&Snapshot>| {
+            s.and_then(|s| s.state.get("board"))
+                .and_then(|b| b.get("wave"))
+                .and_then(|w| w.get("countdown"))
+                .and_then(Value::as_i64)
+        };
+        let paused = |s: Option<&Snapshot>| {
+            s.and_then(|s| s.state.get("board"))
+                .and_then(|b| b.get("paused"))
+                .and_then(Value::as_bool)
+        };
+        if paused(prev_snap) == Some(true) && paused(Some(s)) == Some(false) {
+            if cd(prev_snap) == Some(276) {
+                out.inputs
+                    .entry(s.tick)
+                    .or_default()
+                    .push(Input::DismissDialog);
+            } else {
+                out.inputs
+                    .entry(s.tick)
+                    .or_default()
+                    .push(Input::SetPaused(false));
+            }
+        } else if paused(prev_snap) == Some(false)
+            && paused(Some(s)) == Some(true)
+            && cd(Some(s)) != Some(276)
+            && !s
+                .state
+                .get("guppies")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+        {
+            // A pause that isn't a board dialog (focus loss / menu). It
+            // happened before this tick's update.
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::SetPaused(true));
+        }
+        // Food upgrades: the board's food level / quantity step up.
+        let field = |s: Option<&Snapshot>, k: &str| {
+            s.and_then(|s| s.state.get("board"))
+                .and_then(|b| b.get(k))
+                .and_then(Value::as_i64)
+        };
+        if let (Some(a), Some(b)) = (field(prev_snap, "food_level"), field(Some(s), "food_level"))
+            && b > a
+        {
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::FoodQuality));
+        }
+        if let (Some(a), Some(b)) = (field(prev_snap, "max_food"), field(Some(s), "max_food"))
+            && b > a
+        {
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::FoodQuantity));
         }
         // Egg pieces: the board's egg counter steps up.
         let eggs = |s: Option<&Snapshot>| {
@@ -897,18 +1034,38 @@ pub fn deviation_resyncs(full: &Trace, ticks: &[u32]) -> BTreeMap<u32, MtRand> {
 /// new effect shots (kind ≥ 3) with age ≤ 1. These are the ticks where the
 /// original's stale-field read can draw extra RNG.
 pub fn debris_ticks(t: &Trace) -> Vec<u32> {
-    // A burst runs when the dead alien's life (`+0x198`) hits a multiple of
-    // 7 above 50, decremented during that tick's update.
-    t.snapshots
-        .iter()
-        .filter(|s| {
-            raw_list(s, "dead_alien").first().is_some_and(|b| {
-                let life = dead_alien_from_raw(b).life;
-                life % 7 == 0 && life > 50
-            })
-        })
-        .map(|s| s.tick)
-        .collect()
+    // Every tick that creates an effect shot (kind != 0) can hit the
+    // original's stale-field draw: dead-alien debris bursts (life a multiple
+    // of 7 above 50), hit sparks and gore. Detect bursts by the dead alien's
+    // life, and the rest by a new effect shot appearing (age 0/1, not seen
+    // in the previous snapshot).
+    let mut out = Vec::new();
+    let mut prev: Vec<Shot> = Vec::new();
+    for s in &t.snapshots {
+        let shots: Vec<Shot> = raw_list(s, "shot")
+            .iter()
+            .map(|b| shot_from_raw(b))
+            .collect();
+        let burst = raw_list(s, "dead_alien").first().is_some_and(|b| {
+            let life = dead_alien_from_raw(b).life;
+            life % 7 == 0 && life > 50
+        });
+        let fresh = shots.iter().any(|x| {
+            x.kind != 0
+                && x.age <= 1
+                && !prev.iter().any(|p| {
+                    p.kind == x.kind
+                        && p.widget_x == x.widget_x
+                        && p.widget_y == x.widget_y
+                        && p.age + 1 == x.age
+                })
+        });
+        if burst || fresh {
+            out.push(s.tick);
+        }
+        prev = shots;
+    }
+    out
 }
 
 /// Drop the shot list from snapshots while debris sparks are alive: their
@@ -919,17 +1076,28 @@ pub fn debris_ticks(t: &Trace) -> Vec<u32> {
 /// `capture` is the raw capture `decoded` was built from (decoding drops the
 /// raw object bytes this needs).
 pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
-    let debris: std::collections::BTreeSet<u32> = capture
-        .snapshots
-        .iter()
-        .filter(|s| {
-            !raw_list(s, "dead_alien").is_empty()
-                || raw_list(s, "shot")
-                    .iter()
-                    .any(|b| shot_from_raw(b).kind >= 3)
-        })
-        .map(|s| s.tick)
-        .collect();
+    // A spark that got the artifact start delay outlives ours: mask the list
+    // for its whole life, tracking it by (kind, widget, r).
+    let mut delayed = std::collections::BTreeSet::new();
+    let mut debris = std::collections::BTreeSet::new();
+    for s in &capture.snapshots {
+        let shots: Vec<Shot> = raw_list(s, "shot")
+            .iter()
+            .map(|b| shot_from_raw(b))
+            .collect();
+        for x in &shots {
+            if x.kind != 0 && x.delay > 0 {
+                delayed.insert((x.kind, x.widget_x, x.widget_y, x.r));
+            }
+        }
+        if !raw_list(s, "dead_alien").is_empty()
+            || shots
+                .iter()
+                .any(|x| x.kind >= 3 || delayed.contains(&(x.kind, x.widget_x, x.widget_y, x.r)))
+        {
+            debris.insert(s.tick);
+        }
+    }
     let mut out = decoded.clone();
     for s in &mut out.snapshots {
         if debris.contains(&s.tick) {
@@ -941,10 +1109,21 @@ pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
 
 /// [`replay_from`] with RNG re-syncs at deviation ticks.
 pub fn replay_resync(
+    board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+    resync: &BTreeMap<u32, MtRand>,
+) -> Result<Trace, ReplayError> {
+    replay_resync_dirty(board, t, inputs, resync, &[])
+}
+
+/// [`replay_resync`], skipping re-syncs on `dirty` (mid-frame) ticks.
+pub fn replay_resync_dirty(
     mut board: Board,
     t: &Trace,
     inputs: &BTreeMap<u32, Vec<Input>>,
     resync: &BTreeMap<u32, MtRand>,
+    dirty: &[u32],
 ) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
@@ -956,7 +1135,12 @@ pub fn replay_resync(
         );
         let next = board.tick + 1;
         board.step(inputs.get(&next).map_or(&[][..], Vec::as_slice));
-        if let Some(r) = resync.get(&board.tick) {
+        // Re-sync only where the snapshot is a whole tick: a mid-frame click
+        // (input applied at `next + 1` and marked dirty) means the capture's
+        // RNG already includes that click's draws.
+        if let Some(r) = resync.get(&board.tick)
+            && !dirty.contains(&board.tick)
+        {
             board.rng = r.clone();
         }
         snapshots.push(snapshot(&board));

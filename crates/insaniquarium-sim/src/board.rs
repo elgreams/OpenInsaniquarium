@@ -22,6 +22,8 @@ pub enum Input {
     DismissDialog,
     /// Press a shop button directly (same as clicking it).
     Buy(Slot),
+    /// Pause / unpause the board (focus loss or the menu; no dialog).
+    SetPaused(bool),
 }
 
 /// Modal dialogs the board can raise. While one is up the board is paused.
@@ -32,6 +34,9 @@ pub enum Dialog {
     LastFishDied,
     /// Dialog 0x11: game over.
     GameOver,
+    /// Dialog 0x0e "DANGER! A vicious alien is about to enter your tank!"
+    /// (tank 1-2, countdown 276).
+    AlienWarning,
     /// Dialog 0x13 "OUT OF MONEY!" (tutorial, money 0).
     /// TODO(spec): the loan it offers.
     OutOfMoney,
@@ -475,6 +480,12 @@ impl Board {
         }
         self.wave_countdown -= 1;
         match self.wave_countdown {
+            // Hint on 1-2 (`0x005483e0`), every wave: pause until dismissed.
+            // TODO(spec): the `+0x4b3` byte and the hints on other levels.
+            276 if self.tank == 1 && self.level == 2 => {
+                self.paused = true;
+                self.dialog = Some(Dialog::AlienWarning);
+            }
             275 => {
                 self.wave_a = (
                     self.rng.next_range(450) as i32 + 20,
@@ -558,6 +569,11 @@ impl Board {
                     self.purchase(slot);
                 }
                 Input::Buy(_) => {}
+                Input::SetPaused(p) => {
+                    if self.dialog.is_none() {
+                        self.paused = p;
+                    }
+                }
             }
         }
         self.update();
@@ -717,7 +733,7 @@ impl Board {
                 self.paused = false;
                 self.add_random_guppy();
             }
-            Some(Dialog::OutOfMoney) => self.paused = false,
+            Some(Dialog::OutOfMoney | Dialog::AlienWarning) => self.paused = false,
             Some(Dialog::GameOver) | None => {}
         }
     }
@@ -726,11 +742,12 @@ impl Board {
     pub fn update(&mut self) {
         // `tick` mirrors the app's update counter, which runs while the
         // board is paused; the board clock (`+0x28`) does not.
+        // The board clock `+0x28` (widget update count) runs while paused.
+        self.clock += 1;
         if self.paused {
             self.tick += 1;
             return;
         }
-        self.clock += 1;
         self.level_ticks += 1;
         if self.money_flash > 0 {
             self.money_flash -= 1;
@@ -750,6 +767,12 @@ impl Board {
         }
         // After the ambient check: `+0x2c4`, then the wave countdown.
         self.update_waves();
+        // A dialog raised by Board::Update pauses the board before the
+        // objects run this tick (they're separate widgets updated after).
+        if self.paused {
+            self.tick += 1;
+            return;
+        }
         if self.food_lockout > 0 {
             self.food_lockout -= 1;
         }
@@ -785,12 +808,19 @@ impl Board {
             let mut out = AlienOut::default();
             self.aliens[i].update(&self.guppies, &mut self.rng, &mut out);
             if let Some(g) = out.ate {
-                self.guppies.remove(g);
+                let victim = self.guppies.remove(g);
                 // Eat sound (`0x00538560`): one draw when not throttled.
                 if self.sample_ready(0x113, 3) {
                     self.rng.next_range(3);
                 }
-                // TODO(spec): gore burst when `app+0x882` is set.
+                // Gore burst (`app+0x882`, on by default): 2..4 kind-1 shots.
+                // TODO(options): the original's option that clears 0x882.
+                let n = self.rng.next_range(3) + 2;
+                for _ in 0..n {
+                    let y = self.rng.next_range(20) as i32 + 15 + victim.widget_y;
+                    let x = self.rng.next_range(20) as i32 + 15 + victim.widget_x;
+                    self.add_effect_shot(x, y, 1);
+                }
             }
             if out.died {
                 self.kill_alien(i);
@@ -864,10 +894,10 @@ mod tests {
         assert!((900..1100).contains(&ticks), "{ticks}");
         assert_eq!(b.dialog, Some(Dialog::LastFishDied));
         assert!(b.paused && b.guppies.is_empty());
-        // Paused: clicks do nothing, ticks don't advance the board.
+        // Paused: clicks do nothing and nothing moves (only the clock runs).
         let before = b.clock;
         b.step(&[Input::Click { x: 300, y: 200 }]);
-        assert_eq!((b.clock, b.money, b.foods.len()), (before, 200, 0));
+        assert_eq!((b.clock, b.money, b.foods.len()), (before + 1, 200, 0));
         b.step(&[Input::DismissDialog]);
         assert!(b.dialog.is_none() && !b.paused);
         assert_eq!(b.guppies.len(), 1);

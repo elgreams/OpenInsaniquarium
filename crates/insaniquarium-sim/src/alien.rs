@@ -136,7 +136,8 @@ impl Alien {
         if self.y > MAX_Y {
             self.y = MAX_Y;
         }
-        self.x += self.vx / self.divisor + lunge;
+        // `(x + v/div) + lunge`: two separate adds, in this order.
+        self.x = self.x + self.vx / self.divisor + lunge;
         self.y += self.vy / self.divisor;
         if self.cooldown > 0 {
             self.cooldown -= 1;
@@ -247,37 +248,36 @@ impl Alien {
             self.cel = 9 - self.turn;
         } else if self.turn < 0 {
             self.cel = self.turn + 10;
-        } else if self.vx.abs() <= 1.6 {
-            self.anim = (self.anim + 1) % 20;
+        } else if (-1.6..=1.6).contains(&self.vx) {
+            self.anim += 1;
+            if self.anim > 19 {
+                self.anim = 0;
+            }
             self.cel = self.anim / 2;
         } else {
+            // Stroke (`0x004daa00`): the alien pulls back, then surges.
             self.anim += 1;
             let (sx, sy) = (self.vx / self.divisor, self.vy / self.divisor);
-            match self.anim {
-                a if a < 7 => {
-                    self.x -= sx * 0.25;
-                    self.y -= sy * 0.25;
-                    self.cel = a / 2;
-                }
-                a if a < 11 => {
-                    self.x += sx * 0.75;
-                    self.y += sy * 0.75;
-                    self.cel = a / 2;
-                }
-                a if a < 40 => {
-                    self.x += sx * 0.5;
-                    self.y += sy * 0.5;
-                    self.cel = 6;
-                }
-                a if a <= 50 => {
-                    self.x += sx * 0.5;
-                    self.y += sy * 0.5;
-                    self.cel = (a - 50).abs() / 2;
-                }
-                _ => {
-                    self.cel = 0;
-                    self.anim = 0;
-                }
+            let a = self.anim;
+            if a < 7 {
+                self.x -= sx * 0.5 * 0.5;
+                self.y -= sy * 0.5 * 0.5;
+                self.cel = a / 2;
+            } else if a < 11 {
+                self.x += sx * 0.5 * 1.5;
+                self.y += sy * 0.5 * 1.5;
+                self.cel = a / 2;
+            } else if a < 40 {
+                self.cel = 6;
+                self.x += sx * 0.5;
+                self.y += sy * 0.5;
+            } else if a > 50 {
+                self.cel = 0;
+                self.anim = 0;
+            } else {
+                self.x += sx * 0.5;
+                self.y += sy * 0.5;
+                self.cel = (a - 50).abs() / 2;
             }
         }
         #[allow(clippy::float_cmp)]

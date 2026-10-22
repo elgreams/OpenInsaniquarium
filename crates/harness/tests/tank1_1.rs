@@ -345,13 +345,99 @@ fn sylvester_wave_matches() {
     board.shop = insaniquarium_sim::shop::Shop::adventure(1, 2);
     board.paused = false;
     let resync = harness::replay::deviation_resyncs(&full, &harness::replay::debris_ticks(&t));
-    let actual =
-        harness::replay::replay_resync(board, &expected, &inferred.inputs, &resync).unwrap();
+    let actual = harness::replay::replay_resync_dirty(
+        board,
+        &expected,
+        &inferred.inputs,
+        &resync,
+        &inferred.dirty,
+    )
+    .unwrap();
     eprintln!("debris resyncs: {}", resync.len());
     eprintln!(
         "sylvester: ticks {from}..={to}, {} inputs, {} masked",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),
         inferred.dirty.len()
+    );
+    if let Some(d) = diff(&expected, &actual) {
+        panic!("{d}");
+    }
+}
+
+/// Full tank 1-2 (Stinky, food upgrade, Sylvester waves, egg pieces) from
+/// the level start, keyed on the logic counter. Skips if the capture is
+/// absent. Deviations: dead-alien debris (RNG re-synced after each burst).
+#[test]
+fn full_tank_1_2_replays() {
+    use harness::replay::{
+        debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
+    };
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-2_full_02.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let level = |s: &harness::trace::Snapshot| s.state["board"]["level"].as_i64();
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| level(s) == Some(2) && s.state["board"]["paused"].as_bool() == Some(false))
+        .unwrap();
+    let from = full.snapshots[i].tick;
+    let to = full.snapshots[i..]
+        .iter()
+        .take_while(|s| level(s) == Some(2))
+        .last()
+        .unwrap()
+        .tick;
+    // Re-key by the board clock (one per board update, paused or not), so
+    // updates the capture missed become gaps rather than misalignment.
+    let raw = window(&full, from, to);
+    let mut t = harness::replay::by_board_clock(&raw);
+    for stream in ["app", "global"] {
+        t.header
+            .rng
+            .insert(stream.into(), rebase_rng(&full, stream, from).unwrap());
+    }
+    // The RNG at each snapshot must come from the capture's own ticks:
+    // rebase_rng walks `full`, so translate when re-syncing.
+    let mut inferred = inferred_clicks(&t);
+    inferred.dirty.extend(harness::replay::after_gaps(&t));
+    let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
+    let board = board_from_capture(&t).unwrap();
+    let mut board = board;
+    board.tank = 1;
+    board.level = 2;
+    board.shop = {
+        let mut sh = insaniquarium_sim::shop::Shop::adventure(1, 2);
+        sh.revealed = board.shop.revealed;
+        sh
+    };
+    // Debris resyncs come from the original tick numbering.
+    let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
+    let resync: std::collections::BTreeMap<u32, _> = debris_ticks(&t)
+        .into_iter()
+        .filter_map(|ct| {
+            Some((
+                ct,
+                deviation_resyncs(&full, &[tick_of(ct)?])
+                    .into_values()
+                    .next()?,
+            ))
+        })
+        .collect();
+    let actual = harness::replay::replay_resync_dirty(
+        board,
+        &expected,
+        &inferred.inputs,
+        &resync,
+        &inferred.dirty,
+    )
+    .unwrap();
+    eprintln!(
+        "full 1-2: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
+        inferred.inputs.values().map(Vec::len).sum::<usize>(),
+        inferred.dirty.len(),
+        resync.len()
     );
     if let Some(d) = diff(&expected, &actual) {
         panic!("{d}");
