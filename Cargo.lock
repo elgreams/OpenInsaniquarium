@@ -3201,7 +3201,9 @@ name = "insaniquarium-app"
 version = "0.0.0"
 dependencies = [
  "bevy",
+ "image",
  "insaniquarium-sim",
+ "serde_json",
  "sexy-core",
  "thiserror 2.0.21",
 ]

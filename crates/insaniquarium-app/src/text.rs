@@ -45,6 +45,11 @@ impl ImageFont {
         self.layer.ascent
     }
 
+    /// `Font::GetAscentPadding` (`LayerSetAscentPadding`).
+    pub fn ascent_padding(&self) -> i32 {
+        self.layer.ascent_padding
+    }
+
     /// `Font::GetHeight`: the tallest glyph, rect height plus its y offset
     /// (computed in `LayerSetImageMap` @ `0x0045a71f`).
     pub fn glyph_height(&self) -> i32 {
@@ -115,7 +120,9 @@ impl ImageFont {
         (self.layer.ascent + self.layer.line_spacing_offset).max(1)
     }
 
-    /// Pen advance of `text` in pixels (kerning included).
+    /// Pen advance of `text` in pixels. `ImageFont::StringWidth` (slot 7 @
+    /// `0x0045bf50`) sums `CharWidth(c, prev)` (slot 9 @ `0x0045bfd0`):
+    /// the glyph width plus the kerning of the pair with the previous char.
     pub fn width(&self, text: &[u8]) -> i32 {
         let mut pen = 0;
         let mut prev = None;

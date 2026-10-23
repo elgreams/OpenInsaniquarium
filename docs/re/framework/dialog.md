@@ -28,6 +28,17 @@ Status: `draft` (static). Covers the in-tank message boxes ("DANGER!", "YOUR LAS
 
 Text wrap details (`Widget` slots 63/65) are approximated: greedy word wrap, centred lines.
 
+## Buttons
+
+`DialogButton::Draw` (`0x00476f70`), when the button has a font, draws its label at:
+
+- pen x = `(w − StringWidth(label)) / 2 + textOffsetX` (`+0x12c`);
+- baseline y = `(h − ascent/6 − ascentPadding − 1 + ascent) / 2 + textOffsetY` (`+0x130`).
+
+Both divisions are C integer divisions, and the coordinates are relative to the button. `ImageFont::StringWidth` (slot 7 @ `0x0045bf50`) sums `CharWidth(c, prev)` (slot 9 @ `0x0045bfd0`): the glyph width plus the kerning pair (prev, c) plus the layer spacing (0 in every game font), times the point-size scale (1 at the default size).
+
+The game's button setup helper (`0x005034e0`) sets the text offset to **(−2, 0)**. It also sets the three image cels (up / over / down = thirds of the button image) and draws the image as a 3×3 box. Every game button goes through it: the dialog buttons (from `0x00504060`), `0x00506820`/`0x00506760` (hatch screen, help, pet, tank, high-score, sim and bonus screens) and the game selector. `confirmed`: `+0x12c = −2` on both hatch-screen buttons live, and the hatch-screen frames match pixel for pixel with it.
+
 ## Board dialogs
 
 | Id | Header | Body | When |

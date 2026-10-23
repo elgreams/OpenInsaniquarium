@@ -11,6 +11,11 @@ sexy-core.workspace = true
 insaniquarium-sim.workspace = true
 thiserror = "2"
 bevy = { workspace = true, features = ["default_app", "default_platform", "2d", "audio", "wav", "png"] }
+# PNG in/out for frame comparison (already in the tree via sexy-core).
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+serde_json = "1"
 
 [features]
 # Faster incremental dev builds: `cargo run --features dev`

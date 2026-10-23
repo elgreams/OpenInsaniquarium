@@ -5,6 +5,6 @@ set -euo pipefail
 W=$(xdotool search --name "^Insaniquarium Deluxe 1.1$" | while read w; do
   g=$(xwininfo -id "$w" | awk '/Width:/{w=$2}/Height:/{h=$2}END{print w"x"h}')
   [ "$g" = "640x480" ] && echo "$w"; done | head -1)
-xdotool windowraise "$W"
+xdotool windowraise "$W"; sleep 0.05
 read -r X Y < <(xwininfo -id "$W" | awk '/Absolute upper-left X/{x=$4}/Absolute upper-left Y/{y=$4}END{print x, y}')
 ffmpeg -loglevel error -f x11grab -video_size 640x480 -i ":0.0+$X,$Y" -frames:v 1 -y "$1"
