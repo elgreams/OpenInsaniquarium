@@ -66,25 +66,38 @@ impl ImageFont {
         self.glyph_height() + self.layer.line_spacing_offset
     }
 
-    /// Greedy word wrap to `width` pixels.
+    /// Word wrap to `width` pixels as `Graphics::WriteWordWrapped`
+    /// (`0x00456e50`) does: a line breaks at its last space once it gets
+    /// too wide, the spaces after the break are skipped, and spaces inside
+    /// a line are kept as written ("Oops!  All").
     pub fn wrap(&self, text: &str, width: i32) -> Vec<String> {
+        let t = text.as_bytes();
         let mut lines = Vec::new();
-        let mut line = String::new();
-        for word in text.split_whitespace() {
-            let candidate = if line.is_empty() {
-                word.to_string()
-            } else {
-                format!("{line} {word}")
-            };
-            if self.width(candidate.as_bytes()) > width && !line.is_empty() {
-                lines.push(std::mem::take(&mut line));
-                line = word.to_string();
-            } else {
-                line = candidate;
+        let mut start = 0;
+        while start < t.len() {
+            let mut end = t.len();
+            let mut last_space = None;
+            for i in start..t.len() {
+                if t[i] == b' ' {
+                    last_space = Some(i);
+                }
+                if self.width(&t[start..=i]) > width {
+                    end = match last_space {
+                        Some(sp) if sp > start => sp,
+                        _ => i.max(start + 1),
+                    };
+                    break;
+                }
             }
-        }
-        if !line.is_empty() {
-            lines.push(line);
+            lines.push(
+                String::from_utf8_lossy(&t[start..end])
+                    .trim_end()
+                    .to_string(),
+            );
+            start = end;
+            while start < t.len() && t[start] == b' ' {
+                start += 1;
+            }
         }
         lines
     }

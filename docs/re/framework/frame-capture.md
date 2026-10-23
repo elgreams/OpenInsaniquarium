@@ -22,3 +22,23 @@ The last frame the game presented before the pause, for the state at tick `T`. S
 - **Cursor:** the mouse pointer is in the screenshot if it's over the window (the game draws its own cursor). Park it outside the window, or mask it.
 - **Hover:** button hover art depends on the pointer too. Record where it was (the capture doesn't yet).
 - **Global-RNG cosmetics:** ambient bubbles and the hatch screen's bubble emitter aren't modelled. Expect differences there; the diff reports them by region.
+
+## The test
+
+`crates/insaniquarium-app/tests/frames.rs` rebuilds each frame's state from its snapshot and renders it on the CPU (`render.rs`):
+- the hatch screen from `pres.hatch`;
+- the tank via `harness::replay::board_from_capture`, which includes the light bands, the level tick, the message line and dead fish;
+- the board dialog from `pres.dialogs`.
+
+It compares the result with the screenshot (`framediff.rs`: a pixel mismatches when a channel is off by more than 40; a 32×32 region fails when more than 5 % of its pixels mismatch). For each frame it writes ours | original | diff to `target/frames/<name>/`. Every frame must match.
+
+Captured sets: `hatch_niko_01` (3 frames) and `tank12_start_01` (10 frames of 1-2: start, alien message, a guppy starving into a `DeadFish`, GAME OVER). Both match pixel for pixel in the compared regions.
+
+What the frame diff found and fixed:
+- the hatch-screen Menu button;
+- the −2 px button-label offset;
+- the backdrop's wave strip, light bands and foreground cut-out;
+- the message line;
+- the tank label;
+- dead fish;
+- the dialog minimum height and text positions.

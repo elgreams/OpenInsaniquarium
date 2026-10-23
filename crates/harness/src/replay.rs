@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot, Warp};
 use insaniquarium_sim::board::Input;
+use insaniquarium_sim::fish::DeadFish;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::{Board, Coin, Fish, Food};
@@ -116,6 +117,25 @@ pub fn coin_from_raw(b: &[u8]) -> Coin {
         collected: b[0x198] != 0,
         floor_time: rd_i32(b, 0x19c),
         multiplier: rd_i32(b, 0x1c0),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
+/// A `DeadFish` (`fish-guppy.md#dead-fish`) from its raw bytes.
+pub fn dead_fish_from_raw(b: &[u8]) -> DeadFish {
+    DeadFish {
+        y: rd_f64(b, 0x160),
+        x: rd_f64(b, 0x168),
+        vx: rd_f64(b, 0x170),
+        vy: rd_f64(b, 0x178),
+        divisor: rd_f64(b, 0x180),
+        kind: rd_i32(b, 0x1a4),
+        facing_right: b[0x158] != 0,
+        cel: rd_i32(b, 0x18c),
+        turn: rd_i32(b, 0x190),
+        alpha: rd_f64(b, 0x198),
+        life: rd_i32(b, 0x1a0),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -295,6 +315,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| dead_alien_from_raw(b))
         .collect();
+    board.dead_fish = raw_list(first, "dead_fish")
+        .iter()
+        .map(|b| dead_fish_from_raw(b))
+        .collect();
     board.warps = raw_list(first, "warp")
         .iter()
         .map(|b| warp_from_raw(b))
@@ -365,15 +389,48 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
             board.tank = tank as i32;
             board.level = level as i32;
         }
-        // One-time hint bytes (`+0x4b3`, `+0x4b4`, `+0x4c1`); captures
-        // without them start with none shown.
-        if let Some(h) = b.get("hints").and_then(Value::as_str).and_then(hex_bytes) {
-            for (i, off) in [0x4b3usize, 0x4b4, 0x4c1].iter().enumerate() {
-                board.hints_shown[i] = h.get(off - 0x4b0).is_some_and(|&v| v != 0);
+        // One-time hint bytes (`+0x4b0..`, board.md#message-line). Older
+        // captures don't record them; those start mid-level, where the
+        // one-time messages were most likely shown already, so all count
+        // as shown (only the "REALLY hungry" one has a side effect, a sound).
+        match b.get("hints").and_then(Value::as_str).and_then(hex_bytes) {
+            Some(h) => {
+                for (flag, &v) in board.hints.iter_mut().zip(&h) {
+                    *flag = v != 0;
+                }
+            }
+            None => {
+                use insaniquarium_sim::message::{
+                    HINT_BATTLE_TIP, HINT_DANGER, HINT_NEW_BREED, HINTS,
+                };
+                board.hints = [true; HINTS];
+                // The hint dialogs pause the board, so the replay must
+                // raise them: they start unshown, as before.
+                for i in [HINT_DANGER, HINT_BATTLE_TIP, HINT_NEW_BREED] {
+                    board.hints[i] = false;
+                }
             }
         }
         if let Some(c) = b.get("clock").and_then(Value::as_i64) {
             board.clock = c as i32;
+        }
+        if let Some(v) = b.get("ticks").and_then(Value::as_i64) {
+            board.level_ticks = v as i32;
+        }
+        if let Some(v) = b.get("flash").and_then(Value::as_i64) {
+            board.money_flash = v as i32;
+        }
+        if let Some(m) = b.get("msg") {
+            let g = |k: &str| m.get(k).and_then(Value::as_i64).unwrap_or(0) as i32;
+            board.message.timer = g("t");
+            board.message.flash = g("flash") != 0;
+            board.message.id = g("hint");
+            board.message.text = m.get("text").and_then(Value::as_str).unwrap_or("").into();
+        }
+        if let Some(l) = b.get("lights").and_then(Value::as_array) {
+            for (x, v) in board.light_x.iter_mut().zip(l) {
+                *x = v.as_f64().unwrap_or(0.0) as f32;
+            }
         }
         if let Some(raw) = b.get("samples").and_then(Value::as_str).and_then(hex_bytes) {
             for (slot, w) in board.sample_last.iter_mut().zip(raw.as_chunks::<4>().0) {

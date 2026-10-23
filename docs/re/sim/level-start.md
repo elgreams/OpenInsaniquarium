@@ -5,7 +5,7 @@ Status: `draft`, static. Covers how a tank level is set up and populated in the 
 ## Call chain
 
 `App::StartLevel` (`0x0054cbf0`):
-1. `0x0054c540` (screen setup) constructs a fresh **`Board`** (`0x00542150`). The Board constructor makes **3 app draws**: `r % 640` each, stored as floats at `board+0x34c..0x354` (background element x positions; cosmetic). Confirmed by `tank1-1_full_01`. Then **`Board::InitLevel`** (`0x00541a20`), which resets per-level state and the shop. See `shop-bar.md#level-init-and-per-level-layout`. It sets money 200, food price 5, wave countdown 3000, egg counter 1, laser 2, food level 0 and food quantity 1, then calls `Board::SetupShop`, which overrides the alien kind and countdown per level (`objects/alien-sylvester.md#level-setup`). **No RNG** on tank 1.
+1. `0x0054c540` (screen setup) constructs a fresh **`Board`** (`0x00542150`). The Board constructor makes **3 app draws**: `r % 640` each, stored as floats at `board+0x3d8..0x3e0` (the light-band x positions, `board.md#backdrop`; cosmetic). Confirmed by `tank1-1_full_01`. Then **`Board::InitLevel`** (`0x00541a20`), which resets per-level state and the shop. See `shop-bar.md#level-init-and-per-level-layout`. It sets money 200, food price 5, wave countdown 3000, egg counter 1, laser 2, food level 0 and food quantity 1, then calls `Board::SetupShop`, which overrides the alien kind and countdown per level (`objects/alien-sylvester.md#level-setup`). **No RNG** on tank 1.
 2. If `0x0054b2a0` is set (the final bonus level, or `board+0x2a5`), a different path is taken. Not covered here.
 3. Otherwise **`Board::PopulateLevel`** (`0x005498b0`), then `0x0054b2d0`.
 

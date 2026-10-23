@@ -189,3 +189,83 @@ Owners only ever lose their shadow when removed. Shadows are cosmetic apart from
 - `Board::Update` also draws in level-start/background selection (`0x00547776`) and the surface-splash burst (`0x005478f0`: `5 + %5` splashes, each `%41` and `%10`).
 
 None of these feed back into gameplay. Gameplay sites on the global stream are only: guppy startle exit (`Fish::Update`, mode 123), aliens, pets, missiles, and Virtual Tank fish init. So the sim can treat the global stream as independent of the app stream. The replay harness compares only the app stream's `mti`, and the global stream is resynchronised from each capture's header. **Modelling the bubble systems exactly** (float positions, list order) is needed only before the first global-stream gameplay draw that follows bubble activity, i.e. alien levels and startles. It's tracked as an open item for M3's Sylvester work.
+
+## Backdrop
+
+`Board::DrawBackdrop` @ `0x00538e50`, called first by `Board::Draw` @ `0x0053f5f0`. Normal game, 3D renderer on (`[app+0x36c]+0x38`, which is the case in our captures). `confirmed`: a model built from these rules matches a screenshot of the original within 2 levels per channel on average.
+
+1. **Screen shake:** while `+0x2b4` is in 1..19 and the board isn't paused, the whole backdrop is drawn offset by `(rand() % 5 − 2, rand() % 5 − 2)` using the C `rand()` (not MTRand), over a black fill. TODO: what sets `+0x2b4`.
+2. `IMAGE_AQUARIUMn` (n = tank background `+0x3e8`) at (0, 0).
+3. **Wave strip** (`0x00500c90`, drawn at y = 88, additive): cel `c` = `IMAGE_WAVE`'s animation (rows 12, ping-pong, framedelay 4, begindelay 6) at `t = +0x444`, the level tick. In order:
+   - `IMAGE_WAVESIDE` row `c` at x 0;
+   - `IMAGE_WAVE` row `c` at x 160 and at x 320;
+   - `IMAGE_WAVESIDE` row `c`, mirrored, at x 480.
+4. **Light bands** (additive, colourised white): `IMAGE_TANKLIGHTING` (640×80) at y = 365.
+   - Band 0 (`+0x3d8`) at alpha 40.
+   - Band 1 (`+0x3dc`) at alpha 100.
+   - Band 2 (`+0x3e0`) at alpha 70, mirrored.
+
+   Each band is drawn twice, at x = trunc(pos) and at x = trunc(pos − 640.0), so it wraps around.
+5. **Foreground cut-out:** `IMAGE_TANKMASKn` at (0, 365), normal blending. At load (`LoadingThreadProc` @ `0x005510b0` → `CreateMaskedCutout` @ `0x00503120`) this image is replaced by the 640×80 strip of `AQUARIUMn` at y = 365, with the mask as its alpha. So the bands only show where the mask is dark.
+
+The three band positions are floats.
+- **Init:** the Board ctor (`0x00542150`) sets them in order to `MTRand % 640`. These are the "3 app draws" of `sim/level-start.md`; the earlier note naming them `+0x34c..0x354` was wrong.
+- **Each unpaused tick** (`Board::Update` @ `0x0054805d`, right after the money-flash decrement): pos0 −= 1.6, pos1 += 1.8, pos2 += 2.2. Each step is computed in double precision and stored back as f32.
+- **Wrap:** a position above 640 becomes 0; one below 0 becomes 640. `confirmed` in `traces/frames/tank12_start_01`: 629.8 → 57.2 over 31 ticks (+2.2 per tick, through 0), and 9.6 → 601.6.
+
+## Message line
+
+`Sexy::MessageWidget` (ctor `0x00534490`, vtable `0x005a6f5c`), held at `board+0x118`. It is a single text line along the bottom of the tank: "Welcome to the next level!", "Click on coins for extra money!", and so on.
+
+| Field | Meaning |
+|---|---|
+| `+0x30..+0x3c` | rect (90, 445, 460, h), h = outline font height + 6 |
+| `+0x8c` | `std::string` text |
+| `+0xa8` | text colour (180, 250, 90) |
+| `+0xb8` | outline colour (0, 75, 0) |
+| `+0xcc` | outline font `FONT_CONTINUUMBOLD14OUTLINE` (`ContinuumBold14outback`) |
+| `+0xd0` | **timer**: ticks left; drawn while > 0. The ctor sets 185 |
+| `+0xd4` | flash flag |
+| `+0xd8` | id of the last one-time message (−1 = none) |
+
+- **Update** (slot 22 @ `0x00530800`): when the board exists and isn't paused (`board+0x94`), the timer decreases by 1 while > 0.
+- **Draw** (slot 26 @ `0x00530830`), while the timer > 0. Let `asc` be the outline font's ascent (slot 1) and `fh` its height (slot 4).
+  - Baseline y = asc + (h − fh) / 2.
+  - x = (460 − StringWidth(text)) / 2 + 2 (StringWidth from the outline font).
+  - Both are C integer divisions, relative to the widget at (90, 445).
+  - Order: the text in the outline font and outline colour, then in `FONT_CONTINUUMBOLD14` and the text colour, at the same position.
+  - **Flash:** when the flag is set, nothing is drawn on ticks where `timer % 32 ≥ 27` (a blink).
+
+**Show** = `Board::ShowMessage(text, flash, id)` @ `0x0053e950`:
+
+- `id = −1`: set the text, flash = `flash`, timer = **500** if flashing, else **100**.
+- `id ≥ 0`: only if the board's one-time byte `board+0x4b0+id` is still 0. Set the text, flash, and timer **185** (a flashing one also passes through 500 first, then is overwritten). Then set the byte to 1.
+- Either way, `+0xd8 = id` and the colours are reset.
+
+The one-time bytes `board+0x4b0..+0x4e5` are zeroed by InitLevel. The three hint *dialogs* (`framework/dialog.md`) use bytes 3, 4 and 0x11 of the same table.
+
+Tank-1 callers. "1-1" means the tutorial predicate `0x00537b80` (tank 1, level 1, `profile+0x59` clear). "Idle" means only when the timer is ≤ 0.
+
+| Where | Condition | id, flash | Text |
+|---|---|---|---|
+| `PopulateLevel` end (`0x00549be1`), Adventure | 1-1 | 0, no | Welcome to the Insaniquarium! |
+| 〃 | 1-2, `+0x59` clear | 0x10, no | Welcome to the next level! |
+| 〃 | 2-1, `+0x59` clear | 0x13, no | Welcome to the second tank! Now things get tricky! |
+| `Board::Update` (`0x0054913b`), Adventure, `+0x444 == 150` | 1-1 | 1, no | Here are your first fish! Take good care of them! |
+| 〃 | 1-2 (`0x00537bb0(1,2)`) | 0x14, no | On this level you will meet your 1st alien opponent! |
+| `AddFood` (`0x0054337c`), food limit reached | 1-1, idle | 6, no | You can only drop 1 food pellet at a time for now |
+| `Fish::UpdateCoin` (`0x004f1502`), after each coin-drop attempt | 1-1 | chain 5 → 0x19 → 0x1a, yes | Click on coins for extra money! |
+| `Fish::UpdateHunger`, hunger == −1, announcing fish | – | chain 8 → 0x17 → 0x18, yes | Fish are hungry! Click to drop food! |
+| 〃 hunger == −200 | – | 0x15, yes | Fish are REALLY hungry! Click to feed! (+ sound 0x106); id = byte 0x15 |
+| 〃 hunger == −400 | – | 0x16, yes | Fish are about to die of hunger! Click on aquarium! |
+| `Fish::OnStageUp` stage 1, first reveal of slot 0 | 1-1, idle | 9, no | Your fish has grown! Good work! |
+| 〃 stage 2, first reveal of slot 11 | 1-1, idle | 7, no | Buy 3 egg pieces to complete level! |
+| 〃 stage 2, slot 2 not yet revealed | 1-2, `+0x59` clear | 0xb, no | Upgrade Food Quality to make food more nourishing! |
+| `Purchase` slot 0 | 1-1 and money < price | 0xe, no | You can't afford new fish yet! Collect more money! |
+| `Purchase` slot 2, first reveal of slot 3 on 1-2 | `+0x59` clear | 0xc, no | Upgrade Food Quantity to drop more food at once! |
+| `Purchase` slot 3 | tank 1, quantity was 1 | −1, no | Hold down mouse button to Auto-Feed! |
+| `BuyEggPiece` | 1-1, counter 1, idle | 0xa, `EDI` | Collect 2 more egg pieces to finish level! |
+
+**Chains:** the coin and hunger messages show up to three times per level.
+- Coin: if byte 0x19 is set, show with id 0x1a; else if byte 5 is set, show with id 0x19; else show with id 5.
+- Hunger: if byte 0x17 is set, show 0x18; if byte 8 is set, show 0x17; then show 8. All three calls are made and only unused ids take effect, so the 1st, 2nd and 3rd times use 8, 0x17 and 0x18. `static`; the 1-2 rows are `confirmed` by `traces/frames/tank12_start_01` (both 1-2 texts on screen; the live widget showed id 0x14 for the alien line).

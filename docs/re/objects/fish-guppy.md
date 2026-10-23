@@ -181,3 +181,55 @@ So a guppy lasts **500 ticks hungry ≈ 14 s** after hunger hits 0 before dying 
 - ~~Rounding~~: `FUN_00564160` is `_ftol2` (truncation), confirmed.
 
 Partial decompiles from the interrupted research run are in `re/scratch/` (local, gitignored).
+
+## Dead fish (`Sexy::DeadFish`)
+
+Status: `confirmed` by `traces/frames/tank12_start_01` (raw state: vy +0.05 per tick to 2.0, cel 9 at life 105, cel 6 and alpha 0.88 at life 98).
+
+Type 0x1b, list `board+0x98`, vtable `0x00597bfc`, ctor `0x004eed20`. It is spawned by `Fish::Die` (slot 88/89 @ `0x004d5f90`) → `Board::AddDeadFish` (`0x005441f0`). It gets the guppy's x, y, vx, vy, divisor, stage, "facing right" (`vx > 0`, from `+0x168`) and its shadow. The shadow is handed over to the dead fish (`shadow+0x158` = dead fish), so the fish's shadow stays. **No RNG.**
+
+Fields (raw):
+
+| Offset | Meaning | Init |
+|---|---|---|
+| `+0x30/+0x34` | widget x/y (ints) | trunc(x), trunc(y) |
+| `+0x158` | facing right (byte, mirrors the art) | vx > 0 |
+| `+0x160/+0x168` | **y, x** (f64; note the order) | the fish's position, truncated to ints by `Fish::Die` |
+| `+0x170` | vx | from the fish |
+| `+0x178` | vy | fish vy − 2 if y ≥ 115 and vy ≥ −3, else fish vy − 1 |
+| `+0x180` | divisor | from the fish |
+| `+0x188` | byte | 0 |
+| `+0x18c` | cel | 0 |
+| `+0x190` | turn counter | 100 |
+| `+0x198` | alpha (f64) | 1.0 |
+| `+0x1a0` | life | 125 |
+| `+0x1a4` | kind (= stage) | stage |
+
+**Update** (slot 22 @ `0x004f64e0`), unpaused only:
+
+1. Generic object timers (`0x004f22c0`).
+2. **Cel.**
+   - If `0 ≤ turn ≤ 10`: turn −= 1 and cel = turn. This doesn't happen with the initial 100.
+   - Otherwise:
+     - life > 105 → cel 9 − (life − 106)/2, so 9 down to 0 over 20 ticks;
+     - 103..104 → 8;
+     - 101..102 → 7;
+     - 105 → 9;
+     - ≤ 100 → 6.
+
+     (Kinds 8/9 use only the first rule, else 9.)
+3. **Fade:** while life < 105, alpha −= 0.02 (floored at 0), and the shadow's scale (`+0x168`) follows it.
+4. If life < 1: remove (slot 82). Done.
+5. **Life** −= 1 while y > 370 (kind 6: > 300) or life > 105. Otherwise it waits.
+6. **vx** decays toward 0 by 0.03.
+7. **vy** settles toward 2.0. If vy < 2.0, vy += 0.05. (The `+0x188` "rising" branch isn't set for guppies.)
+8. x += vx / divisor; y += vy / divisor.
+9. **Clamp:** x to [10, 540]; y to at most 380 (kind 6: 310), and at least 85.
+10. Widget = (trunc(x), trunc(y)).
+
+**Draw** (slot 26 @ `0x004de030`):
+- Colourised white at alpha trunc(alpha · 255).
+- Offset y = (90 − life)/2 while life < 90, else 0. The corpse sinks into the sand as it fades.
+- Kinds 0..4 (guppy stages; kind > 2 counts as kind − 1): `IMAGE_SMALLDIE`, the 80×80 cel at (cel·80, kind·80), mirrored when facing right, at the widget position plus the offset.
+
+Z order: dead fish draw just above shadows (`RebuildZOrder`: shadows, dead fish, dead aliens, …).

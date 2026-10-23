@@ -7,8 +7,9 @@ use sexy_core::rand::MtRand;
 
 use crate::alien::{Alien, AlienOut, DeadAlien, Shot, Warp};
 use crate::coin::{Coin, CoinStep};
-use crate::fish::{Fish, FishEnv, World};
+use crate::fish::{DeadFish, Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
+use crate::message::{self, HINT_BATTLE_TIP, HINT_DANGER, HINT_NEW_BREED, HINTS, Message};
 use crate::pet::{Pet, PetOut, STINKY};
 use crate::shop::{EGG_DONE, Shop, Slot};
 use crate::sound::{Music, Played, Sound};
@@ -103,9 +104,11 @@ pub struct Board {
     pub arrow_food_quality: bool,
     /// The modal dialog raised by the board, if any.
     pub dialog: Option<Dialog>,
-    /// Board hint bytes `+0x4b3` (DANGER), `+0x4b4` (battle tip), `+0x4c1`
-    /// (new breed): each is shown once per level.
-    pub hints_shown: [bool; 3],
+    /// One-time hint bytes `+0x4b0..` (message.rs): each hint dialog or
+    /// one-time message is shown once per level.
+    pub hints: [bool; HINTS],
+    /// The message line (`board+0x118`, board.md#message-line).
+    pub message: Message,
     /// `board+0xa0`: guppies in insertion order.
     pub guppies: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
@@ -157,6 +160,11 @@ pub struct Board {
     pub music: Option<Music>,
     /// `board+0xf0`: warp-in holes (cosmetic, no RNG).
     pub warps: Vec<Warp>,
+    /// `board+0x98`: dead guppies sinking (cosmetic, no RNG).
+    pub dead_fish: Vec<DeadFish>,
+    /// `+0x3d8..+0x3e0`: x of the three tank-light bands (cosmetic;
+    /// board.md#tank-lighting).
+    pub light_x: [f32; 3],
 }
 
 impl Board {
@@ -179,7 +187,8 @@ impl Board {
             arrow_buy_egg: false,
             arrow_food_quality: false,
             dialog: None,
-            hints_shown: [false; 3],
+            hints: [false; HINTS],
+            message: Message::default(),
             guppies: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
@@ -206,6 +215,8 @@ impl Board {
             sounds: Vec::new(),
             music: None,
             warps: Vec::new(),
+            dead_fish: Vec::new(),
+            light_x: [0.0; 3],
         }
     }
 
@@ -258,10 +269,10 @@ impl Board {
                 _ => (3, 3000),
             };
         }
-        // `Board::Board` (`0x00542150`): three background x positions,
-        // `r % 640` each (cosmetic).
-        for _ in 0..3 {
-            b.rng.next_range(640);
+        // `Board::Board` (`0x00542150`): the three light-band x positions,
+        // `r % 640` each (cosmetic, board.md#tank-lighting).
+        for x in &mut b.light_x {
+            *x = b.rng.next_range(640) as f32;
         }
         // Start bubble burst: (r & 3) + 3 bubbles, two draws each.
         let n = (b.rng.next_u31() & 3) + 3;
@@ -281,7 +292,23 @@ impl Board {
         for g in &mut b.guppies {
             g.growth = 2;
         }
+        // The welcome line (`PopulateLevel` @ `0x00549be1`, Adventure).
+        // TODO(spec): `profile+0x59` (replays after beating the game).
+        let welcome = match (tank, level) {
+            (1, 1) => Some(("Welcome to the Insaniquarium!", 0)),
+            (1, 2) => Some(("Welcome to the next level!", 0x10)),
+            (2, 1) => Some(("Welcome to the second tank! Now things get tricky!", 0x13)),
+            _ => None,
+        };
+        if let Some((text, id)) = welcome {
+            b.show_message(text, false, id);
+        }
         b
+    }
+
+    /// `Board::ShowMessage` (`0x0053e950`, board.md#message-line).
+    pub fn show_message(&mut self, text: &str, flash: bool, id: i32) {
+        message::show(&mut self.message, &mut self.hints, text, flash, id);
     }
 
     /// `Board::AddPet(id, -1, -1)` (`0x00544a90`): 2 position draws, the
@@ -537,13 +564,17 @@ impl Board {
             // TODO(spec): the virtual-tank/mode checks on this path.
             276 => {
                 let hint = match (self.tank, self.level) {
-                    (1, 2) if !self.hints_shown[0] => Some((0, Dialog::AlienWarning)),
-                    (1, 2) if !self.hints_shown[1] => Some((1, Dialog::BattleTip)),
-                    (1, 3) if !self.hints_shown[2] => Some((2, Dialog::NewBreed)),
+                    (1, 2) if !self.hints[HINT_DANGER] => Some((HINT_DANGER, Dialog::AlienWarning)),
+                    (1, 2) if !self.hints[HINT_BATTLE_TIP] => {
+                        Some((HINT_BATTLE_TIP, Dialog::BattleTip))
+                    }
+                    (1, 3) if !self.hints[HINT_NEW_BREED] => {
+                        Some((HINT_NEW_BREED, Dialog::NewBreed))
+                    }
                     _ => None,
                 };
                 if let Some((i, d)) = hint {
-                    self.hints_shown[i] = true;
+                    self.hints[i] = true;
                     self.paused = true;
                     self.dialog = Some(d);
                 }
@@ -625,6 +656,13 @@ impl Board {
         if self.foods.len() as i32 >= self.max_food + extra {
             if !self.has_aliens {
                 self.money += self.food_price;
+            }
+            if self.tutorial && self.message.idle() {
+                self.show_message(
+                    "You can only drop 1 food pellet at a time for now",
+                    false,
+                    6,
+                );
             }
             return ClickResult::FoodLimit;
         }
@@ -713,6 +751,14 @@ impl Board {
 
     /// Slot 0: spend, then `AddRandomGuppy` (12 draws with the splash).
     fn buy_guppy(&mut self, price: i32) -> bool {
+        // Shown before TrySpend, even when pending coins then cover it.
+        if self.tutorial && self.money < price {
+            self.show_message(
+                "You can't afford new fish yet! Collect more money!",
+                false,
+                0xe,
+            );
+        }
         if !self.try_spend(price) {
             return false;
         }
@@ -737,6 +783,11 @@ impl Board {
         if self.tank == 1 && self.level == 2 && !self.shop.revealed[Slot::EggPiece as usize] {
             self.shop.reveal(Slot::FoodQuantity, true);
             self.shop.reveal(Slot::EggPiece, true);
+            self.show_message(
+                "Upgrade Food Quantity to drop more food at once!",
+                false,
+                0xc,
+            );
         }
         if self.sample_ready(0x111, 3) {
             self.sounds.push(Sound::Buy.into());
@@ -748,6 +799,9 @@ impl Board {
     fn buy_food_quantity(&mut self, price: i32) -> bool {
         if self.max_food >= 9 || !self.try_spend(price) {
             return false;
+        }
+        if self.tank == 1 && self.max_food == 1 {
+            self.show_message("Hold down mouse button to Auto-Feed!", false, -1);
         }
         self.max_food += 1;
         if self.sample_ready(0x111, 3) {
@@ -762,6 +816,9 @@ impl Board {
             return false;
         }
         self.arrow_buy_egg = false;
+        if self.tutorial && self.egg_count == 1 && self.message.idle() {
+            self.show_message("Collect 2 more egg pieces to finish level!", false, 0xa);
+        }
         self.egg_count += 1;
         if self.sample_ready(0x111, 3) {
             self.sounds.push(Sound::Buy.into());
@@ -783,17 +840,28 @@ impl Board {
                 self.shop.reveal(Slot::Guppy, true);
                 if self.tutorial {
                     self.arrow_buy_fish = true;
+                    if self.message.idle() {
+                        self.show_message("Your fish has grown! Good work!", false, 9);
+                    }
                 }
             }
             2 if first_level && !self.shop.revealed[Slot::EggPiece as usize] => {
                 self.shop.reveal(Slot::EggPiece, true);
                 self.arrow_buy_fish = false;
                 self.arrow_buy_egg = true;
+                if self.tutorial && self.message.idle() {
+                    self.show_message("Buy 3 egg pieces to complete level!", false, 7);
+                }
             }
             2 if self.tank == 1 && self.level == 2 => {
                 if !self.shop.revealed[Slot::FoodQuality as usize] {
                     self.arrow_food_quality = true;
                     self.shop.reveal(Slot::FoodQuality, true);
+                    self.show_message(
+                        "Upgrade Food Quality to make food more nourishing!",
+                        false,
+                        0xb,
+                    );
                 }
             }
             2 if self.tank == 1 && self.level >= 3 => {
@@ -824,6 +892,22 @@ impl Board {
         }
     }
 
+    /// The light bands drift by −1.6, +1.8 and +2.2 px per tick (f32), then
+    /// wrap: past 640 → 0, below 0 → 640 (`Board::Update` @ `0x0054805d`;
+    /// board.md#tank-lighting).
+    fn move_lights(&mut self) {
+        self.light_x[0] = (f64::from(self.light_x[0]) - 1.6) as f32;
+        self.light_x[1] = (f64::from(self.light_x[1]) + 1.8) as f32;
+        self.light_x[2] = (f64::from(self.light_x[2]) + 2.2) as f32;
+        for x in &mut self.light_x {
+            if *x > 640.0 {
+                *x = 0.0;
+            } else if *x < 0.0 {
+                *x = 640.0;
+            }
+        }
+    }
+
     /// One logic tick (28 ms).
     pub fn update(&mut self) {
         // `tick` mirrors the app's update counter, which runs while the
@@ -835,9 +919,27 @@ impl Board {
             return;
         }
         self.level_ticks += 1;
+        self.message.update();
+        // Level-tick-150 line (`Board::Update` @ `0x0054913b`, Adventure).
+        if self.level_ticks == 150 {
+            match (self.tank, self.level) {
+                (1, 1) => self.show_message(
+                    "Here are your first fish! Take good care of them!",
+                    false,
+                    1,
+                ),
+                (1, 2) => self.show_message(
+                    "On this level you will meet your 1st alien opponent!",
+                    false,
+                    0x14,
+                ),
+                _ => {}
+            }
+        }
         if self.money_flash > 0 {
             self.money_flash -= 1;
         }
+        self.move_lights();
         self.shop.tick();
         // Board::Update ambient bubbles (`0x0054815e`): one draw per tick;
         // on `% 1000 == 0`, a burst of `(r & 3) + 3` bubbles, each placed with
@@ -865,6 +967,8 @@ impl Board {
         }
         // Objects update in RebuildZOrder order: dead aliens, food, guppies,
         // aliens, pets, shots, coins.
+        // Dead fish come right after shadows (cosmetic, no RNG).
+        self.dead_fish.retain_mut(DeadFish::update);
         self.update_dead_aliens();
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
@@ -883,12 +987,19 @@ impl Board {
             sample_last: &mut self.sample_last,
             sounds: &mut self.sounds,
             stage_ups: &mut stage_ups,
+            message: &mut self.message,
+            hints: &mut self.hints,
+            tutorial: self.tutorial,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
         }
         for s in stage_ups {
             self.on_stage_up(s);
+        }
+        // Starved guppies leave a corpse (`Fish::Die` → `AddDeadFish`).
+        for f in self.guppies.iter().filter(|f| f.dead) {
+            self.dead_fish.push(DeadFish::from_fish(f));
         }
         self.guppies.retain(|f| !f.dead);
         // Aliens (`+0xb8`, pass 1).

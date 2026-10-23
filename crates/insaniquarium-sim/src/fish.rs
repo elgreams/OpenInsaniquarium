@@ -7,6 +7,7 @@ use sexy_core::rand::MtRand;
 
 use crate::coin::Coin;
 use crate::food::Food;
+use crate::message::{self, HINTS, Message};
 use crate::sound::{Played, Sound};
 
 /// Guppy state. All positions/velocities are `f64` (x87 doubles in the
@@ -116,6 +117,11 @@ pub struct World<'a> {
     pub sounds: &'a mut Vec<Played>,
     /// New stages reached this tick (`Fish::OnStageUp` triggers), in order.
     pub stage_ups: &'a mut Vec<i32>,
+    /// The message line and one-time hint bytes (board.md#message-line).
+    pub message: &'a mut Message,
+    pub hints: &'a mut [bool; HINTS],
+    /// Tutorial 1-1 (`0x00537b80`).
+    pub tutorial: bool,
 }
 
 impl World<'_> {
@@ -214,19 +220,19 @@ impl Fish {
         if !self.update_hunger(env, w) {
             self.swim_modes(w.rng, w.global);
         }
-        let rng = &mut *w.rng;
         // Mode reroll, then the coin drop (slot 81) when there are no aliens.
         self.mode_timer += 1;
         self.reroll_timer += 1;
         if self.reroll_timer > 20 {
             self.reroll_timer = 0;
-            if rng.next_range(10) == 0 {
-                self.mode = rng.next_range(9) as i32 + 1;
+            if w.rng.next_range(10) == 0 {
+                self.mode = w.rng.next_range(9) as i32 + 1;
             }
         }
         if !env.has_aliens {
-            self.update_coin(w.coins);
+            self.update_coin(w);
         }
+        let rng = &mut *w.rng;
         self.damping_timers();
         self.drift_by_vx_bucket();
         if self.floor_y <= 320 {
@@ -272,8 +278,28 @@ impl Fish {
         }
         if self.announces {
             // Message ticks (−1, −200, −400) skip the chase for that tick.
-            if matches!(self.hunger, -1 | -200 | -400) {
-                return false;
+            match self.hunger {
+                -1 => {
+                    let text = "Fish are hungry! Click to drop food!";
+                    message::show_chain(w.message, w.hints, text, true, [8, 0x17, 0x18]);
+                    return false;
+                }
+                -200 => {
+                    if !w.hints[0x15] {
+                        let text = "Fish are REALLY hungry! Click to feed!";
+                        message::show(w.message, w.hints, text, true, 0x15);
+                        if w.sample_ready(0x106, 3) {
+                            w.sounds.push(Sound::Awooga.into());
+                        }
+                    }
+                    return false;
+                }
+                -400 => {
+                    let text = "Fish are about to die of hunger! Click on aquarium!";
+                    message::show(w.message, w.hints, text, true, 0x16);
+                    return false;
+                }
+                _ => {}
             }
             if self.hunger < -499 {
                 // TODO(spec): DeadFish spawn and the mercy-fish rule.
@@ -297,7 +323,7 @@ impl Fish {
     }
 
     /// `Fish::UpdateCoin` (slot 81 @ `0x004f1400`), normal game.
-    fn update_coin(&mut self, coins: &mut Vec<Coin>) {
+    fn update_coin(&mut self, w: &mut World<'_>) {
         if self.stage <= 0 && self.state_ac < 0 {
             return;
         }
@@ -307,11 +333,15 @@ impl Fish {
         }
         self.coin_timer = 0;
         // TODO(spec): `+0x22a` (gold-capable) and pet-linked `+0x124` tables.
-        let kind = match self.stage {
-            s if s > 0 => s,
-            _ => return,
-        };
-        coins.push(Coin::new(self.widget_x + 5, self.widget_y + 10, kind));
+        if self.stage > 0 {
+            w.coins
+                .push(Coin::new(self.widget_x + 5, self.widget_y + 10, self.stage));
+        }
+        // After every drop attempt on 1-1 (board.md#message-line).
+        if w.tutorial {
+            let text = "Click on coins for extra money!";
+            message::show_chain(w.message, w.hints, text, true, [5, 0x19, 0x1a]);
+        }
     }
 
     /// `0x004d6920`: start the hungry (true) or fed (false) colour fade.
@@ -738,5 +768,102 @@ impl Fish {
         if self.x < 15.0 && self.vx < -0.1 {
             self.vx += 0.1;
         }
+    }
+}
+
+/// `DeadFish` (type 0x1b, list `board+0x98`): a dead guppy rolling over,
+/// sinking and fading (`fish-guppy.md#dead-fish`). Cosmetic: no RNG.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeadFish {
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub divisor: f64,
+    /// `+0x1a4`: the guppy's stage (the sprite row).
+    pub kind: i32,
+    /// `+0x158`: faces right (the art is mirrored).
+    pub facing_right: bool,
+    /// `+0x18c`
+    pub cel: i32,
+    /// `+0x190`
+    pub turn: i32,
+    /// `+0x198`, 0..=1
+    pub alpha: f64,
+    /// `+0x1a0`: counts down from 125; removed below 1.
+    pub life: i32,
+    pub widget_x: i32,
+    pub widget_y: i32,
+}
+
+impl DeadFish {
+    /// `DeadFish::DeadFish` (`0x004eed20`) from a dying guppy.
+    pub fn from_fish(f: &Fish) -> Self {
+        // `Fish::Die` passes the position as ints.
+        let (x, y) = (f64::from(f.x as i32), f64::from(f.y as i32));
+        let vy = if y >= 115.0 && f.vy >= -3.0 {
+            f.vy - 2.0
+        } else {
+            f.vy - 1.0
+        };
+        DeadFish {
+            x,
+            y,
+            vx: f.vx,
+            vy,
+            divisor: f.divisor,
+            kind: f.stage,
+            facing_right: f.vx > 0.0,
+            cel: 0,
+            turn: 100,
+            alpha: 1.0,
+            life: 125,
+            widget_x: x as i32,
+            widget_y: y as i32,
+        }
+    }
+
+    /// `DeadFish::Update` (`0x004f64e0`), unpaused ticks. Returns false
+    /// when it's gone.
+    pub fn update(&mut self) -> bool {
+        if (0..=10).contains(&self.turn) {
+            self.turn -= 1;
+            self.cel = self.turn;
+            if self.turn == 10 {
+                self.turn = 10;
+            }
+        } else {
+            self.cel = match self.life {
+                l if l > 105 => 9 - (l - 106) / 2,
+                103 | 104 => 8,
+                101 | 102 => 7,
+                l if l > 100 => 9,
+                _ => 6,
+            };
+        }
+        if self.life < 105 {
+            self.alpha = (self.alpha - 0.02).max(0.0);
+        }
+        if self.life < 1 {
+            return false;
+        }
+        if self.y > 370.0 || self.life > 105 {
+            self.life -= 1;
+        }
+        if self.vx > 0.0 {
+            self.vx = (self.vx - 0.03).max(0.0);
+        } else if self.vx < 0.0 {
+            self.vx = (self.vx + 0.03).min(0.0);
+        }
+        if self.vy < 2.0 {
+            self.vy += 0.05;
+        }
+        self.y += self.vy / self.divisor;
+        self.x += self.vx / self.divisor;
+        self.y = self.y.clamp(85.0, 380.0);
+        self.x = self.x.clamp(10.0, 540.0);
+        self.widget_x = self.x as i32;
+        self.widget_y = self.y as i32;
+        true
     }
 }

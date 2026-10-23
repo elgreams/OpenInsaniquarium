@@ -19,9 +19,10 @@ use insaniquarium_sim::hatch::Hatch;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
 use insaniquarium_sim::{Board, Fish};
+use sexy_core::anim::AnimInfo;
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
-use sexy_core::resources::{Manifest, Resource};
+use sexy_core::resources::{Anim, AnimType, Manifest, Resource};
 
 use crate::assets::GameImages;
 use crate::text::ImageFont;
@@ -73,6 +74,11 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_ITCHY",
     "IMAGE_PREGO",
     "IMAGE_ZORF",
+    "IMAGE_WAVE",
+    "IMAGE_WAVESIDE",
+    "IMAGE_TANKLIGHTING",
+    "IMAGE_TANKMASK1",
+    "IMAGE_SMALLDIE",
 ];
 
 /// A sheet cels are cut from: the image, one cel's size and the grid
@@ -121,6 +127,7 @@ pub fn sheets(images: &GameImages, manifest: &Manifest) -> Sheets {
                 | "IMAGE_HUNGRYSWIM"
                 | "IMAGE_HUNGRYTURN"
                 | "IMAGE_HUNGRYEAT"
+                | "IMAGE_SMALLDIE"
                 | "IMAGE_FOOD"
                 | "IMAGE_MONEY"
         );
@@ -247,6 +254,12 @@ pub struct Fonts {
     outline12: Option<ImageFont>,
     /// `FONT_JUNGLEFEVER10OUTLINE`: help-arrow captions and the tank label.
     small: Option<ImageFont>,
+    /// `FONT_CONTINUUMBOLD14OUTLINE` and `FONT_CONTINUUMBOLD14`: the
+    /// message line (board.md#message-line).
+    message_fonts: Option<[ImageFont; 2]>,
+    message: Option<(String, Arc<Rgba>)>,
+    /// "Tank t-l" in the bottom-left corner.
+    tank_label: Option<((i32, i32), Arc<Rgba>)>,
     money: Option<(i32, Arc<Rgba>)>,
     dialog: Option<(Dialog, Arc<Rgba>)>,
     /// The dialog's button rect in screen pixels (x, y, w, h).
@@ -286,6 +299,16 @@ impl Fonts {
             tiny: font("data/Pix118.txt"),
             outline12: font("data/ContinuumBold12outline.txt"),
             small: font("data/JungleFever10outline.txt"),
+            message_fonts: [
+                "data/ContinuumBold14outback.txt",
+                "data/ContinuumBold14.txt",
+            ]
+            .map(font)
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .and_then(|v| v.try_into().ok()),
+            message: None,
+            tank_label: None,
             money: None,
             dialog: None,
             dialog_button: None,
@@ -339,6 +362,19 @@ impl Fonts {
                 let img = f.render(text.as_bytes());
                 self.labels.insert(text, Arc::new(img));
             }
+        }
+        if self.message.as_ref().is_none_or(|m| m.0 != b.message.text)
+            && let Some(fonts) = &self.message_fonts
+        {
+            let img = render_message(fonts, &b.message.text);
+            self.message = Some((b.message.text.clone(), Arc::new(img)));
+        }
+        let tl = (b.tank, b.level);
+        if self.tank_label.as_ref().is_none_or(|l| l.0 != tl)
+            && let Some(f) = &self.font
+        {
+            let text = format!("Tank {}-{}", b.tank, b.level);
+            self.tank_label = Some((tl, Arc::new(f.render(text.as_bytes()))));
         }
         let money = b.money;
         if self.money.as_ref().is_none_or(|m| m.0 != money)
@@ -417,6 +453,35 @@ impl Fonts {
                     text(img, x, y, 11.55, [110, 250, 110]);
                 }
             }
+        }
+        // "Tank %d-%d" (`Board::Draw` @ `0x0053fcd8`): FONT_CONTINUUMBOLD12,
+        // baseline (15, 470), colour by backdrop (tank 1: (165, 140, 80)).
+        // TODO(spec): bonus rounds and other modes print other labels.
+        if let (Some((_, img)), Some(f)) = (&self.tank_label, &self.font) {
+            let colour = match b.tank {
+                2 => [220, 150, 150],
+                3 => [125, 200, 215],
+                4 => [60, 180, 80],
+                _ => [165, 140, 80],
+            };
+            text(
+                img,
+                15.0 - 4.0,
+                (470 - f.ascent()) as f32 - 4.0,
+                11.5,
+                colour,
+            );
+        }
+        if b.message.drawn()
+            && let Some((_, img)) = &self.message
+        {
+            text(
+                img,
+                MESSAGE_RECT.0 as f32,
+                MESSAGE_RECT.1 as f32,
+                11.7,
+                [255; 3],
+            );
         }
         if let Some((_, img)) = &self.dialog {
             text(img, DIALOG_POS.0, DIALOG_POS.1, 12.0, [255; 3]);
@@ -875,22 +940,26 @@ fn render_dialog(
     // Dialog::GetPreferredHeight (`0x00476570`): insets, the header line,
     // 10 px, the body lines (each line spacing apart), 8 px, the button.
     let body_h = lines.len() as i32 * body.line_spacing();
-    let h = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom;
+    let preferred = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom;
+    // `NewDialog` (`0x0054b940`): at least 2/3 of the panel image + 10.
+    let h = preferred.max(panel.height as i32 * 2 / 3 + 10);
     let mut out = Rgba::new_transparent(w as u32, h as u32);
     out.draw_image_box(panel, (0, 0, w, h));
-    let centred = |f: &ImageFont, t: &str| left + (inner - f.width(t.as_bytes())) / 2;
-    let mut y = top + head.ascent();
-    head.draw(
-        &mut out,
-        header.as_bytes(),
-        centred(head, header),
-        y,
-        [255, 200, 0],
-    );
-    // Body baselines: the first sits one ascent below the header's line.
-    y = top + head.line_spacing() + 10 + body.ascent();
+    // `Dialog::Draw` (`0x00476710`): the header centred, baseline at
+    // top inset (15) − ascentPadding + ascent; the body word-wrapped into the
+    // rect (left + 2, header baseline − ascent + height + 15, inner − 4),
+    // each line centred, baseline at rect y + ascent − ascentPadding
+    // (measured: the body's ink matches the original's to the pixel).
+    let hy = top - head.ascent_padding() + head.ascent();
+    let hx = left + (inner - head.width(header.as_bytes())) / 2;
+    head.draw(&mut out, header.as_bytes(), hx, hy, [255, 200, 0]);
+    let (bx0, bw0) = (left + 2, inner - 4);
+    // + 15: the dialog's header-to-body gap (`+0x12c`).
+    let mut y =
+        hy - head.ascent() + head.glyph_height() + 15 + body.ascent() - body.ascent_padding();
     for l in &lines {
-        body.draw(&mut out, l.as_bytes(), centred(body, l), y, [255, 255, 255]);
+        let x = bx0 + (bw0 - body.width(l.as_bytes())) / 2;
+        body.draw(&mut out, l.as_bytes(), x, y, [255, 255, 255]);
         y += body.line_spacing();
     }
     // The button: its normal-state third of DIALOGBUTTON as a 3×3 box.
@@ -904,15 +973,102 @@ fn render_dialog(
     Some((out, (px + bx, py + by, bw, bh)))
 }
 
+/// The message line's widget: x, y and width; the height is the outline
+/// font's height + 6 (`MessageWidget` ctor @ `0x00534490`).
+const MESSAGE_RECT: (i32, i32, i32) = (90, 445, 460);
+
+/// The message line as one image the size of its widget
+/// (`MessageWidget::Draw` @ `0x00530830`, board.md#message-line): the
+/// outline font in (0, 75, 0), then the plain font in (180, 250, 90), with
+/// the baseline at ascent + (h − height) / 2, centred + 2.
+fn render_message([outline, plain]: &[ImageFont; 2], text: &str) -> Rgba {
+    let fh = outline.glyph_height();
+    let (w, h) = (MESSAGE_RECT.2, fh + 6);
+    let mut out = Rgba::new_transparent(w as u32, h as u32);
+    let t = text.as_bytes();
+    let x = (w - outline.width(t)) / 2 + 2;
+    let y = outline.ascent() + (h - fh) / 2;
+    outline.draw(&mut out, t, x, y, [0, 75, 0]);
+    plain.draw(&mut out, t, x, y, [180, 250, 90]);
+    out
+}
+
 /// `NewDialog` places board dialogs at (143, 142).
 const DIALOG_POS: (f32, f32) = (143.0, 142.0);
 
+/// `Board::DrawBackdrop` (`board.md#backdrop`): the tank image, the wave
+/// strip, the three light bands and the foreground cut-out over them.
+fn backdrop_cels(b: &Board, cels: &mut Vec<Cel>) {
+    cels.push(Cel::new("IMAGE_AQUARIUM1", 0, 0, 0, 0, 0.0));
+    // Wave strip at y = 88, additive: side, two centres, mirrored side.
+    // The cel comes from IMAGE_WAVE's animation (rows 12, ping-pong,
+    // framedelay 4, begindelay 6) at the level tick.
+    static WAVE: std::sync::LazyLock<AnimInfo> = std::sync::LazyLock::new(|| {
+        let anim = Anim {
+            kind: AnimType::PingPong,
+            frame_delay: 4,
+            begin_delay: 6,
+            ..Anim::default()
+        };
+        AnimInfo::compute(&anim, 12)
+    });
+    let row = WAVE.cel(b.level_ticks);
+    for (sheet, x, mirror) in [
+        ("IMAGE_WAVESIDE", 0, false),
+        ("IMAGE_WAVE", 160, false),
+        ("IMAGE_WAVE", 320, false),
+        ("IMAGE_WAVESIDE", 480, true),
+    ] {
+        cels.push(
+            Cel::new(sheet, 0, row, x, 88, 0.01)
+                .mirror(mirror)
+                .additive(),
+        );
+    }
+    // Light bands at y = 365, additive at alpha 40, 100 and 70 (the third
+    // mirrored), each drawn at x and x − 640 so it wraps around.
+    for (i, (alpha, mirror)) in [(40, false), (100, false), (70, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let x = b.light_x[i];
+        for x in [x as i32, (f64::from(x) - 640.0) as i32] {
+            cels.push(
+                Cel::new("IMAGE_TANKLIGHTING", 0, 0, x, 365, 0.02)
+                    .mirror(mirror)
+                    .alpha(alpha)
+                    .additive(),
+            );
+        }
+    }
+    cels.push(Cel::new("IMAGE_TANKMASK1", 0, 0, 0, 365, 0.03));
+}
+
 /// The tank: back to front as in `Board::RebuildZOrder` (board.md).
 fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
-    let mut cels = vec![Cel::new("IMAGE_AQUARIUM1", 0, 0, 0, 0, 0.0)];
+    let mut cels = Vec::new();
+    backdrop_cels(b, &mut cels);
     // Back to front as in Board::RebuildZOrder (board.md): shadows, dead
     // aliens, warps, food, guppies, aliens, pets, shots, coins.
     shadow_cels(b, &mut cels);
+    // Dead fish (`fish-guppy.md#dead-fish`): IMAGE_SMALLDIE, row = stage
+    // (stages above 2 shift down one), sinking (90 − life)/2 as it fades.
+    for (i, d) in b.dead_fish.iter().enumerate() {
+        let row = if d.kind > 2 { d.kind - 1 } else { d.kind };
+        let sink = if d.life < 90 { (90 - d.life) / 2 } else { 0 };
+        cels.push(
+            Cel::new(
+                "IMAGE_SMALLDIE",
+                d.cel,
+                row,
+                d.widget_x,
+                d.widget_y + sink,
+                0.55 + i as f32 * 0.001,
+            )
+            .mirror(d.facing_right)
+            .alpha((d.alpha * 255.0) as i32),
+        );
+    }
     for (i, d) in b.dead_aliens.iter().enumerate() {
         dead_alien_cels(d, 0.6 + i as f32 * 0.001, &mut cels);
     }

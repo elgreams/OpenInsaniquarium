@@ -225,14 +225,28 @@ while captured < max_ticks and polls < max_ticks * 40 do
       bclock = tostring(i32(board + 0x28)) .. string.format(',"tank":%d,"level":%d,"paused":%s', i32(board + 0x3c8), i32(board + 0x3cc),
         (readBytes(board + 0x94, 1) or 0) ~= 0 and "true" or "false")
       samples = hex_block(board + 0x1a4, 0x100)
-      bclock = bclock .. string.format(',"eggs":%d,"revealed":"%s","flash":%d',
-        i32(board + 0x43c), hex_block(board + 0x3a4, 12), i32(board + 0x450))
+      bclock = bclock .. string.format(',"eggs":%d,"revealed":"%s","flash":%d,"ticks":%d',
+        i32(board + 0x43c), hex_block(board + 0x3a4, 12), i32(board + 0x450), i32(board + 0x444))
       -- Alien waves and weapon (alien-sylvester.md#board-fields).
       bclock = bclock .. string.format(',"wave":{"kind":%d,"countdown":%d,"t2c4":%d,"lockout":%d,"ax":%d,"ay":%d,"bx":%d,"by":%d,"waves":%d},"laser":%d,"food_level":%d,"max_food":%d',
         i32(board + 0x2bc), i32(board + 0x2c0), i32(board + 0x2c4), i32(board + 0x2c8),
         i32(board + 0x2cc), i32(board + 0x2d0), i32(board + 0x2d4), i32(board + 0x2d8),
         i32(board + 0x45c), i32(board + 0x3e4), i32(0x5e89dc), i32(0x5df58c))
       bclock = bclock .. string.format(',"shot_x":%d,"shot_y":%d', i32(board + 0x3d0), i32(board + 0x3d4))
+      -- Message line (MessageWidget at +0x118; board.md#message-line):
+      -- timer +0xd0, flash +0xd4, hint id +0xd8, text = std::string at +0x8c.
+      local mw = u32(board + 0x118)
+      if mw ~= 0 then
+        local s = mw + 0x8c
+        local len, cap = i32(s + 0x14), i32(s + 0x18)
+        local p = cap >= 16 and u32(s + 4) or (s + 4)
+        local text = len > 0 and (readString(p, len, false) or "") or ""
+        bclock = bclock .. string.format(',"msg":{"t":%d,"flash":%d,"hint":%d,"text":"%s"}',
+          i32(mw + 0xd0), readBytes(mw + 0xd4, 1) or 0, i32(mw + 0xd8), text:gsub('[\\"]', ''))
+      end
+      -- Light-band x positions, f32 (board.md#backdrop).
+      bclock = bclock .. string.format(',"lights":[%.9g,%.9g,%.9g]',
+        readFloat(board + 0x3d8), readFloat(board + 0x3dc), readFloat(board + 0x3e0))
       -- Hint bytes +0x4b0..+0x4e5 (one-time hint flags; dialog.md).
       bclock = bclock .. string.format(',"hints":"%s"', hex_block(board + 0x4b0, 0x36))
     end

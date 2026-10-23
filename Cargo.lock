@@ -3201,6 +3201,7 @@ name = "insaniquarium-app"
 version = "0.0.0"
 dependencies = [
  "bevy",
+ "harness",
  "image",
  "insaniquarium-sim",
  "serde_json",
