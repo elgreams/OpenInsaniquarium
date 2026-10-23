@@ -45,7 +45,7 @@ The game's button setup helper (`0x005034e0`) sets the text offset to **(−2, 0
 |---|---|---|---|
 | 0x0e | `DANGER!` | `A vicious alien is about to enter your tank! Defeat it with your laser weapon by clicking on it!` | 1-2, countdown 276, once (`board+0x4b3`) |
 | 0x0e | `BATTLE TIP` | `Shoot the alien's head to push it downwards! Shoot its tail to deflect it upwards!` | 1-2, countdown 276, the next wave (`+0x4b4`) |
-| 0x0e | `WARNING!` | `A new breed of alien is fast approaching!  Lasers can't hurt this baddie, so find another way to defeat it!` | 1-3, countdown 276, once (`+0x4c1`) |
+| 0x0e | `WARNING!` | `A new breed of alien is fast approaching!  Lasers can't hurt this baddie, so find another way to defeat it!` | **2-3** (`0x00537bb0(2, 3)` @ `0x005485f6`), countdown 276, once (`+0x4c1`) |
 | 0x10 | `YOUR LAST FISH HAS DIED!` | `Normally this would end your game, but this time we'll give you another fish to keep playing! Make sure you keep it well fed!` | tutorial 1-1 |
 | 0x11 | `GAME OVER` | `Oops!  All of your fish have died!` (or `… pets …`) | no fish left |
 | 0x13 | `OUT OF MONEY!` | `You've run out of money!  Because you're new, we'll float you a loan, but be careful next time!` | tutorial, money 0 |

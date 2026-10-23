@@ -40,7 +40,7 @@ pub enum Dialog {
     AlienWarning,
     /// Dialog 0x0e "BATTLE TIP" (tank 1-2, second wave).
     BattleTip,
-    /// Dialog 0x0e "WARNING! A new breed of alien…" (tank 1-3).
+    /// Dialog 0x0e "WARNING! A new breed of alien…" (tank 2-3).
     NewBreed,
     /// Dialog 0x13 "OUT OF MONEY!" (tutorial, money 0).
     /// TODO(spec): the loan it offers.
@@ -605,7 +605,7 @@ impl Board {
                     (1, 2) if !self.hints[HINT_BATTLE_TIP] => {
                         Some((HINT_BATTLE_TIP, Dialog::BattleTip))
                     }
-                    (1, 3) if !self.hints[HINT_NEW_BREED] => {
+                    (2, 3) if !self.hints[HINT_NEW_BREED] => {
                         Some((HINT_NEW_BREED, Dialog::NewBreed))
                     }
                     _ => None,
