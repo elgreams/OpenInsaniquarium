@@ -122,6 +122,8 @@ pub struct World<'a> {
     pub hints: &'a mut [bool; HINTS],
     /// Tutorial 1-1 (`0x00537b80`).
     pub tutorial: bool,
+    /// Corpses of guppies that died this tick (`Board::AddDeadFish`).
+    pub dead_fish: &'a mut Vec<DeadFish>,
 }
 
 impl World<'_> {
@@ -317,6 +319,9 @@ impl Fish {
     /// Death (slot 88 @ `0x004d5f90`): the throttled die sound. No RNG.
     fn die(&mut self, w: &mut World<'_>) {
         self.dead = true;
+        // The corpse takes the guppy's state at this moment
+        // (`fish-guppy.md#dead-fish`).
+        w.dead_fish.push(DeadFish::from_fish(self));
         if w.sample_ready(0x117, 3) {
             w.sounds.push(Sound::Die.into());
         }

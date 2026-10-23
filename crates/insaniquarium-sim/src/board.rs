@@ -978,6 +978,7 @@ impl Board {
             has_aliens: self.has_aliens,
         };
         let mut stage_ups = Vec::new();
+        let mut new_dead = Vec::new();
         let mut world = World {
             foods: &mut self.foods,
             coins: &mut self.coins,
@@ -990,6 +991,7 @@ impl Board {
             message: &mut self.message,
             hints: &mut self.hints,
             tutorial: self.tutorial,
+            dead_fish: &mut new_dead,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
@@ -998,8 +1000,11 @@ impl Board {
             self.on_stage_up(s);
         }
         // Starved guppies leave a corpse (`Fish::Die` → `AddDeadFish`).
-        for f in self.guppies.iter().filter(|f| f.dead) {
-            self.dead_fish.push(DeadFish::from_fish(f));
+        // New corpses join the end of the update list, so they also update
+        // this tick (confirmed: life 124 on the first snapshot).
+        for mut d in new_dead {
+            d.update();
+            self.dead_fish.push(d);
         }
         self.guppies.retain(|f| !f.dead);
         // Aliens (`+0xb8`, pass 1).

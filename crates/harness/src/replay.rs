@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot, Warp};
 use insaniquarium_sim::board::Input;
 use insaniquarium_sim::fish::DeadFish;
+use insaniquarium_sim::message::Message;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::{Board, Coin, Fish, Food};
@@ -515,6 +516,22 @@ fn food_json(f: &Food) -> Value {
     })
 }
 
+/// The message line as compared: what's on screen (text while the timer
+/// runs), the timer and the blink flag.
+fn message_json(m: &Message) -> Value {
+    json!({ "text": m.visible().then_some(m.text.as_str()), "t": m.timer, "flash": m.flash })
+}
+
+fn dead_fish_json(d: &DeadFish) -> Value {
+    json!({ "x": d.x, "y": d.y, "vx": d.vx, "vy": d.vy, "kind": d.kind, "cel": d.cel,
+            "alpha": d.alpha, "life": d.life, "widget": [d.widget_x, d.widget_y] })
+}
+
+/// The snapshot carries raw object lists (so an absent list means empty).
+fn raw_present(s: &Snapshot) -> bool {
+    s.state.get("raw").is_some_and(Value::is_object)
+}
+
 /// Sim state as a snapshot.
 pub fn snapshot(board: &Board) -> Snapshot {
     let mut state = BTreeMap::new();
@@ -556,6 +573,13 @@ pub fn snapshot(board: &Board) -> Snapshot {
         json!({ "countdown": board.wave_countdown, "lockout": board.food_lockout,
                 "a": [board.wave_a.0, board.wave_a.1], "n": board.waves }),
     );
+    state.insert(
+        "dead_fish".into(),
+        Value::Array(board.dead_fish.iter().map(dead_fish_json).collect()),
+    );
+    // The message line (board.md#message-line). Only compared when the
+    // capture records it (`board.msg`).
+    state.insert("message".into(), message_json(&board.message));
     // The global stream's `mti` isn't compared: the board's cosmetic bubble
     // systems draw from it and aren't modelled yet (board.md, open questions).
     state.insert("rng_mti".into(), json!({ "app": board.rng.state().1 }));
@@ -626,6 +650,23 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| warp_json(&warp_from_raw(b)))
                 .collect();
             s.state.insert("warps".into(), Value::Array(warps));
+            if raw_present(&s) {
+                let dead = raw_list(&s, "dead_fish")
+                    .iter()
+                    .map(|b| dead_fish_json(&dead_fish_from_raw(b)))
+                    .collect();
+                s.state.insert("dead_fish".into(), Value::Array(dead));
+            }
+            if let Some(m) = s.state.get("board").and_then(|b| b.get("msg")) {
+                let g = |k: &str| m.get(k).and_then(Value::as_i64).unwrap_or(0) as i32;
+                let msg = Message {
+                    text: m.get("text").and_then(Value::as_str).unwrap_or("").into(),
+                    timer: g("t"),
+                    flash: g("flash") != 0,
+                    id: g("hint"),
+                };
+                s.state.insert("message".into(), message_json(&msg));
+            }
             if let Some(w) = s.state.get("board").and_then(|b| b.get("wave")).cloned() {
                 let g = |k: &str| w.get(k).cloned().unwrap_or(Value::Null);
                 s.state.insert(

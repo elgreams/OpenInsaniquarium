@@ -232,4 +232,6 @@ Fields (raw):
 - Offset y = (90 − life)/2 while life < 90, else 0. The corpse sinks into the sand as it fades.
 - Kinds 0..4 (guppy stages; kind > 2 counts as kind − 1): `IMAGE_SMALLDIE`, the 80×80 cel at (cel·80, kind·80), mirrored when facing right, at the widget position plus the offset.
 
+**First tick:** the dead fish is added to the end of the widget list during the guppies' updates, so it gets its first Update in the same tick. Confirmed in `tank1-2_full_01` (tick 179377: life 124, vy −4.45 = −2.5 − 2 + 0.05).
+
 Z order: dead fish draw just above shadows (`RebuildZOrder`: shadows, dead fish, dead aliens, …).
