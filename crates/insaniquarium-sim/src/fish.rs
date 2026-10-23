@@ -267,7 +267,7 @@ impl Fish {
         }
         let starving = self.state_ac < 0 && self.hunger <= 0;
         if starving && !self.announces {
-            self.dead = true;
+            self.die(w);
             return false;
         }
         if self.announces {
@@ -277,7 +277,7 @@ impl Fish {
             }
             if self.hunger < -499 {
                 // TODO(spec): DeadFish spawn and the mercy-fish rule.
-                self.dead = true;
+                self.die(w);
                 return false;
             }
         }
@@ -286,6 +286,14 @@ impl Fish {
             return self.chase_food(w);
         }
         false
+    }
+
+    /// Death (slot 88 @ `0x004d5f90`): the throttled die sound. No RNG.
+    fn die(&mut self, w: &mut World<'_>) {
+        self.dead = true;
+        if w.sample_ready(0x117, 3) {
+            w.sounds.push(Sound::Die.into());
+        }
     }
 
     /// `Fish::UpdateCoin` (slot 81 @ `0x004f1400`), normal game.

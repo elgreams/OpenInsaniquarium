@@ -493,6 +493,13 @@ pub fn snapshot(board: &Board) -> Snapshot {
     // The global stream's `mti` isn't compared: the board's cosmetic bubble
     // systems draw from it and aren't modelled yet (board.md, open questions).
     state.insert("rng_mti".into(), json!({ "app": board.rng.state().1 }));
+    // Throttled samples started this tick (compared separately, see
+    // `presentation::capture_sounds`).
+    state.insert(
+        "sounds".into(),
+        json!(crate::presentation::sim_sounds(board)),
+    );
+
     Snapshot {
         tick: board.tick,
         state,
@@ -502,6 +509,7 @@ pub fn snapshot(board: &Board) -> Snapshot {
 /// A capture re-expressed with each guppy decoded from its raw bytes into
 /// the same `"fish"` shape [`snapshot`] emits.
 pub fn decode_capture(t: &Trace) -> Trace {
+    let sounds = crate::presentation::capture_sounds(t);
     let snapshots = t
         .snapshots
         .iter()
@@ -559,6 +567,10 @@ pub fn decode_capture(t: &Trace) -> Trace {
                     json!({ "countdown": g("countdown"), "lockout": g("lockout"),
                             "a": [g("ax"), g("ay")], "n": g("waves") }),
                 );
+            }
+            // Samples started this tick, from the sample table.
+            if let Some(v) = sounds.get(&s.tick) {
+                s.state.insert("sounds".into(), json!(v));
             }
             // Raw hex is decoded above; drop it (and the capture's summary
             // fields) so long traces stay small in memory.
@@ -826,14 +838,51 @@ pub struct Inferred {
 impl Inferred {
     /// `expected` without the dirty snapshots.
     pub fn clean(&self, expected: &Trace) -> Trace {
+        // A dirty tick's click is replayed on the next tick, so sounds the
+        // original started then (a mid-frame click's sound) move with it.
+        // Snapshots after a capture gap hold the gap's sounds too: the
+        // tick before them is treated the same way.
+        let mut carry: Vec<Value> = Vec::new();
+        let mut snapshots = Vec::new();
+        let mut prev_tick: Option<u32> = None;
+        for s in &expected.snapshots {
+            let gap = prev_tick.is_some_and(|p| s.tick > p + 1);
+            prev_tick = Some(s.tick);
+            if gap
+                && let Some(Value::Array(v)) = s.state.get("sounds")
+                && !v.is_empty()
+            {
+                // The sim's record for this tick only has its own sounds:
+                // compare the union of the gap instead (`sounds_gap`).
+                let mut s = s.clone();
+                if let Some(Value::Object(_)) = s.state.get("board") {
+                    let v = s.state.remove("sounds").unwrap_or(Value::Null);
+                    s.state.insert("sounds_gap".into(), v);
+                }
+                carry.clear();
+                snapshots.push(s);
+                continue;
+            }
+            if self.dirty.contains(&s.tick) {
+                if let Some(Value::Array(v)) = s.state.get("sounds") {
+                    carry.extend(v.iter().cloned());
+                }
+                continue;
+            }
+            let mut s = s.clone();
+            if !carry.is_empty()
+                && let Some(Value::Array(v)) = s.state.get_mut("sounds")
+            {
+                v.append(&mut carry);
+                v.sort_by_key(|x| x.as_i64());
+                v.dedup();
+            }
+            carry.clear();
+            snapshots.push(s);
+        }
         Trace {
             header: expected.header.clone(),
-            snapshots: expected
-                .snapshots
-                .iter()
-                .filter(|s| !self.dirty.contains(&s.tick))
-                .cloned()
-                .collect(),
+            snapshots,
         }
     }
 }
@@ -1125,6 +1174,7 @@ pub fn debris_ticks(t: &Trace) -> Vec<u32> {
 /// `capture` is the raw capture `decoded` was built from (decoding drops the
 /// raw object bytes this needs).
 pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
+    let decoded = &without_deviation_sounds(decoded, capture);
     // A spark that got the artifact start delay outlives ours: mask the list
     // for its whole life, tracking it by (kind, widget, r).
     let mut delayed = std::collections::BTreeSet::new();
@@ -1154,6 +1204,47 @@ pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
         }
     }
     out
+}
+
+/// On ticks that create an effect shot, the original may draw an extra
+/// start-delay number before the shot sound's variant draws (the stale
+/// field, `alien-sylvester.md#deviations`); the RNG is re-synced only after
+/// the tick. So on those ticks the RNG-picked shot sound variants (ZZAM,
+/// RICOCHET) aren't compared; [`mask_rng_sounds`] drops them from the
+/// sim's side on the same ticks.
+pub fn without_deviation_sounds(decoded: &Trace, capture: &Trace) -> Trace {
+    let ticks: std::collections::BTreeSet<u32> = debris_ticks(capture).into_iter().collect();
+    let mut out = decoded.clone();
+    for s in &mut out.snapshots {
+        if ticks.contains(&s.tick) {
+            split_rng_sounds(&mut s.state);
+        }
+    }
+    out
+}
+
+/// Drop sounds whose choice depends on a shot-sound RNG draw.
+fn split_rng_sounds(state: &mut BTreeMap<String, Value>) {
+    if let Some(Value::Array(v)) = state.get_mut("sounds") {
+        v.retain(|x| !matches!(x.as_i64(), Some(0x145 | 0x132)));
+        state.insert("sounds_rng_masked".into(), Value::Bool(true));
+    }
+}
+
+/// Apply [`without_deviation_sounds`]' masking to a sim trace: on ticks the
+/// expected trace masked, the sim's variants are set aside too.
+pub fn mask_rng_sounds(actual: &mut Trace, expected: &Trace) {
+    let ticks: std::collections::BTreeSet<u32> = expected
+        .snapshots
+        .iter()
+        .filter(|s| s.state.contains_key("sounds_rng_masked"))
+        .map(|s| s.tick)
+        .collect();
+    for s in &mut actual.snapshots {
+        if ticks.contains(&s.tick) {
+            split_rng_sounds(&mut s.state);
+        }
+    }
 }
 
 /// [`replay_from`] with RNG re-syncs at deviation ticks.

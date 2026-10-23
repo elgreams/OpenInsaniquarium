@@ -715,11 +715,9 @@ impl Board {
         }
         self.add_random_guppy();
         self.arrow_buy_fish = false;
-        // Purchase sounds: a throttled "buy" sample, then a splash variant
-        // picked with one unthrottled draw (`0x00538360`: `% 3`).
-        if self.sample_ready(0x111, 3) {
-            self.sounds.push(Sound::Buy.into());
-        }
+        // Purchase sounds: a throttled `SOUND_GROW` (`0x0054941c`), then a
+        // splash variant picked with one unthrottled draw (`0x00538360`).
+        self.play(0x122, Sound::Grow);
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r).into());
         true
@@ -849,6 +847,7 @@ impl Board {
                 self.rng.next_range(22);
                 self.rng.next_range(6);
             }
+            self.play(0x110, Sound::Bubbles);
         }
         // After the ambient check: `+0x2c4`, then the wave countdown.
         self.update_waves();

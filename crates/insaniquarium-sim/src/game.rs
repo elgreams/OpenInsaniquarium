@@ -6,6 +6,7 @@ use sexy_core::rand::MtRand;
 
 use crate::board::{Board, Input};
 use crate::hatch::{Hatch, HatchOut};
+use crate::music::MusicState;
 use crate::profile::Profile;
 
 #[derive(Debug, Clone)]
@@ -35,15 +36,22 @@ pub enum HatchInput {
 pub struct Game {
     pub profile: Profile,
     pub screen: Screen,
+    /// The music interface's state (`music.rs`); presentation, but kept
+    /// here so it's deterministic and comparable with captures.
+    pub music: MusicState,
 }
 
 impl Game {
     /// Start Adventure at the profile's level.
     pub fn new(profile: Profile, rng: MtRand, global_rng: MtRand) -> Self {
         let board = Self::level_board(&profile, rng, global_rng);
+        let mut music = MusicState::default();
+        // `StartLevel` → `PlayTankMusic(false)`.
+        music.tank(profile.tank, false);
         Game {
             profile,
             screen: Screen::Tank(Box::new(board)),
+            music,
         }
     }
 
@@ -60,7 +68,10 @@ impl Game {
         let Screen::Tank(board) = &mut self.screen else {
             return;
         };
+        // UpdateApp: the music fades first, then the widgets update.
+        self.music.update();
         board.step(inputs);
+        self.music.cue(board.music, board.tank);
         if board.level_complete {
             let pet = self.profile.finish_level(board.tank, board.level);
             let (rng, global_rng) = (board.rng.clone(), board.global_rng.clone());
@@ -69,6 +80,7 @@ impl Game {
                 rng,
                 global_rng,
             }));
+            self.music.hatch();
         }
     }
 
@@ -83,10 +95,12 @@ impl Game {
             rng,
             global_rng,
         } = &mut **h;
+        self.music.update();
         if inputs.contains(&HatchInput::Continue) && hatch.can_continue() {
             let (rng, global_rng) = (rng.clone(), global_rng.clone());
             let board = Self::level_board(&self.profile, rng, global_rng);
             self.screen = Screen::Tank(Box::new(board));
+            self.music.tank(self.profile.tank, false);
             return HatchOut::default();
         }
         hatch.update(rng, inputs.contains(&HatchInput::Held))

@@ -75,6 +75,17 @@ Replay details (`harness::replay`):
 - The board is rebuilt from the **first** snapshot (paused lead-in skipped) and replayed up to the first pause.
 - Clicks are inferred from new pellets (`anim` 1 means the click came before the tick, 0 means after it) and from coins turning collected. A click that lands after an update but before the capture read is "mid-frame": it's applied at the next tick and that snapshot is masked.
 
+## Presentation (sound, music, dialogs, screens)
+
+State replays don't see what the player hears or which screen is up, so presentation is compared separately (`harness::presentation`, spec `docs/re/framework/presentation-capture.md`).
+
+- **Sounds, from any capture:** the board's per-sample cooldown table (`board.samples`) changes exactly when a throttled sample starts. `decode_capture` adds `sounds` (cooldown slots stamped that tick) to each snapshot. The sim side records the same slots (`Sound::throttle_slot`), so every replay test compares sounds tick by tick.
+  - A mid-frame click's sounds move with the click to the next tick (`Inferred::clean`).
+  - After a capture gap the snapshot holds the gap's sounds, so they're compared under `sounds_gap`, which only the capture side carries (skipped).
+  - On effect-shot ticks the RNG-chosen shot-sound variants (ZZAM, RICOCHET) are dropped on both sides (`without_deviation_sounds` / `mask_rng_sounds`). The stale-field draw can come before them.
+  - Unthrottled sounds (splash, arrival roar, hatch) aren't in the table.
+- **Music, dialogs, screens:** `ce_capture.lua` writes a `pres` block per snapshot: the music interface's tracks (volume, fade, playing), the requested track/order, open dialog ids, the screen widgets, and the hatch counter. It keeps capturing without a board. `presentation::capture_records` and `sim_record` turn both sides into the same shape. Our music is the sim's `MusicState`, so it's deterministic and comparable.
+
 ## Files
 
 Traces and demos captured from the original live in `traces/` (gitignored). Tests that need them **skip when absent**.

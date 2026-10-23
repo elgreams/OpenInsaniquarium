@@ -32,9 +32,59 @@ pub enum Sound {
     Explosion1,
     Diamond,
     Hatch,
+    Bubbles,
 }
 
 impl Sound {
+    /// The original's sample id (`0x105` + the sound's index in the
+    /// manifest's `<Sound>` order; `sound-ids` in `assets/overview.md`).
+    pub fn sample_id(self) -> usize {
+        match self {
+            Sound::Awooga => 0x106,
+            Sound::Bubbles => 0x110,
+            Sound::Buy => 0x111,
+            Sound::Buzzer => 0x112,
+            Sound::Chomp => 0x113,
+            Sound::Chomp2 => 0x114,
+            Sound::Diamond => 0x116,
+            Sound::Die => 0x117,
+            Sound::DropFood => 0x118,
+            Sound::Explode => 0x11d,
+            Sound::Explosion1 => 0x11e,
+            Sound::Grow => 0x122,
+            Sound::Hatch => 0x124,
+            Sound::Hit => 0x126,
+            Sound::Points => 0x12c,
+            Sound::Points2 => 0x12d,
+            Sound::Points3 => 0x12e,
+            Sound::Points4 => 0x12f,
+            Sound::Ricochet => 0x132,
+            Sound::Roar => 0x133,
+            Sound::Slurp => 0x138,
+            Sound::Slurp2 => 0x139,
+            Sound::Slurp3 => 0x13a,
+            Sound::Splash => 0x13d,
+            Sound::Splash2 => 0x13e,
+            Sound::Splash3 => 0x13f,
+            Sound::Zap => 0x144,
+            Sound::Zzam => 0x145,
+        }
+    }
+
+    /// The original's per-sample cooldown slot this sound stamps
+    /// (`board+0x1a4`; `presentation-capture.md#sound-effects`): variants
+    /// share their family's slot, and sounds that bypass the table (splash,
+    /// arrival roar, hatch) have none.
+    pub fn throttle_slot(self) -> Option<usize> {
+        match self {
+            Sound::Slurp | Sound::Slurp2 | Sound::Slurp3 => Some(0x138),
+            Sound::Points | Sound::Points2 | Sound::Points3 | Sound::Points4 => Some(0x12c),
+            Sound::Chomp | Sound::Chomp2 => Some(0x113),
+            Sound::Splash | Sound::Splash2 | Sound::Splash3 | Sound::Roar | Sound::Hatch => None,
+            s => Some(s.sample_id()),
+        }
+    }
+
     /// Resource id in `resources.xml`.
     pub fn id(self) -> &'static str {
         match self {
@@ -65,6 +115,7 @@ impl Sound {
             Sound::Explosion1 => "SOUND_EXPLOSION1",
             Sound::Diamond => "SOUND_DIAMOND",
             Sound::Hatch => "SOUND_HATCH",
+            Sound::Bubbles => "SOUND_BUBBLES",
         }
     }
 

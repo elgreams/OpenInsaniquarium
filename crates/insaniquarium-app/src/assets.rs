@@ -13,14 +13,11 @@ use sexy_core::music::Openmpt;
 use sexy_core::resources::{Manifest, Resource};
 use sexy_core::sound::{Pcm, decode_au};
 
-/// The tank 1 song: `Insaniq2.mo3` from order 0 (`docs/re/assets/music.md`,
-/// remap 0,22 → 4,0).
+/// Track 4, `Insaniq2.mo3`: every in-tank and menu song is an order in it
+/// (`docs/re/assets/music.md`). The order here is tank 1's (remap 0,22 → 4,0).
 pub const TANK1_SONG: (&str, i32) = ("music/Insaniq2.mo3", 0);
 
-/// The hatch-screen song: track (2, 54) → `Insaniq2.mo3` order 49.
-pub const HATCH_SONG: (&str, i32) = ("music/Insaniq2.mo3", 49);
-
-/// The alien song: `Alien.mo3` (track 1) from the start (`music.md`).
+/// Track 1, the alien song: `Alien.mo3` (`music.md`).
 pub const ALIEN_SONG: (&str, i32) = ("music/Alien.mo3", 0);
 
 /// Render `seconds` of a module song from `order` to a WAV (looping inside

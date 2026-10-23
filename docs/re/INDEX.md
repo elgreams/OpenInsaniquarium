@@ -10,6 +10,7 @@ Status: `todo` · `draft` (static analysis only) · `confirmed` (verified dynami
 | framework | `framework/timing.md` | confirmed | **28 ms ticks (~35.7 Hz)**, 200 ms catch-up cap |
 | framework | `framework/rng.md` | confirmed (algorithm/seeding) | MT19937 (31-bit output); app stream + global stream + store stream. Implemented: `sexy_core::rand::MtRand` |
 | meta | `dynamic-analysis.md` | — | How to attach CE to the Proton game; known crash hazard |
+| framework | `framework/presentation-capture.md` | draft (sounds confirmed) | Read-only anchors for sound (board sample table), music (BASS interface track map, requested track/order), open dialogs and screen widgets; the harness's presentation comparison |
 | framework | `framework/dialog.md` | draft | In-tank message boxes (`MoneyDialog`): panel as a 3×3 tiled box, fonts, colours, size/position, the board dialogs' texts |
 | framework | `framework/demo-recording.md` | draft | `-record`/`-play` functional; tick-indexed input bitstream |
 | objects | `objects/fish-guppy.md` | confirmed (idle swim + animation) | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, animation/turn/cel rules, draw-sheet selection. Replays bit-exact vs original |

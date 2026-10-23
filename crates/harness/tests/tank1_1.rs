@@ -345,7 +345,7 @@ fn sylvester_wave_matches() {
     board.shop = insaniquarium_sim::shop::Shop::adventure(1, 2);
     board.paused = false;
     let resync = harness::replay::deviation_resyncs(&full, &harness::replay::debris_ticks(&t));
-    let actual = harness::replay::replay_resync_dirty(
+    let mut actual = harness::replay::replay_resync_dirty(
         board,
         &expected,
         &inferred.inputs,
@@ -353,6 +353,7 @@ fn sylvester_wave_matches() {
         &inferred.dirty,
     )
     .unwrap();
+    harness::replay::mask_rng_sounds(&mut actual, &expected);
     eprintln!("debris resyncs: {}", resync.len());
     eprintln!(
         "sylvester: ticks {from}..={to}, {} inputs, {} masked",
@@ -425,7 +426,7 @@ fn full_tank_1_2_replays() {
             ))
         })
         .collect();
-    let actual = harness::replay::replay_resync_dirty(
+    let mut actual = harness::replay::replay_resync_dirty(
         board,
         &expected,
         &inferred.inputs,
@@ -433,6 +434,7 @@ fn full_tank_1_2_replays() {
         &inferred.dirty,
     )
     .unwrap();
+    harness::replay::mask_rng_sounds(&mut actual, &expected);
     eprintln!(
         "full 1-2: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),

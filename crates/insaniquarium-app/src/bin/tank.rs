@@ -28,7 +28,7 @@ use bevy::sprite::Anchor;
 use bevy::sprite_render::Material2dPlugin;
 use bevy::window::PrimaryWindow;
 use insaniquarium_app::additive::{Additive, AdditiveMaterial};
-use insaniquarium_app::assets::{ALIEN_SONG, GameImages, HATCH_SONG, TANK1_SONG, load_sound_bytes};
+use insaniquarium_app::assets::{ALIEN_SONG, GameImages, TANK1_SONG, load_sound_bytes};
 use insaniquarium_app::song::Song;
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
@@ -38,7 +38,7 @@ use insaniquarium_sim::hatch::Hatch;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::profile::Profile;
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
-use insaniquarium_sim::sound::{Music as MusicCue, Played, Sound};
+use insaniquarium_sim::sound::{Played, Sound};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
@@ -117,20 +117,21 @@ fn main() {
         .iter()
         .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
         .collect();
-    // Songs stream live through libopenmpt (`song.rs`).
-    let music = if args.iter().any(|a| a == "--no-music") {
+    // Songs stream live through libopenmpt (`song.rs`); the sim decides
+    // which track plays from which order at what volume.
+    let lib = if args.iter().any(|a| a == "--no-music") {
         None
     } else {
         Openmpt::load()
             .inspect_err(|e| eprintln!("music disabled: {e}"))
             .ok()
-            .map(|lib| {
-                let song = |(path, order): (&str, i32)| {
-                    let bytes: Arc<[u8]> = std::fs::read(data.find(path)?).ok()?.into();
-                    Song::new(&lib, bytes, order)
-                };
-                [song(TANK1_SONG), song(ALIEN_SONG), song(HATCH_SONG)]
-            })
+    };
+    let read =
+        |path: &str| -> Option<Arc<[u8]>> { Some(std::fs::read(data.find(path)?).ok()?.into()) };
+    let songs = Songs {
+        bytes: [None, read(ALIEN_SONG.0), None, None, read(TANK1_SONG.0)],
+        lib,
+        players: [None; 5],
     };
 
     // The sim never reads the clock; the app picks the seed, as the
@@ -197,7 +198,7 @@ fn main() {
         .insert_resource(Sources(images))
         .init_resource::<Cursor>()
         .insert_resource(SoundBytes(sounds))
-        .insert_resource(Music(music))
+        .insert_resource(songs)
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold12.txt").ok(),
             small: ImageFont::load(&data, "data/JungleFever10outline.txt").ok(),
@@ -261,6 +262,7 @@ struct Grid(HashMap<&'static str, (u32, u32)>);
 
 const ALL_SOUNDS: &[Sound] = &[
     Sound::Hatch,
+    Sound::Bubbles,
     Sound::Awooga,
     Sound::Roar,
     Sound::Zap,
@@ -292,47 +294,13 @@ const ALL_SOUNDS: &[Sound] = &[
 #[derive(Resource)]
 struct SoundBytes(HashMap<&'static str, Vec<u8>>);
 
-/// The tank, alien and hatch songs, if music is on (taken by `setup`).
-#[derive(Resource)]
-struct Music(Option<[Option<Song>; 3]>);
-
-/// Song players (`music.md`). A song (re)starts by spawning a new player;
-/// the tank and alien songs cross-fade linearly, 0.008 out and 0.002 in
-/// per update.
+/// Song players mirroring the sim's music state (`insaniquarium_sim::music`):
+/// a track restarts by spawning a new player from its order.
 #[derive(Resource)]
 struct Songs {
-    /// Tank, alien, hatch.
-    handles: [Option<Handle<Song>>; 3],
-    players: [Option<Entity>; 3],
-    /// The screen the songs were last set up for (true = hatch screen).
-    on_hatch: Option<bool>,
-    /// Target: true = alien song.
-    alien_on: bool,
-    tank_vol: f32,
-    alien_vol: f32,
-}
-
-impl Songs {
-    /// Stop song `i` and start it again from its first order at `vol`.
-    fn restart(&mut self, commands: &mut Commands, i: usize, vol: f32) {
-        if let Some(e) = self.players[i].take() {
-            commands.entity(e).despawn();
-        }
-        self.players[i] = self.handles[i].clone().map(|h| {
-            commands
-                .spawn((
-                    AudioPlayer(h),
-                    PlaybackSettings::ONCE.with_volume(Volume::Linear(vol)),
-                ))
-                .id()
-        });
-    }
-
-    fn stop(&mut self, commands: &mut Commands, i: usize) {
-        if let Some(e) = self.players[i].take() {
-            commands.entity(e).despawn();
-        }
-    }
+    lib: Option<Arc<Openmpt>>,
+    bytes: [Option<Arc<[u8]>>; 5],
+    players: [Option<(Entity, u32)>; 5],
 }
 
 /// Uploaded audio, by sound id.
@@ -412,23 +380,10 @@ fn setup(
     src: Res<Sources>,
     grid: Res<Grid>,
     mut images: ResMut<Assets<Image>>,
-    mut music: ResMut<Music>,
-    mut song_assets: ResMut<Assets<Song>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     commands.spawn(Camera2d);
     commands.insert_resource(Quad(meshes.add(Rectangle::new(1.0, 1.0))));
-    let handles = music.0.take().map_or([None, None, None], |s| {
-        s.map(|s| s.map(|s| song_assets.add(s)))
-    });
-    commands.insert_resource(Songs {
-        handles,
-        players: [None; 3],
-        on_hatch: None,
-        alien_on: false,
-        tank_vol: 1.0,
-        alien_vol: 0.0,
-    });
     let mut sheets = HashMap::new();
     for &id in SHEETS {
         let Some(img) = src.0.get(id) else {
@@ -514,64 +469,50 @@ fn play_sounds(
     }
 }
 
-/// Music by screen (`assets/music.md`): entering a screen stops all music
-/// and starts its song (tank: `PlayTankMusic`; hatch: `0x0054b1a0(2, 54)`,
-/// no fade). In the tank, `PlayAlienMusic` fades the tank song out (0.008
-/// per update) and starts the alien song at full volume (its 0.002 "fade
-/// in" starts from the maximum, so it changes nothing); `PlayTankMusic(1)`
-/// fades the alien song out and starts the tank song the same way.
+/// Mirror the sim's music state onto song players: a playing track gets a
+/// player started from its order (restarted when the sim restarts it) at
+/// the track's volume; a stopped one loses its player.
 fn play_music(
     mut commands: Commands,
     sim: Res<Sim>,
     mut songs: ResMut<Songs>,
+    mut assets: ResMut<Assets<Song>>,
     mut sinks: Query<&mut AudioSink>,
 ) {
-    const TANK: usize = 0;
-    const ALIEN: usize = 1;
-    const HATCH: usize = 2;
-    let on_hatch = sim.board().is_none();
-    if songs.on_hatch != Some(on_hatch) {
-        songs.on_hatch = Some(on_hatch);
-        for i in [TANK, ALIEN, HATCH] {
-            songs.stop(&mut commands, i);
+    let Some(lib) = songs.lib.clone() else { return };
+    for (i, t) in sim.game.music.tracks.iter().enumerate() {
+        let current = songs.players[i];
+        if !t.playing {
+            if let Some((e, _)) = songs.players[i].take() {
+                commands.entity(e).despawn();
+            }
+            continue;
         }
-        songs.alien_on = false;
-        songs.alien_vol = 0.0;
-        if on_hatch {
-            songs.restart(&mut commands, HATCH, 1.0);
-        } else {
-            songs.tank_vol = 1.0;
-            songs.restart(&mut commands, TANK, 1.0);
-        }
-        return;
-    }
-    let Some(board) = sim.board() else { return };
-    match board.music {
-        Some(MusicCue::Alien) => {
-            songs.alien_on = true;
-            songs.alien_vol = 1.0;
-            songs.restart(&mut commands, ALIEN, 1.0);
-        }
-        Some(MusicCue::Tank) => {
-            songs.alien_on = false;
-            songs.tank_vol = 1.0;
-            songs.restart(&mut commands, TANK, 1.0);
-        }
-        None => {}
-    }
-    // Only the outgoing song fades (0.008 per update) and stops at 0.
-    let (out, vol) = if songs.alien_on {
-        (TANK, &mut songs.tank_vol)
-    } else {
-        (ALIEN, &mut songs.alien_vol)
-    };
-    if *vol > 0.0 {
-        *vol = (*vol - 0.008).max(0.0);
-        let v = *vol;
-        if v <= 0.0 {
-            songs.stop(&mut commands, out);
-        } else if let Some(mut sink) = songs.players[out].and_then(|e| sinks.get_mut(e).ok()) {
-            sink.set_volume(Volume::Linear(v));
+        let vol = Volume::Linear(t.volume as f32);
+        match current {
+            Some((e, start)) if start == t.start => {
+                if let Ok(mut sink) = sinks.get_mut(e) {
+                    sink.set_volume(vol);
+                }
+            }
+            _ => {
+                if let Some((e, _)) = current {
+                    commands.entity(e).despawn();
+                }
+                let Some(song) = songs.bytes[i]
+                    .clone()
+                    .and_then(|b| Song::new(&lib, b, t.order))
+                else {
+                    continue;
+                };
+                let e = commands
+                    .spawn((
+                        AudioPlayer(assets.add(song)),
+                        PlaybackSettings::ONCE.with_volume(vol),
+                    ))
+                    .id();
+                songs.players[i] = Some((e, t.start));
+            }
         }
     }
 }
