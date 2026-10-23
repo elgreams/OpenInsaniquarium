@@ -35,8 +35,12 @@ pub enum Dialog {
     /// Dialog 0x11: game over.
     GameOver,
     /// Dialog 0x0e "DANGER! A vicious alien is about to enter your tank!"
-    /// (tank 1-2, countdown 276).
+    /// (tank 1-2, first wave, countdown 276).
     AlienWarning,
+    /// Dialog 0x0e "BATTLE TIP" (tank 1-2, second wave).
+    BattleTip,
+    /// Dialog 0x0e "WARNING! A new breed of alien…" (tank 1-3).
+    NewBreed,
     /// Dialog 0x13 "OUT OF MONEY!" (tutorial, money 0).
     /// TODO(spec): the loan it offers.
     OutOfMoney,
@@ -99,6 +103,9 @@ pub struct Board {
     pub arrow_food_quality: bool,
     /// The modal dialog raised by the board, if any.
     pub dialog: Option<Dialog>,
+    /// Board hint bytes `+0x4b3` (DANGER), `+0x4b4` (battle tip), `+0x4c1`
+    /// (new breed): each is shown once per level.
+    pub hints_shown: [bool; 3],
     /// `board+0xa0`: guppies in insertion order.
     pub guppies: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
@@ -172,6 +179,7 @@ impl Board {
             arrow_buy_egg: false,
             arrow_food_quality: false,
             dialog: None,
+            hints_shown: [false; 3],
             guppies: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
@@ -524,11 +532,21 @@ impl Board {
         }
         self.wave_countdown -= 1;
         match self.wave_countdown {
-            // Hint on 1-2 (`0x005483e0`), every wave: pause until dismissed.
-            // TODO(spec): the `+0x4b3` byte and the hints on other levels.
-            276 if self.tank == 1 && self.level == 2 => {
-                self.paused = true;
-                self.dialog = Some(Dialog::AlienWarning);
+            // One-time hints (`0x005483e0`): each pauses the board until
+            // dismissed, then is marked shown (`+0x4b3`, `+0x4b4`, `+0x4c1`).
+            // TODO(spec): the virtual-tank/mode checks on this path.
+            276 => {
+                let hint = match (self.tank, self.level) {
+                    (1, 2) if !self.hints_shown[0] => Some((0, Dialog::AlienWarning)),
+                    (1, 2) if !self.hints_shown[1] => Some((1, Dialog::BattleTip)),
+                    (1, 3) if !self.hints_shown[2] => Some((2, Dialog::NewBreed)),
+                    _ => None,
+                };
+                if let Some((i, d)) = hint {
+                    self.hints_shown[i] = true;
+                    self.paused = true;
+                    self.dialog = Some(d);
+                }
             }
             275 => {
                 self.music = Some(Music::Alien);
@@ -798,7 +816,9 @@ impl Board {
                 self.paused = false;
                 self.add_random_guppy();
             }
-            Some(Dialog::OutOfMoney | Dialog::AlienWarning) => self.paused = false,
+            Some(
+                Dialog::OutOfMoney | Dialog::AlienWarning | Dialog::BattleTip | Dialog::NewBreed,
+            ) => self.paused = false,
             Some(Dialog::GameOver) | None => {}
         }
     }

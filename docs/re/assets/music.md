@@ -39,9 +39,17 @@ Remap table (id, order → 4, order):
 - **Stop all** (`0x0054b020`): stops ids 0–4 and resets the current-track fields (`app+0x88c` id, `app+0x890` order).
 - **PlayMusic** (interface slot 11, `0x004992e0`): `(id, order, fade_speed: f64, no_loop: bool)`. Order −1 means "resume". Otherwise BASS seeks to the order. Looping is on unless `no_loop`.
 
-Fade semantics (BASS `ChannelSlideAttributes` per update) and the volume curve are TODO. Approximate them with linear gain ramps until verified by ear.
+Fades are linear: `BassMusicInterface` slot 19 (`0x004997d0`) adds the fade speed to the volume once per update, clamps it to [0, max], and stops a song that faded out to 0.
+
+**Songs are module positions, not files.** Looping is the module's own: BASS plays with repeat −1, so the order list decides what repeats. Measured with libopenmpt:
+- The tank 1 song from order 0 plays orders 0–11 once (≈ 113 s), then loops orders 2–11 (an intro, then the loop section).
+- The hatch song from order 49 plays 49 once, then loops 45–48.
+- `Alien.mo3` loops its single section.
+
+A pre-rendered fixed-length loop gets this wrong (it restarts the intro). The app streams the module live (`insaniquarium_app::song`).
 
 ## Implementation notes
 
 - `sexy_core::music` loads `libopenmpt.so.0` / `libopenmpt.dll` **at runtime** (`libloading`), so building doesn't require libopenmpt. Without the library, music is silently unavailable.
 - Order seeking uses `openmpt_module_set_position_order_row(order, 0)`. Looping uses `set_repeat_count(-1)`.
+- Starting a song = a new player from its start order (`PlayMusic` seeks). The tank→alien switch fades the tank song out (0.008/update) while the alien song fades in from 0 (0.002/update); killing the last alien does the reverse (`PlayTankMusic(1)`). Entering the hatch screen or a new level stops all music and starts that screen's song at full volume.

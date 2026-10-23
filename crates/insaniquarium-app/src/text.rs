@@ -45,10 +45,20 @@ impl ImageFont {
         self.layer.ascent
     }
 
-    /// `Font::GetLineSpacing`: ascent + line-spacing offset (+ padding is
-    /// already in the glyph rects).
+    /// `Font::GetHeight`: the tallest glyph, rect height plus its y offset
+    /// (computed in `LayerSetImageMap` @ `0x0045a71f`).
+    pub fn glyph_height(&self) -> i32 {
+        self.layer
+            .glyphs
+            .values()
+            .map(|g| g.rect.h + g.offset.1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// `Font::GetLineSpacing`: height + `LayerSetLineSpacingOffset`.
     pub fn line_spacing(&self) -> i32 {
-        self.height()
+        self.glyph_height() + self.layer.line_spacing_offset
     }
 
     /// Greedy word wrap to `width` pixels.

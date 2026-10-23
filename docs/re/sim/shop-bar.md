@@ -230,7 +230,7 @@ Icons are set by `MenuButtonWidget::SetIcon` @ `0x00530410` from `RefreshSlotBut
 - **Price text** = `"$%d"`, or empty if the price is < 1. It is only updated while `+0x55` is set.
 
 `MenuButtonWidget::Draw` @ `0x00530540`, all relative to the button. While the pop-in countdown is < 7:
-1. The ButtonWidget base draws (U/O/D images).
+1. The ButtonWidget base draws its state image: **down** `MENUBTND` while the mouse is held on it, **over** `MENUBTNO` while hovered, else **up** `MENUBTNU`. A disabled (MAX) button always draws up.
 2. The icon cel at `(x, y)`.
 3. The secondary text in `FONT_CONTINUUMBOLD12OUTLINE`, colour (110,250,110), centred, baseline `ascent + 9`.
 

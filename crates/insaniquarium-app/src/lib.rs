@@ -3,4 +3,5 @@
 
 pub mod additive;
 pub mod assets;
+pub mod song;
 pub mod text;

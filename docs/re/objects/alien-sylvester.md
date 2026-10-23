@@ -454,7 +454,7 @@ The draw code **writes A.y = 280** (`+0x2d0 = 0x118`), and for kind 11 B.y too, 
 
 ## Note: the 1-2 "DANGER!" dialog
 
-On tank 1-2 (tutorial not completed), **every wave**, when the countdown reaches **276** the board raises hint dialog 0x0e ("DANGER! A vicious alien is about to enter your tank!…", `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01` and `_02`. Modelled as `Dialog::AlienWarning`; objects skip the tick that raises it.
+On tank 1-2 (game not completed), when the countdown reaches **276**, the board raises hint dialog 0x0e: "DANGER!" on the first wave and "BATTLE TIP" on the second, each once (`framework/dialog.md#board-dialogs`, `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01` and `_02`. Modelled as `Dialog::AlienWarning`; objects skip the tick that raises it.
 
 ## Deviations
 

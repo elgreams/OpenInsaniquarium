@@ -48,6 +48,7 @@ pub struct Openmpt {
     set_order_row: SetOrderRowFn,
     num_orders: GetIntFn,
     duration: GetDoubleFn,
+    current_order: GetIntFn,
 }
 
 const LIB_NAMES: &[&str] = &[
@@ -102,6 +103,9 @@ impl Openmpt {
                 duration: std::mem::transmute::<*const c_void, GetDoubleFn>(sym(
                     b"openmpt_module_get_duration_seconds\0",
                 )?),
+                current_order: std::mem::transmute::<*const c_void, GetIntFn>(sym(
+                    b"openmpt_module_get_current_order\0",
+                )?),
                 _lib: lib,
             })
         }
@@ -151,6 +155,12 @@ impl Module {
     pub fn duration_seconds(&self) -> f64 {
         // SAFETY: ptr is a live module.
         unsafe { (self.lib.duration)(self.ptr) }
+    }
+
+    /// The order being played.
+    pub fn current_order(&self) -> i32 {
+        // SAFETY: ptr is a live module.
+        unsafe { (self.lib.current_order)(self.ptr) }
     }
 
     /// `-1` loops forever (the game's default), `0` plays once.

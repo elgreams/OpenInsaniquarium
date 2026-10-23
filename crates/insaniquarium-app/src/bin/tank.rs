@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::audio::AudioSource;
-use bevy::audio::Volume;
+use bevy::audio::{AddAudioSource, Volume};
 use bevy::image::Image;
 use bevy::math::Affine2;
 use bevy::prelude::*;
@@ -28,9 +28,8 @@ use bevy::sprite::Anchor;
 use bevy::sprite_render::Material2dPlugin;
 use bevy::window::PrimaryWindow;
 use insaniquarium_app::additive::{Additive, AdditiveMaterial};
-use insaniquarium_app::assets::{
-    ALIEN_SONG, GameImages, HATCH_SONG, TANK1_SONG, load_sound_bytes, render_song,
-};
+use insaniquarium_app::assets::{ALIEN_SONG, GameImages, HATCH_SONG, TANK1_SONG, load_sound_bytes};
+use insaniquarium_app::song::Song;
 use insaniquarium_app::text::ImageFont;
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::{Dialog, Input};
@@ -43,6 +42,7 @@ use insaniquarium_sim::sound::{Music as MusicCue, Played, Sound};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
+use sexy_core::music::Openmpt;
 use sexy_core::rand::MtRand;
 use sexy_core::resources::{Manifest, Resource};
 
@@ -64,6 +64,7 @@ const SHEETS: &[&str] = &[
     "IMAGE_MENUBAR",
     "IMAGE_MENUBTNU",
     "IMAGE_MENUBTND",
+    "IMAGE_MENUBTNO",
     "IMAGE_MENUBUTTONREFLECTION",
     "IMAGE_EGGPIECES",
     "IMAGE_HELPARROW",
@@ -116,16 +117,20 @@ fn main() {
         .iter()
         .filter_map(|s| Some((s.id(), load_sound_bytes(&data, &manifest, s.id())?)))
         .collect();
-    // TODO: stream instead of pre-rendering; 5 minutes loops acceptably.
-    let (music, alien_music, hatch_music) = if args.iter().any(|a| a == "--no-music") {
-        (None, None, None)
+    // Songs stream live through libopenmpt (`song.rs`).
+    let music = if args.iter().any(|a| a == "--no-music") {
+        None
     } else {
-        let song = |(path, order): (&str, i32)| {
-            render_song(&data, path, order, 300)
-                .inspect_err(|e| eprintln!("music disabled: {e}"))
-                .ok()
-        };
-        (song(TANK1_SONG), song(ALIEN_SONG), song(HATCH_SONG))
+        Openmpt::load()
+            .inspect_err(|e| eprintln!("music disabled: {e}"))
+            .ok()
+            .map(|lib| {
+                let song = |(path, order): (&str, i32)| {
+                    let bytes: Arc<[u8]> = std::fs::read(data.find(path)?).ok()?.into();
+                    Song::new(&lib, bytes, order)
+                };
+                [song(TANK1_SONG), song(ALIEN_SONG), song(HATCH_SONG)]
+            })
     };
 
     // The sim never reads the clock; the app picks the seed, as the
@@ -172,6 +177,7 @@ fn main() {
                 .set(ImagePlugin::default_nearest()),
         )
         .add_plugins(Material2dPlugin::<AdditiveMaterial>::default())
+        .add_audio_source::<Song>()
         .insert_resource(Time::<Fixed>::from_duration(TICK))
         .insert_resource(Sim {
             game,
@@ -189,26 +195,24 @@ fn main() {
                 .collect(),
         ))
         .insert_resource(Sources(images))
+        .init_resource::<Cursor>()
         .insert_resource(SoundBytes(sounds))
-        .insert_resource(Music {
-            tank: music,
-            alien: alien_music,
-            hatch: hatch_music,
-        })
+        .insert_resource(Music(music))
         .insert_resource(Hud {
             font: ImageFont::load(&data, "data/ContinuumBold12.txt").ok(),
             small: ImageFont::load(&data, "data/JungleFever10outline.txt").ok(),
             labels: HashMap::new(),
             dialog_fonts: [
-                "data/JungleFever12outline.txt",
                 "data/JungleFever15outline.txt",
                 "data/JungleFever10outline.txt",
+                "data/JungleFever12outline.txt",
             ]
             .map(|p| ImageFont::load(&data, p).ok())
             .into_iter()
             .collect::<Option<Vec<_>>>()
             .and_then(|v| v.try_into().ok()),
             tiny: ImageFont::load(&data, "data/Pix118.txt").ok(),
+            outline12: ImageFont::load(&data, "data/ContinuumBold12outline.txt").ok(),
             money: None,
             dialog: None,
             dialog_button: None,
@@ -288,28 +292,47 @@ const ALL_SOUNDS: &[Sound] = &[
 #[derive(Resource)]
 struct SoundBytes(HashMap<&'static str, Vec<u8>>);
 
-/// Pre-rendered songs (taken by `setup`).
+/// The tank, alien and hatch songs, if music is on (taken by `setup`).
 #[derive(Resource)]
-struct Music {
-    tank: Option<Vec<u8>>,
-    alien: Option<Vec<u8>>,
-    hatch: Option<Vec<u8>>,
-}
+struct Music(Option<[Option<Song>; 3]>);
 
-/// The two looping song players and the one fading in (`music.md`: linear
-/// fades, 0.008 out and 0.002 in per update).
+/// Song players (`music.md`). A song (re)starts by spawning a new player;
+/// the tank and alien songs cross-fade linearly, 0.008 out and 0.002 in
+/// per update.
 #[derive(Resource)]
 struct Songs {
-    tank: Option<Entity>,
-    alien: Option<Entity>,
-    /// The hatch screen's song: starts at once, no fade, while it's shown.
-    hatch: Option<Entity>,
+    /// Tank, alien, hatch.
+    handles: [Option<Handle<Song>>; 3],
+    players: [Option<Entity>; 3],
     /// The screen the songs were last set up for (true = hatch screen).
-    on_hatch: bool,
+    on_hatch: Option<bool>,
     /// Target: true = alien song.
     alien_on: bool,
     tank_vol: f32,
     alien_vol: f32,
+}
+
+impl Songs {
+    /// Stop song `i` and start it again from its first order at `vol`.
+    fn restart(&mut self, commands: &mut Commands, i: usize, vol: f32) {
+        if let Some(e) = self.players[i].take() {
+            commands.entity(e).despawn();
+        }
+        self.players[i] = self.handles[i].clone().map(|h| {
+            commands
+                .spawn((
+                    AudioPlayer(h),
+                    PlaybackSettings::ONCE.with_volume(Volume::Linear(vol)),
+                ))
+                .id()
+        });
+    }
+
+    fn stop(&mut self, commands: &mut Commands, i: usize) {
+        if let Some(e) = self.players[i].take() {
+            commands.entity(e).despawn();
+        }
+    }
 }
 
 /// Uploaded audio, by sound id.
@@ -338,9 +361,20 @@ struct Hud {
     hatch: Option<(i32, [Handle<Image>; 4])>,
     /// `FONT_TINY` for button prices.
     tiny: Option<ImageFont>,
+    /// `FONT_CONTINUUMBOLD12OUTLINE` for button secondary text (the food
+    /// quantity number).
+    outline12: Option<ImageFont>,
     /// `FONT_JUNGLEFEVER10OUTLINE`: help-arrow captions and the tank label.
     small: Option<ImageFont>,
     labels: HashMap<String, (Handle<Image>, UVec2)>,
+}
+
+/// Mouse position in board pixels and whether the left button is held
+/// (button hover/press art).
+#[derive(Resource, Default)]
+struct Cursor {
+    pos: Option<(i32, i32)>,
+    down: bool,
 }
 
 /// The unit quad additive cels are drawn on.
@@ -377,32 +411,18 @@ fn setup(
     grid: Res<Grid>,
     mut images: ResMut<Assets<Image>>,
     mut music: ResMut<Music>,
-    mut audio: ResMut<Assets<AudioSource>>,
+    mut song_assets: ResMut<Assets<Song>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     commands.spawn(Camera2d);
     commands.insert_resource(Quad(meshes.add(Rectangle::new(1.0, 1.0))));
-    let mut song = |wav: Option<Vec<u8>>, vol: f32| {
-        wav.map(|wav| {
-            let h = audio.add(AudioSource {
-                bytes: Arc::from(wav),
-            });
-            commands
-                .spawn((
-                    AudioPlayer::new(h),
-                    PlaybackSettings::LOOP.with_volume(Volume::Linear(vol)),
-                ))
-                .id()
-        })
-    };
-    let tank = song(music.tank.take(), 1.0);
-    let alien = song(music.alien.take(), 0.0);
-    let hatch = song(music.hatch.take(), 0.0);
+    let handles = music.0.take().map_or([None, None, None], |s| {
+        s.map(|s| s.map(|s| song_assets.add(s)))
+    });
     commands.insert_resource(Songs {
-        tank,
-        alien,
-        hatch,
-        on_hatch: false,
+        handles,
+        players: [None; 3],
+        on_hatch: None,
         alien_on: false,
         tank_vol: 1.0,
         alien_vol: 0.0,
@@ -492,54 +512,67 @@ fn play_sounds(
     }
 }
 
-/// Alien/tank song switches with the original's linear fades, one step per
-/// tick: out at 0.008, in at 0.002 (`assets/music.md`).
-fn play_music(sim: Res<Sim>, mut songs: ResMut<Songs>, mut sinks: Query<&mut AudioSink>) {
-    // Screen changes stop all music and start the new screen's song at
-    // full volume (hatch: `0x0054b1a0(2, 54)`; level start: tank song).
+/// Music by screen (`assets/music.md`): entering a screen stops all music
+/// and starts its song (tank: `PlayTankMusic`; hatch: `0x0054b1a0(2, 54)`,
+/// no fade). In the tank, `PlayAlienMusic` fades the tank song out (0.008
+/// per update) and starts the alien song fading in (0.002);
+/// `PlayTankMusic(1)` does the reverse.
+fn play_music(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    mut songs: ResMut<Songs>,
+    mut sinks: Query<&mut AudioSink>,
+) {
+    const TANK: usize = 0;
+    const ALIEN: usize = 1;
+    const HATCH: usize = 2;
     let on_hatch = sim.board().is_none();
-    if on_hatch != songs.on_hatch {
-        songs.on_hatch = on_hatch;
-        songs.alien_on = false;
-        let (t, h) = if on_hatch { (0.0, 1.0) } else { (1.0, 0.0) };
-        songs.tank_vol = t;
-        songs.alien_vol = 0.0;
-        for (e, vol) in [(songs.tank, t), (songs.alien, 0.0), (songs.hatch, h)] {
-            if let Some(mut sink) = e.and_then(|e| sinks.get_mut(e).ok()) {
-                let _ = sink.try_seek(Duration::ZERO);
-                sink.set_volume(Volume::Linear(vol));
-            }
+    if songs.on_hatch != Some(on_hatch) {
+        songs.on_hatch = Some(on_hatch);
+        for i in [TANK, ALIEN, HATCH] {
+            songs.stop(&mut commands, i);
         }
+        songs.alien_on = false;
+        songs.alien_vol = 0.0;
+        if on_hatch {
+            songs.restart(&mut commands, HATCH, 1.0);
+        } else {
+            songs.tank_vol = 1.0;
+            songs.restart(&mut commands, TANK, 1.0);
+        }
+        return;
     }
     let Some(board) = sim.board() else { return };
     match board.music {
-        Some(MusicCue::Alien) => songs.alien_on = true,
-        Some(MusicCue::Tank) => songs.alien_on = false,
+        Some(MusicCue::Alien) => {
+            songs.alien_on = true;
+            songs.alien_vol = 0.0;
+            songs.restart(&mut commands, ALIEN, 0.0);
+        }
+        Some(MusicCue::Tank) => {
+            songs.alien_on = false;
+            songs.tank_vol = 0.0;
+            songs.restart(&mut commands, TANK, 0.0);
+        }
         None => {}
     }
-    let restart = board.music.is_some();
     let on = songs.alien_on;
-    let step = |v: &mut f32, up: bool| {
-        *v = if up {
-            (*v + 0.002).min(1.0)
+    let step = |v: f32, up: bool| {
+        if up {
+            (v + 0.002).min(1.0)
         } else {
-            (*v - 0.008).max(0.0)
-        };
-    };
-    let (mut tv, mut av) = (songs.tank_vol, songs.alien_vol);
-    step(&mut tv, !on);
-    step(&mut av, on);
-    songs.tank_vol = tv;
-    songs.alien_vol = av;
-    for (e, vol, starts) in [(songs.tank, tv, !on), (songs.alien, av, on)] {
-        let Some(mut sink) = e.and_then(|e| sinks.get_mut(e).ok()) else {
-            continue;
-        };
-        // The incoming song starts from its beginning (PlayMusic seeks).
-        if restart && starts {
-            let _ = sink.try_seek(Duration::ZERO);
+            (v - 0.008).max(0.0)
         }
-        sink.set_volume(Volume::Linear(vol));
+    };
+    songs.tank_vol = step(songs.tank_vol, !on);
+    songs.alien_vol = step(songs.alien_vol, on);
+    // A song faded out to silence is stopped (`BassMusicInterface` slot 19).
+    for (i, vol) in [(TANK, songs.tank_vol), (ALIEN, songs.alien_vol)] {
+        if vol <= 0.0 && (i == ALIEN) != on {
+            songs.stop(&mut commands, i);
+        } else if let Some(mut sink) = songs.players[i].and_then(|e| sinks.get_mut(e).ok()) {
+            sink.set_volume(Volume::Linear(vol));
+        }
     }
 }
 
@@ -547,11 +580,13 @@ fn mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     window: Query<&Window, With<PrimaryWindow>>,
     hud: Res<Hud>,
+    mut cursor: ResMut<Cursor>,
     mut sim: ResMut<Sim>,
 ) {
     let Ok(w) = window.single() else { return };
-    let Some(p) = w.cursor_position() else { return };
-    let (x, y) = (p.x as i32, p.y as i32);
+    cursor.pos = w.cursor_position().map(|p| (p.x as i32, p.y as i32));
+    cursor.down = buttons.pressed(MouseButton::Left);
+    let Some((x, y)) = cursor.pos else { return };
     let Some(board) = sim.board() else {
         // Hatch screen: holding the button down on the screen skips the
         // egg; the Continue button acts on release (`hatch-screen.md#6`).
@@ -751,7 +786,14 @@ fn guppy_cel_as(f: &Fish, hungry: bool) -> (&'static str, i32, i32, bool) {
 }
 
 /// Shop buttons, help arrows and money flash (shop-bar.md#button-art).
-fn shop_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
+fn shop_cels(b: &Board, cursor: &Cursor, cels: &mut Vec<Cel<'static>>) {
+    // Button art by state (ButtonWidget::Draw): pressed (held on it) →
+    // MENUBTND, hovered → MENUBTNO, else MENUBTNU. MAXed slots are
+    // disabled and always draw the up image.
+    let hovered = cursor
+        .pos
+        .and_then(|(x, y)| b.shop.hit(x, y))
+        .filter(|&s| !maxed(b, s) && b.dialog.is_none());
     for slot in Slot::ALL {
         let i = slot as usize;
         let (Some(pos), true) = (b.shop.position[i], b.shop.revealed[i]) else {
@@ -760,7 +802,12 @@ fn shop_cels(b: &Board, cels: &mut Vec<Cel<'static>>) {
         let (bx, by) = (BUTTON_X[pos], BUTTON_Y);
         let pop = b.shop.pop[i];
         if pop < 7 {
-            cels.push(Cel::new("IMAGE_MENUBTNU", 0, 0, bx, by, 11.0));
+            let art = match (hovered == Some(slot), cursor.down) {
+                (true, true) => "IMAGE_MENUBTND",
+                (true, false) => "IMAGE_MENUBTNO",
+                _ => "IMAGE_MENUBTNU",
+            };
+            cels.push(Cel::new(art, 0, 0, bx, by, 11.0));
             match slot {
                 Slot::Guppy => cels.push(Cel::new(
                     "IMAGE_SMALLSWIM",
@@ -1034,15 +1081,28 @@ fn dead_alien_cels(d: &DeadAlien, z: f32, cels: &mut Vec<Cel<'static>>) {
     }
 }
 
-/// Button price text: `$n`, or MAX at a cap (`0x00534450`).
-fn price_text(b: &Board, slot: Slot) -> String {
-    let maxed = match slot {
+/// The food-quantity button's number: pellets after the next upgrade,
+/// `min(qty + 1, 9)`; none at MAX (`shop-bar.md#button-art`). Keyed with
+/// a `#` prefix in the label cache (it's a different font).
+fn quantity_text(b: &Board) -> Option<String> {
+    let i = Slot::FoodQuantity as usize;
+    (b.shop.revealed[i] && !maxed(b, Slot::FoodQuantity))
+        .then(|| format!("#{}", (b.max_food + 1).min(9)))
+}
+
+/// A slot at its cap: the button reads MAX and is disabled (`0x00534450`).
+fn maxed(b: &Board, slot: Slot) -> bool {
+    match slot {
         Slot::FoodQuality => b.food_level >= 2,
         Slot::FoodQuantity => b.max_food >= 9,
         _ => false,
-    };
+    }
+}
+
+/// Button price text: `$n`, or MAX at a cap (`0x00534450`).
+fn price_text(b: &Board, slot: Slot) -> String {
     let price = b.shop.price[slot as usize];
-    if maxed {
+    if maxed(b, slot) {
         "MAX".into()
     } else if price > 0 {
         format!("${price}")
@@ -1069,6 +1129,15 @@ fn hud_text(
         return;
     }
     let Some(b) = sim.board() else { return };
+    if let Some(t) = quantity_text(b)
+        && !hud.labels.contains_key(&t)
+        && let Some(f) = &hud.outline12
+    {
+        let img = f.render(&t.as_bytes()[1..]);
+        let size = UVec2::new(img.width, img.height);
+        let h = images.add(to_bevy(&img));
+        hud.labels.insert(t, (h, size));
+    }
     let mut want: Vec<(String, bool)> = Slot::ALL
         .into_iter()
         .filter(|&s| b.shop.revealed[s as usize])
@@ -1130,6 +1199,14 @@ fn dialog_text(d: Dialog) -> (&'static str, &'static str) {
             "YOUR LAST FISH HAS DIED!",
             "Normally this would end your game, but this time we'll give you another fish to keep playing! Make sure you keep it well fed!",
         ),
+        Dialog::BattleTip => (
+            "BATTLE TIP",
+            "Shoot the alien's head to push it downwards! Shoot its tail to deflect it upwards!",
+        ),
+        Dialog::NewBreed => (
+            "WARNING!",
+            "A new breed of alien is fast approaching!  Lasers can't hurt this baddie, so find another way to defeat it!",
+        ),
         Dialog::GameOver => ("GAME OVER", "Oops!  All of your fish have died!"),
         Dialog::OutOfMoney => (
             "OUT OF MONEY!",
@@ -1154,8 +1231,10 @@ fn render_dialog(
     let inner = w - left - right;
     let lines = body.wrap(text, inner - 4);
     let bh = button.height as i32;
-    let h =
-        top + head.line_spacing() + 10 + lines.len() as i32 * body.line_spacing() + 8 + bh + bottom;
+    // Dialog::GetPreferredHeight (`0x00476570`): insets, the header line,
+    // 10 px, the body lines (each line spacing apart), 8 px, the button.
+    let body_h = lines.len() as i32 * body.line_spacing();
+    let h = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom;
     let mut out = Rgba::new_transparent(w as u32, h as u32);
     out.draw_image_box(panel, (0, 0, w, h));
     let centred = |f: &ImageFont, t: &str| left + (inner - f.width(t.as_bytes())) / 2;
@@ -1167,7 +1246,8 @@ fn render_dialog(
         y,
         [255, 200, 0],
     );
-    y += head.line_spacing() + 10;
+    // Body baselines: the first sits one ascent below the header's line.
+    y = top + head.line_spacing() + 10 + body.ascent();
     for l in &lines {
         body.draw(&mut out, l.as_bytes(), centred(body, l), y, [255, 255, 255]);
         y += body.line_spacing();
@@ -1212,6 +1292,7 @@ fn draw(
     sheets: Res<Sheets>,
     hud: Res<Hud>,
     quad: Res<Quad>,
+    cursor: Res<Cursor>,
     mut materials: ResMut<Assets<AdditiveMaterial>>,
     old: Query<Entity, With<Drawn>>,
     mut pool: Query<(&Pooled, &mut Transform, &mut Visibility)>,
@@ -1220,7 +1301,7 @@ fn draw(
         commands.entity(e).despawn();
     }
     let cels = match &sim.game.screen {
-        Screen::Tank(b) => tank_cels(b),
+        Screen::Tank(b) => tank_cels(b, &cursor),
         Screen::Hatch(h) => hatch_cels(&h.hatch),
     };
     let mut slots = pool.iter_mut();
@@ -1263,7 +1344,7 @@ fn draw(
 }
 
 /// The tank: back to front as in `Board::RebuildZOrder` (board.md).
-fn tank_cels(b: &Board) -> Vec<Cel<'static>> {
+fn tank_cels(b: &Board, cursor: &Cursor) -> Vec<Cel<'static>> {
     let mut cels = vec![Cel::new("IMAGE_AQUARIUM1", 0, 0, 0, 0, 0.0)];
     // Back to front as in Board::RebuildZOrder (board.md): shadows, dead
     // aliens, warps, food, guppies, aliens, pets, shots, coins.
@@ -1337,7 +1418,7 @@ fn tank_cels(b: &Board) -> Vec<Cel<'static>> {
         ));
     }
     cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, 10.0));
-    shop_cels(b, &mut cels);
+    shop_cels(b, cursor, &mut cels);
     cels
 }
 
@@ -1364,6 +1445,20 @@ fn tank_text(commands: &mut Commands, b: &Board, hud: &Hud) {
             t.1.color = Color::srgb_u8(110, 250, 110);
             commands.spawn(t);
         }
+    }
+    // Food quantity number: centred, baseline ascent + 9, (110, 250, 110),
+    // drawn while the button isn't popping in.
+    let qi = Slot::FoodQuantity as usize;
+    if let (Some(t), Some(pos), true) = (quantity_text(b), b.shop.position[qi], b.shop.pop[qi] < 7)
+        && let Some((h, size)) = hud.labels.get(&t)
+    {
+        let x = BUTTON_X[pos] as f32 + (58.0 - size.x as f32) / 2.0;
+        // Baseline at ascent + 9 puts the line's top 9 px below the button
+        // top; the bitmap has a 4 px pad.
+        let y = (BUTTON_Y + 9) as f32 - 4.0;
+        let mut t = text_sprite(h, x, y, 11.15);
+        t.1.color = Color::srgb_u8(110, 250, 110);
+        commands.spawn(t);
     }
     // Help-arrow captions (JungleFever10outline, (110, 250, 110)) at their
     // baselines; the bitmap's top is ascent above the baseline.
