@@ -584,3 +584,40 @@ fn hatch_screen_after_1_1_matches() {
     );
     assert!(torn < hatch.len() / 50, "few torn reads");
 }
+
+/// Tank 1-3 from its first tick (`tank1-3_full_01`): Stinky and Niko, kind-2
+/// aliens, a carnivore, food upgrades. Ignored until 1-3 is implemented (it
+/// diverges at Niko on the second tick); run with `--ignored` to see the
+/// first divergence.
+#[test]
+#[ignore = "tank 1-3 not implemented yet (Niko, carnivores)"]
+fn tank_1_3_from_start() {
+    use harness::replay::window;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-3_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
+    // The capture starts on the level's first tick: rebuild from it.
+    let last = full
+        .snapshots
+        .iter()
+        .take_while(|s| board_of(s))
+        .last()
+        .unwrap()
+        .tick;
+    let t = window(&full, full.snapshots[0].tick, last);
+    let mut board = board_from_capture(&t).unwrap();
+    board.shop = insaniquarium_sim::shop::Shop::adventure(1, 3);
+    let inferred = inferred_clicks(&t);
+    let expected = inferred.clean(&decode_capture(&t));
+    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    eprintln!(
+        "1-3 from start: ticks {}..={last}, {} inputs",
+        t.snapshots[0].tick,
+        inferred.inputs.values().map(Vec::len).sum::<usize>()
+    );
+    if let Some(d) = diff(&expected, &actual) {
+        panic!("{d}");
+    }
+}
