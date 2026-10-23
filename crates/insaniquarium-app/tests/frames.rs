@@ -130,6 +130,7 @@ fn check(name: &str) -> Vec<String> {
         .join(name);
     std::fs::create_dir_all(&out).unwrap();
     let mut failures = Vec::new();
+    let mut rows = Vec::new();
     for (i, (trace, png)) in pairs.iter().enumerate() {
         let snap = &trace.snapshots[0];
         let game = hatch_game(&snap.state["pres"])
@@ -149,10 +150,18 @@ fn check(name: &str) -> Vec<String> {
             snap.tick,
             report.summary()
         );
+        rows.push(format!(
+            "{i:05}.png\t{}\t{}\t{}",
+            snap.tick,
+            report.matches(),
+            report.summary()
+        ));
         if !report.matches() {
             failures.push(format!("frame {i}: {}", report.summary()));
         }
     }
+    // For the viewer (`tools/frame_report.sh` → target/frames/index.html).
+    std::fs::write(out.join("summary.tsv"), rows.join("\n") + "\n").unwrap();
     failures
 }
 

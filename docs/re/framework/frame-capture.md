@@ -42,3 +42,7 @@ What the frame diff found and fixed:
 - the tank label;
 - dead fish;
 - the dialog minimum height and text positions.
+
+## Viewer
+
+`tools/frame_report.sh [--open]` runs the frame tests and writes `target/frames/index.html`. The page lists every captured set with its match count and, per frame, the verdict, the tick, the diff summary, and the ours | original | difference sheet. It's a way to look over what the harness compares without reading test output.
