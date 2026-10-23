@@ -35,11 +35,11 @@ Remap table (id, order → 4, order):
 
 - **Tank music** (`WinFishApp::PlayTankMusic` @ `0x0054c390`): chosen by tank number (`board+0x3c8`, or the profile when there's no board): tank 1 → (0, 22), tank 2 → (0, 0), tank 3 → (2, 32), tank 4 → (2, 45). Each then goes through the remap above. Virtual Tank (mode 5) stops all music instead.
 - **Fade-out** before switching: speed **0.008** per update (`0x005a1a00`).
-- **Alien music** (`0x0054c480`): fade the tank song out at 0.008 and start track **1** (`Alien.mo3`) from the start, fading in at **0.002** (`0x005a19f8`).
+- **Alien music** (`0x0054c480`): fade the tank song out at 0.008 per update, then `0x00498d10(1)` (slot 3) sets track 1's volume to its maximum and clears its fade, and `PlayMusic(1, −1, 0.002, loop)` resumes it with fade speed 0.002. That "fade-in" starts from the maximum and is clamped there, so **the alien song plays at full volume at once**, over the tank song's 125-update fade-out.
 - **Stop all** (`0x0054b020`): stops ids 0–4 and resets the current-track fields (`app+0x88c` id, `app+0x890` order).
 - **PlayMusic** (interface slot 11, `0x004992e0`): `(id, order, fade_speed: f64, no_loop: bool)`. Order −1 means "resume". Otherwise BASS seeks to the order. Looping is on unless `no_loop`.
 
-Fades are linear: `BassMusicInterface` slot 19 (`0x004997d0`) adds the fade speed to the volume once per update, clamps it to [0, max], and stops a song that faded out to 0.
+Fades are linear: `BassMusicInterface` slot 19 (`0x004997d0`) adds the fade speed to the volume, clamps it to [0, max], and stops a song that faded out to 0. It is called from `SexyAppBase::UpdateApp` (`0x004802d0`), so once per 28 ms logic tick.
 
 **Songs are module positions, not files.** Looping is the module's own: BASS plays with repeat −1, so the order list decides what repeats. Measured with libopenmpt:
 - The tank 1 song from order 0 plays orders 0–11 once (≈ 113 s), then loops orders 2–11 (an intro, then the loop section).
@@ -52,4 +52,4 @@ A pre-rendered fixed-length loop gets this wrong (it restarts the intro). The ap
 
 - `sexy_core::music` loads `libopenmpt.so.0` / `libopenmpt.dll` **at runtime** (`libloading`), so building doesn't require libopenmpt. Without the library, music is silently unavailable.
 - Order seeking uses `openmpt_module_set_position_order_row(order, 0)`. Looping uses `set_repeat_count(-1)`.
-- Starting a song = a new player from its start order (`PlayMusic` seeks). The tank→alien switch fades the tank song out (0.008/update) while the alien song fades in from 0 (0.002/update); killing the last alien does the reverse (`PlayTankMusic(1)`). Entering the hatch screen or a new level stops all music and starts that screen's song at full volume.
+- Starting a song = a new player from its start order (`PlayMusic` seeks). The tank→alien switch fades the tank song out (0.008/update) while the alien song starts at full volume; killing the last alien does the reverse (`PlayTankMusic(1)`: fade-out of the alien song, the tank song from its start order at full volume). Entering the hatch screen or a new level stops all music and starts that screen's song at full volume.

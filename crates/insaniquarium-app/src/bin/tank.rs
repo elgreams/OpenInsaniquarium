@@ -4,7 +4,7 @@
 //! on to the next level (progress lasts for the session).
 //!
 //! Usage: `cargo run --bin tank -- --data <install> [--level N] [--seed N] [--no-music] [--finish]`
-//! (`--finish` buys the last egg piece at once, to reach the hatch screen.)
+//! (`--finish` puts the last egg piece up for sale, to reach the hatch screen.)
 //!
 //! Draw rules come from the specs: guppies `fish-guppy.md#animation-and-drawing`,
 //! food `food.md`, coins `coin.md`, Stinky `pet-stinky.md#drawing`, aliens,
@@ -153,13 +153,13 @@ fn main() {
     }
     let mut game = Game::new(profile, app_rng, global);
     if args.iter().any(|a| a == "--finish") {
-        // Dev shortcut: buy the last egg piece now (→ hatch screen).
+        // Dev shortcut: the last egg piece is up and affordable (buy it to
+        // reach the hatch screen).
         if let Screen::Tank(b) = &mut game.screen {
             b.money = 10_000;
             b.egg_count = 3;
             b.shop.reveal(Slot::EggPiece, false);
         }
-        game.step_tank(&[Input::Buy(Slot::EggPiece)]);
     }
 
     App::new()
@@ -375,6 +375,8 @@ struct Hud {
 struct Cursor {
     pos: Option<(i32, i32)>,
     down: bool,
+    /// The current press began on the hatch screen itself (not a button).
+    hatch_press: bool,
 }
 
 /// The unit quad additive cels are drawn on.
@@ -515,8 +517,9 @@ fn play_sounds(
 /// Music by screen (`assets/music.md`): entering a screen stops all music
 /// and starts its song (tank: `PlayTankMusic`; hatch: `0x0054b1a0(2, 54)`,
 /// no fade). In the tank, `PlayAlienMusic` fades the tank song out (0.008
-/// per update) and starts the alien song fading in (0.002);
-/// `PlayTankMusic(1)` does the reverse.
+/// per update) and starts the alien song at full volume (its 0.002 "fade
+/// in" starts from the maximum, so it changes nothing); `PlayTankMusic(1)`
+/// fades the alien song out and starts the tank song the same way.
 fn play_music(
     mut commands: Commands,
     sim: Res<Sim>,
@@ -546,32 +549,29 @@ fn play_music(
     match board.music {
         Some(MusicCue::Alien) => {
             songs.alien_on = true;
-            songs.alien_vol = 0.0;
-            songs.restart(&mut commands, ALIEN, 0.0);
+            songs.alien_vol = 1.0;
+            songs.restart(&mut commands, ALIEN, 1.0);
         }
         Some(MusicCue::Tank) => {
             songs.alien_on = false;
-            songs.tank_vol = 0.0;
-            songs.restart(&mut commands, TANK, 0.0);
+            songs.tank_vol = 1.0;
+            songs.restart(&mut commands, TANK, 1.0);
         }
         None => {}
     }
-    let on = songs.alien_on;
-    let step = |v: f32, up: bool| {
-        if up {
-            (v + 0.002).min(1.0)
-        } else {
-            (v - 0.008).max(0.0)
-        }
+    // Only the outgoing song fades (0.008 per update) and stops at 0.
+    let (out, vol) = if songs.alien_on {
+        (TANK, &mut songs.tank_vol)
+    } else {
+        (ALIEN, &mut songs.alien_vol)
     };
-    songs.tank_vol = step(songs.tank_vol, !on);
-    songs.alien_vol = step(songs.alien_vol, on);
-    // A song faded out to silence is stopped (`BassMusicInterface` slot 19).
-    for (i, vol) in [(TANK, songs.tank_vol), (ALIEN, songs.alien_vol)] {
-        if vol <= 0.0 && (i == ALIEN) != on {
-            songs.stop(&mut commands, i);
-        } else if let Some(mut sink) = songs.players[i].and_then(|e| sinks.get_mut(e).ok()) {
-            sink.set_volume(Volume::Linear(vol));
+    if *vol > 0.0 {
+        *vol = (*vol - 0.008).max(0.0);
+        let v = *vol;
+        if v <= 0.0 {
+            songs.stop(&mut commands, out);
+        } else if let Some(mut sink) = songs.players[out].and_then(|e| sinks.get_mut(e).ok()) {
+            sink.set_volume(Volume::Linear(v));
         }
     }
 }
@@ -590,11 +590,19 @@ fn mouse(
     let Some(board) = sim.board() else {
         // Hatch screen: holding the button down on the screen skips the
         // egg; the Continue button acts on release (`hatch-screen.md#6`).
+        // A widget is "down" only for a press that began on it: the press
+        // that bought the last egg piece (still held as the screen opens)
+        // doesn't skip anything.
         let (bx, by, bw, bh) = HATCH_CONTINUE;
         let on_button = (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y);
+        if buttons.just_pressed(MouseButton::Left) {
+            cursor.hatch_press = !on_button;
+        } else if !buttons.pressed(MouseButton::Left) {
+            cursor.hatch_press = false;
+        }
         if on_button && buttons.just_released(MouseButton::Left) {
             sim.hatch_inputs.push(HatchInput::Continue);
-        } else if !on_button && buttons.pressed(MouseButton::Left) {
+        } else if cursor.hatch_press {
             sim.hatch_inputs.push(HatchInput::Held);
         }
         return;
