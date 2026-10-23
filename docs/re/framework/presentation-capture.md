@@ -8,12 +8,14 @@ Every board sound goes through `Board::PlaySample(id, gap, volume)` @ `0x0053823
 
 So **a sample played on tick t ⇔ its slot changed on tick t**, and captures already record the table (`board.samples`). A new value in slot `i` means sample `0x106 + i` started that tick. The stamp is the board clock, or the clock − 1 for a sound played during input handling (before that tick's update increments the clock). Variants share their family's slot: SLURP/2/3 stamp 0x138, POINTS/2/3/4 stamp 0x12c, CHOMP/2 stamp 0x113.
 
-First catches (fixed): buying a guppy plays `SOUND_GROW` (0x122), not BUY; a starving guppy plays `SOUND_DIE`; the ambient bubble burst plays `SOUND_BUBBLES` (0x110, `0x005481bf`). This is exact for every throttled sound, which is all of them on the board except:
+This is exact for every throttled sound, which is all of them on the board except:
 
 - `SexyAppBase::PlaySample` (slot 54 @ `0x004896b0`) and `+0xd8` calls bypass the table: the alien arrival roar (`0x00545928`), `SOUND_HATCH` / `SOUND_EVILLAFF` on the hatch screen, and button clicks. These are logged from the screen state instead (the spawn and the hatch counter), or not at all.
 - The volume argument isn't recorded. Only the dead-alien rumble varies it (`alien-sylvester.md#73`).
 
 Sample ids are `0x105` + the index of the `<Sound>` in `resources.xml` (`Sound::sample_id`).
+
+First catches (fixed): buying a guppy plays `SOUND_GROW` (0x122), not BUY; a starving guppy plays `SOUND_DIE`; the ambient bubble burst plays `SOUND_BUBBLES` (0x110, `0x005481bf`).
 
 ## Music
 
