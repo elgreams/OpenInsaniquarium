@@ -668,6 +668,7 @@ pub fn decode_capture(t: &Trace) -> Trace {
                     timer: g("t"),
                     flash: g("flash") != 0,
                     id: g("hint"),
+                    warning: false,
                 };
                 s.state.insert("message".into(), message_json(&msg));
             }
