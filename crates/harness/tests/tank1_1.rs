@@ -282,23 +282,6 @@ fn tank_1_2_until_alien_matches() {
         inferred.dirty.len()
     );
     if let Some(d) = diff(&expected, &actual) {
-        if std::env::var_os("DBG").is_some() {
-            eprintln!(
-                "inputs near: {:?}",
-                inferred
-                    .inputs
-                    .range(d.tick - 5..=d.tick + 1)
-                    .collect::<Vec<_>>()
-            );
-            eprintln!(
-                "dirty near: {:?}",
-                inferred
-                    .dirty
-                    .iter()
-                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
-                    .collect::<Vec<_>>()
-            );
-        }
         panic!("{d}");
     }
 }
@@ -378,23 +361,6 @@ fn sylvester_wave_matches() {
         inferred.dirty.len()
     );
     if let Some(d) = diff(&expected, &actual) {
-        if std::env::var_os("DBG").is_some() {
-            eprintln!(
-                "inputs near: {:?}",
-                inferred
-                    .inputs
-                    .range(d.tick - 5..=d.tick + 1)
-                    .collect::<Vec<_>>()
-            );
-            eprintln!(
-                "dirty near: {:?}",
-                inferred
-                    .dirty
-                    .iter()
-                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
-                    .collect::<Vec<_>>()
-            );
-        }
         panic!("{d}");
     }
 }
@@ -476,23 +442,6 @@ fn full_tank_1_2_replays() {
         resync.len()
     );
     if let Some(d) = diff(&expected, &actual) {
-        if std::env::var_os("DBG").is_some() {
-            eprintln!(
-                "inputs near: {:?}",
-                inferred
-                    .inputs
-                    .range(d.tick - 5..=d.tick + 1)
-                    .collect::<Vec<_>>()
-            );
-            eprintln!(
-                "dirty near: {:?}",
-                inferred
-                    .dirty
-                    .iter()
-                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
-                    .collect::<Vec<_>>()
-            );
-        }
         panic!("{d}");
     }
 }
@@ -546,23 +495,6 @@ fn tank_1_1_from_start_with_messages() {
     // (The welcome line is already up in the first snapshot.)
     assert!(msgs >= 6, "the capture shows the tutorial messages");
     if let Some(d) = diff(&expected, &actual) {
-        if std::env::var_os("DBG").is_some() {
-            eprintln!(
-                "inputs near: {:?}",
-                inferred
-                    .inputs
-                    .range(d.tick - 5..=d.tick + 1)
-                    .collect::<Vec<_>>()
-            );
-            eprintln!(
-                "dirty near: {:?}",
-                inferred
-                    .dirty
-                    .iter()
-                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
-                    .collect::<Vec<_>>()
-            );
-        }
         panic!("{d}");
     }
 }
