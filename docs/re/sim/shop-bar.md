@@ -1,6 +1,6 @@
 # Shop / control bar (tank 1-1 focus)
 
-Status: `draft`. Mostly `static`. The guppy purchase RNG count is `confirmed` (trace `tank1-1_buy_01`, see `objects/fish-guppy.md#spawn`).
+Status: per section below. Tank 1-1 and 1-2 behaviour is `traced`; everything for later levels is `static`.
 
 Notation:
 - Addresses are inner-PE VAs. Offsets are `Board`-relative unless noted.
@@ -34,6 +34,8 @@ Helpers (our names):
 - `Board::RefreshSlotButton(slot, popAnim)` @ `0x005406a0`: sets the price label, then the slot icon or "MAX" state. See [Button art](#button-art).
 - `Board::SlotName(slot)` @ `0x00538100`: returns the tooltip string.
 
+`traced` for the parts the replays compare indirectly (reveals, prices paid, money) on 1-1 and 1-2; field offsets are `static`.
+
 ## Slot table
 
 | Slot | Name (tooltip) | Effect |
@@ -50,6 +52,8 @@ Helpers (our names):
 | 9 | "buy ultravore" | `0x00544e60` |
 | 10 | "upgrade weapon" | `+0x3e4` += 1, cap 12 |
 | 11 | "buy egg piece". Mode 1: "buy random pet". Mode 3: "end level" | `Board::BuyEggPiece` @ `0x00545960` |
+
+`static` (names and ids); slots 0, 2, 3 and 11 are exercised by the replays.
 
 ## Level init and per-level layout
 
@@ -95,6 +99,8 @@ RNG in `SetupShop`:
 
 At the end, mode 1 forces the egg price to 100. Mode 4 overrides it on tanks 2/3/4 (5000/15000/25000). `0x00538a10(n)` stores a backdrop index (`+0x3e8`) and is not shop-related.
 
+`traced` for 1-1 and 1-2 (slots, prices and egg price drive the replayed purchases). Rows for 1-3+ and tanks 2–4 are `static`.
+
 ## Reveal
 
 An Adventure level starts with **no buttons**.
@@ -117,6 +123,8 @@ Triggers on tank 1-1 come from `Fish::OnStageUp` @ `0x004f1840`. It is called fr
 
 So on 1-1, the guppy button appears when the first guppy reaches medium, and the egg button appears when the first guppy reaches large. **No reveal path uses RNG.**
 
+`traced` for the 1-1 and 1-2 triggers (stage-up reveals and messages are compared). The tank 1 level 3+ reveal list is `static`.
+
 ## Input path
 
 1. `ButtonWidget::MouseDown` (vslot 54 @ `0x00475af0`) calls `listener->ButtonPress(id)` and then marks the widget dirty. `MenuButtonWidget` does not override it. **A purchase therefore fires on mouse-down.** Mouse-up (vslot 56 @ `0x00475b20`) calls `ButtonDepress`, which the Board only handles for id 0x7b (the Menu button). Clicks go through the WidgetManager, so standard widget-rect hit testing applies (58×60 at `(X[pos], 3)`; TODO: does ButtonWidget use per-pixel alpha?).
@@ -124,11 +132,15 @@ So on 1-1, the guppy button appears when the first guppy reaches medium, and the
 3. `ButtonPress` plays `SOUND_BUTTONCLICK` through app vtable +0xd8. Then, if `mode != 5 && id < 12`, it calls **`Board::Purchase(slot)` @ `0x00549380`**. Ids ≥ 12 are non-shop buttons. No RNG.
 4. The press runs from WidgetManager mouse dispatch, **outside `Board::Update`**. Its order relative to the sim tick has to be pinned down with CE (TODO). The harness must inject purchases at the same point.
 
+`traced` (purchases fire on mouse-down in the replays; the harness injects them at the input phase). The per-pixel hit-test question is open.
+
 ## Purchases
 
 `Board::Purchase(slot)` @ `0x00549380`:
 1. If `GetSlotButton(slot)` is null, return. **Unrevealed or unmapped slots cannot be bought.**
 2. Take `price = +0x314[slot]` and switch on the slot.
+
+`traced` for the slot-0/2/3/11 paths (see below).
 
 ### `Board::TrySpend(price, buzz)` @ `0x00540b30`
 
@@ -143,6 +155,8 @@ Every shop call passes `buzz = 1`. No RNG.
     - If `money == 0` in tutorial 1-1, open dialog 0x13 "OUT OF MONEY!" ("…we'll float you a loan…", button "Click to Continue"). The loan itself is TODO.
     - Return false.
 - **Succeed:** `money -= price`. Money **can go negative** when pending coins cover the gap; it settles when those coins land. With `app+0x880` set and `0 ≤ money < 5`, money becomes 5. Refresh the money label, then return true.
+
+`traced` for success and pending coins. The failure path (buzzer, flash, OUT OF MONEY) is `static`; the replays have no failed purchase.
 
 ### Per-slot behaviour
 
@@ -174,6 +188,8 @@ The RNG order shown is within the purchase call. Sound ids: `SOUND_BUY` = 0x111,
 
 TODO: RNG inside the spawn functions for slots 1, 4, 6–9 (not reachable on 1-1).
 
+`traced` for slots 0, 2, 3 and 11. Slots 1 and 4–10 are `static`.
+
 ## Egg pieces
 
 `Board::BuyEggPiece` @ `0x00545960`. Counter = **`+0x43c`**, set to 1 by InitLevel (tank 5 forces 3). The level completes when the counter reaches **4**, so **1-1 takes 3 purchases at $150 each**. The price never changes in Adventure.
@@ -192,6 +208,8 @@ TODO: RNG inside the spawn functions for slots 1, 4, 6–9 (not reachable on 1-1
    4. With `profile+0x59` set, the path goes through `0x0053dc10` instead.
 
 **Steps 1–7 use no RNG**, so egg pieces 1 and 2 consume zero draws. Step 8 doesn't draw either. The hatch screen itself draws 2 app values per tick (`screens/hatch-screen.md#7-rng`).
+
+`traced` (1-1 and 1-2 completions, including the third piece ending the level).
 
 ## Button art
 
@@ -241,6 +259,8 @@ Then, in every state:
 
 The countdown is set to 8 by `popAnim` and decrements once per tick in `MenuButtonWidget::Update` @ `0x00530500`, which is skipped while the board is paused (`+0x94`).
 
+`confirmed` by the frame diff (`tank12_start_01`). Hover/pressed states are `static` (frames had the cursor outside the window).
+
 ## Bar, money counter, flash, help arrows
 
 Drawn by `Board::Draw` @ `0x0053f5f0`, in board coordinates (640×480):
@@ -260,12 +280,16 @@ Drawn by `Board::Draw` @ `0x0053f5f0`, in board coordinates (640×480):
 
 The Menu button `board+0x114` (id 0x7b, `IMAGE_OPTIONSBUTTON`/`…D`) sits at (525, 3, 101, 29).
 
+Bar and money counter: `confirmed` by the frame diff. Flash and help arrows: `static` (not in a captured frame).
+
 ## Mode notes (not used on 1-1)
 
 - **Mode 4 price inflation** (`Board::Update` ~`0x00547bb1`): once slot 0 or 1 has been revealed, every N ticks of `+0x444` (N = 150/150/175/200 for tanks 1–4), and only while `+0x454 ≤ 0` and the counter ≤ 5, each live slot's price += its step (clamped). Mode 4 also reveals all buttons once `+0x444 > 10800`.
 - **Mode 3** reveals all buttons and sets the slot 11 price to 0.
 - **Tank 5** reveals slot 11 from `Board::Update` (`0x0054928e`) once its conditions hold.
 - **Pets** (`FishTypePet` vslot 23 @ `0x004f7ad0`) can reveal all 12 slots after 200 ticks, with sound 0x13c.
+
+`static`.
 
 ## Open questions
 

@@ -498,3 +498,89 @@ fn tank_1_1_from_start_with_messages() {
         panic!("{d}");
     }
 }
+
+/// The hatch screen after 1-1 (Stinky), from `tank1-1_pres_01`: from the
+/// app RNG state when the screen opens, every tick's counter `t`, egg
+/// jitter (two app draws per tick) and app `mti` match the original, and
+/// the hatch song is the one requested. Covers `screens/hatch-screen.md`
+/// §4 and §7.
+#[test]
+fn hatch_screen_after_1_1_matches() {
+    use harness::replay::rebase_rng;
+    use insaniquarium_sim::hatch::Hatch;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-1_pres_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let hatch: Vec<_> = full
+        .snapshots
+        .iter()
+        .filter(|s| s.state["pres"]["hatch"].is_object())
+        .collect();
+    assert!(hatch.len() > 170, "the capture covers the hatch screen");
+    // The screen is created during the last board tick's input; start from
+    // the RNG state of the snapshot before its first update.
+    let first = hatch[0];
+    let before = full
+        .snapshots
+        .iter()
+        .rev()
+        .find(|s| s.tick < first.tick)
+        .unwrap()
+        .tick;
+    let mut rng = match rebase_rng(&full, "app", before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    let pet = first.state["pres"]["hatch"]["pet"].as_i64().unwrap() as i32;
+    let mut h = Hatch::new(pet);
+    let mut sound_at = None;
+    let (mut prev_t, mut torn) = (None, 0);
+    for s in &hatch {
+        // Follow the screen's own update counter: the app counter can step
+        // without a widget update (a skipped frame), so missing snapshots
+        // aren't one update each.
+        let t = s.state["pres"]["hatch"]["t"].as_i64().unwrap() as i32;
+        while h.t < t {
+            if h.update(&mut rng, false).sound {
+                sound_at = Some(h.t);
+            }
+        }
+        let e = &s.state["pres"]["hatch"];
+        // A snapshot read while the screen was mid-update (the capture
+        // reads the RNG and the screen at different moments) shows `t` and
+        // the jitter after the update but `mti` before it, and repeats `t`
+        // on the next snapshot. Skip those torn reads.
+        let repeated = prev_t == Some(t);
+        prev_t = Some(t);
+        let next_repeats = hatch
+            .iter()
+            .find(|n| n.tick > s.tick)
+            .is_some_and(|n| n.state["pres"]["hatch"]["t"].as_i64() == Some(t as i64));
+        if repeated || next_repeats {
+            torn += 1;
+            continue;
+        }
+        let got = (h.t, h.jitter.0, h.jitter.1, rng.state().1 as i64);
+        let want = (
+            e["t"].as_i64().unwrap() as i32,
+            e["jx"].as_i64().unwrap() as i32,
+            e["jy"].as_i64().unwrap() as i32,
+            s.state["rng_mti"]["app"].as_i64().unwrap(),
+        );
+        assert_eq!(got, want, "tick {} (t, jx, jy, app mti)", s.tick);
+        let m = &s.state["pres"]["music"];
+        assert_eq!(
+            (m["track"].as_i64(), m["order"].as_i64()),
+            (Some(2), Some(54))
+        );
+    }
+    assert_eq!(sound_at, Some(insaniquarium_sim::hatch::SOUND_AT + 1));
+    eprintln!(
+        "hatch screen: {} ticks match ({torn} torn reads skipped)",
+        hatch.len()
+    );
+    assert!(torn < hatch.len() / 50, "few torn reads");
+}

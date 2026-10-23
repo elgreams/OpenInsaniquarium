@@ -1,11 +1,13 @@
 # Board & game-object model
 
-Status: `draft` (static). The object/list mapping comes straight from the routing switch. Update order is inferred from the widget framework and needs CE confirmation.
+Status: per section. The update order for the object kinds on tank 1 is `traced` (every 1-1/1-2 replay depends on it); the mapping for other kinds is `static`.
 Addresses are inner-PE VAs. Offsets are raw `this`-relative.
 
 ## Architecture in one paragraph
 
 Every in-tank entity is a `Sexy::GameObject`, which **is a `Sexy::Widget`**. Objects are added as top-level children of the `WidgetManager` (`board+0x10`), not of the Board. The Board keeps **typed vectors** of object pointers for game logic, plus one master list. Each tick, `WidgetManager` walks its child list and calls `UpdateAll` → `Update` on each widget in list order. That makes **update order = widget z-order (back to front)**. The Board controls that order by rebuilding the z-order from its typed vectors in a fixed sequence (`Board::RebuildZOrder` @ `0x0053aa40`).
+
+`traced` for tank-1 objects (update order = z-order is what makes the replays match).
 
 ## Class hierarchy (from RTTI)
 
@@ -21,6 +23,8 @@ Widget
    └─ OtherTypePet
 Board : Widget, ButtonListener    vtable 0x005a8404
 ```
+
+`static` (RTTI).
 
 ## Object type codes (`GameObject+0x8c`) → Board list
 
@@ -54,6 +58,8 @@ Codes 1–4 and 0x0b–0x13 have no case (unused or non-board objects).
 
 Every added object is also appended to a master container at `board+0x104` (`0x00540ec0`). Unless the type is 0x1e–0x21 (missile/shadow/shot/warp), adding also sets the flag `board+0x2a7 = 1`.
 
+`traced` for guppies, food, coins, pets, aliens, shots, warps, dead aliens, dead fish, shadows (captured from these lists). Other rows `static`.
+
 ## Tick order
 
 Per logic tick (28 ms, see `framework/timing.md`):
@@ -65,6 +71,8 @@ Per logic tick (28 ms, see `framework/timing.md`):
 **Paused board** (dialogs, focus loss): the board clock `+0x28` still advances by one per update, and nothing else runs. When `Board::Update` raises a dialog itself (the 1-2 "DANGER!" hint at countdown 276), the objects don't update on that tick either. Confirmed in `tank1-2_full_02`.
 
 Removal during iteration is safe: `WidgetContainer` keeps the iteration cursor in the container (`+0x18/+0x1c`) plus a "removed current" flag (`+0x14`).
+
+`traced` (paused-board behaviour and the dialog-raising tick are covered by the 1-2 replays).
 
 ### `Board::RebuildZOrder` (`0x0053aa40`) order, back → front
 
@@ -107,6 +115,8 @@ Per-element filter in most loops: an object is brought to front unless `obj+0xfc
 
 **Determinism:** within each vector, order is insertion order (`std::vector` push_back). Objects of one type always update before the next type in the sequence above, and **this is the RNG call order**. Our sim must keep the same per-type vectors (or an equivalent ordering) and walk them in this sequence.
 
+`traced` for the kinds present on tank 1; the rest of the sequence is `static`.
+
 ## Board fields seen so far
 
 | Offset | Meaning |
@@ -121,6 +131,8 @@ Per-element filter in most loops: an object is brought to front unless `obj+0xfc
 | `+0x48c` | High-water mark of guppy count |
 
 The `Board::Update` body (timers, wave countdown `+0x234` from 3000, the alien-type selection per tank/level, ambient bubbles) is substantial. Split it out into `sim/board-update.md` when we implement M3.
+
+`confirmed` (CE).
 
 ## Live observations (CE read-only capture, 2026-10-21)
 
@@ -138,6 +150,8 @@ From `tools/ce_capture.lua`, tank 1-1, two guppies (`traces/original/tank1-1_liv
 
 Per-tick app-RNG draw counts are a cheap, strong fidelity check. Our sim must reproduce this exact sequence.
 
+`confirmed` (see the table). The "global RNG untouched" row only holds without aliens (see `alien-sylvester.md#6`).
+
 ## Fish spawn (`Board::AddRandomGuppy` @ `0x00546d70`)
 
 As an example of call order and RNG consumption:
@@ -147,7 +161,9 @@ As an example of call order and RNG consumption:
 4. `fish+0xb4 = rand() % 10 + 45`; `fish+0xc = <const 0x005966b0>`; `fish+0x30 = 30`
 5. `AddGameObject(fish)`, `wm->AddWidget(fish)`, update the guppy high-water mark, `FUN_00544800(fish)` (shadow creation), `RebuildZOrder()`
 
-So a new guppy costs **4 app-RNG draws, in this order**.
+So these four draws come first, in this order. The full cost with the Fish ctor, shadow and splash is in `fish-guppy.md#spawn` (11 draws, 12 with the purchase splash; `traced`).
+
+`traced` (see `fish-guppy.md#spawn`; note it costs 11–12 draws with the shadow and splash, not 4).
 
 ## Shadows
 
@@ -180,6 +196,8 @@ Fields (raw): owner `+0x158`, type `+0x15c`, darkness `+0x160`, scale `+0x168` (
 
 Owners only ever lose their shadow when removed. Shadows are cosmetic apart from the ctor draw.
 
+`traced` for the ctor draw; drawing `confirmed` by the frame diff (guppies and Stinky).
+
 ## The global RNG stream in normal play
 
 `Sexy::Rand` (global `gMTRand`) has 74 call sites. On tank 1-1 with guppies, food and coins only, every global draw comes from the **cosmetic bubble systems**:
@@ -189,6 +207,8 @@ Owners only ever lose their shadow when removed. Shadows are cosmetic apart from
 - `Board::Update` also draws in level-start/background selection (`0x00547776`) and the surface-splash burst (`0x005478f0`: `5 + %5` splashes, each `%41` and `%10`).
 
 None of these feed back into gameplay. Gameplay sites on the global stream are only: guppy startle exit (`Fish::Update`, mode 123), aliens, pets, missiles, and Virtual Tank fish init. So the sim can treat the global stream as independent of the app stream. The replay harness compares only the app stream's `mti`, and the global stream is resynchronised from each capture's header. **Modelling the bubble systems exactly** (float positions, list order) is needed only before the first global-stream gameplay draw that follows bubble activity, i.e. alien levels and startles. It's tracked as an open item for M3's Sylvester work.
+
+`static`: the bubble systems aren't modelled and the global `mti` isn't compared.
 
 ## Backdrop
 

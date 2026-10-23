@@ -1,6 +1,6 @@
 # Hatch screen (`Sexy::HatchScreen`)
 
-Status: `draft`, **static only**. Nothing here has been checked live yet.
+Status: per section. The update loop and its RNG are `traced` (`tank1_1.rs` `hatch_screen_after_1_1_matches`: 6060 ticks after 1-1, Stinky). Drawing is frame-checked for Niko (`hatch_niko_01`). The level-advance and save paths are `confirmed` by playing through to 1-2 (the profile file and the next level's start); the boss reveal and other modes are `static`.
 
 This is the "You have found:" screen that appears after the last egg piece is bought on an Adventure level. An egg in an incubator cracks, the shards fly apart, and the new pet is revealed with its name and description. Then a button takes you to the next level.
 
@@ -50,6 +50,8 @@ Everything happens **synchronously inside the mouse-down that buys the 3rd egg p
 
 So from the player's view, the click on the third egg piece instantly replaces the tank with the hatch screen.
 
+`traced` up to the board's last tick (the 1-1 replays end on the third piece). Steps 5–8 (record, advance, unlock, save, destroy): `confirmed` by playing 1-1 → hatch → 1-2 in the original (save file and the next level's state); not under test.
+
 ### Pet award table (Adventure, first play-through)
 
 | Level | id | Pet | | Level | id | Pet |
@@ -68,6 +70,8 @@ So from the player's view, the click on the third egg piece instantly replaces t
 
 Ids 20–23 (BRINKLEY, NOSTRADAMUS, STANLEY, WALTER) also have hatch-screen text, but they are unlocked elsewhere (`0x005172e0`), not by egg pieces.
 
+Rows 1-1 (Stinky) and 1-2 (Niko): `confirmed`. Other rows: `static`.
+
 ### Level advance
 
 `Profile::AdvanceLevel` @ `0x00501370`, run on the profile:
@@ -79,6 +83,8 @@ Ids 20–23 (BRINKLEY, NOSTRADAMUS, STANLEY, WALTER) also have hatch-screen text
 5. `profile+0x58 = 1` ("has progress").
 
 So **1-1 → 1-2**, and **x-5 → x-6** on tanks 1–3. Level 6 is the **bonus round**: `App::IsBonusRound` @ `0x0054b2a0` is true when mode 0 and profile level == 6, and `StartLevel` then uses `0x00537e20` instead of `PopulateLevel`. Finishing the bonus round (not this path) advances 6 → 7 → next tank, level 1. 4-5 → 5-1, then 5-1 → 5-2 sets the completed flag.
+
+1-1 → 1-2 and 1-2 → 1-3: `confirmed`. The rest: `static`.
 
 ### Profile fields touched
 
@@ -97,6 +103,8 @@ So **1-1 → 1-2**, and **x-5 → x-6** on tanks 1–3. Level 6 is the **bonus r
 | `+0xb8 + 4*idx` | int[21] | best time (s) per level, −1 = none | record |
 
 Correction to `sim/level-start.md`: owned flags are at `profile+0x00` (`Profile::HasPet` @ `0x00501410` reads `profile[id]`). `+0x5a` is the "chosen pets" array. `static`.
+
+`static` (owned flags and tank/level `confirmed` via the save files).
 
 ## 2. Fields
 
@@ -119,6 +127,8 @@ Offsets are raw `this`-relative.
 | `+0xb0` | `DialogButton*` | **Menu** button, id 100 | – |
 | `+0xb4` | `HatchScreenOverlay*` | overlay widget | – |
 
+`traced` for `+0x94`, `+0x98`, `+0x9c`, `+0xa0` (captured and compared); the rest `static`.
+
 ## 3. Construction (`0x0051f450`)
 
 In order (`static`):
@@ -138,6 +148,8 @@ In order (`static`):
 8. **Music:** stop all music (`0x0054b020`), then `0x0054b1a0(2, 54, 0)`. This records track (2, 54) in `app+0x88c/+0x890` and remaps it to **track 4 (`Insaniq2.mo3`), order 49** (`assets/music.md` remap table). It plays via music interface slot 2 (`BassMusicInterface::PlayMusic(id, order, noLoop=false)` @ `0x00498d10`): **looped, no fade**.
 
 `AddedToManager` (`0x005179e0`) adds the Continue button, the Menu button and the overlay to the WidgetManager, in that order. `RemovedFromManager` removes the Menu button, the Continue button and the overlay. The dtor deletes the BubbleMgr, both buttons and the overlay.
+
+Music (step 8): `traced` (song (2, 54) on every hatch tick). Button rects and labels: `confirmed` by the frame diff. The bubble pre-warm is `static`.
 
 ## 4. Update (`0x00520760`), once per tick
 
@@ -164,6 +176,8 @@ Here `t` is the value of `+0x94` **before** this tick's increment.
 7. If `t == 170`: the Continue label becomes **"Click Here to Continue"** and the button becomes mouse-visible (clickable).
 8. `+0x94 += 1`.
 
+`traced` for steps 3, 4 (the 141 sound) and 8 (`hatch_screen_after_1_1_matches`). Step 5 (mode 1) and step 6 (boss) are `static`. Step 4's held-mouse skip and step 7 are `static` here (the capture never held the button; the label change is frame-checked).
+
 ### Timeline (normal pet)
 
 `T` = counter value seen by Draw (the post-increment value). Draw `T` = number of Updates so far.
@@ -181,6 +195,8 @@ Here `t` is the value of `+0x94` **before** this tick's increment.
 | 171+ | Description lines and "Your game has been saved." | – |
 
 Holding the mouse button down over the screen during T < 140 jumps straight to T = 141 (shards and pet). The button still waits until t = 170. A click whose down and up both land between two Updates won't be seen by step 4. `static` reasoning; CE check TODO.
+
+`confirmed` by the frame diff at three points (Niko) and the traced counter. The T = 140 cel-10 detail is `guess` (see Deviations).
 
 ## 5. Draw (`0x0051f770`)
 
@@ -226,6 +242,8 @@ All coordinates are screen coordinates (the widget is at 0,0). Text positions ar
 
 The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTTON` (up/over/down cels, horizontally stretched to 264 / 80 px; exact slicing `guess`) and their label centred.
 
+`confirmed` by the frame diff (`hatch_niko_01`, 3 frames, pixel-exact): title, Menu button, pet, name, description, saved line, Continue button. The boss branch is `static`.
+
 ### Overlay widget
 
 `HatchScreenOverlay` (Draw slot 26 @ `0x00518910`) calls the owner's slot 44 (`0x00517a80`). It is added after the buttons, so it draws **on top of everything**, buttons included.
@@ -241,6 +259,8 @@ The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTT
 
    The motion is linear: no gravity, no fade.
 
+Reflection: `confirmed` (frames). Shards and boss: `static` (no frame in the shard window yet).
+
 ## 6. Input
 
 - **Mouse on the screen** (outside the buttons): only the skip in Update step 4. The overlay is mouse-invisible, so clicks reach the HatchScreen.
@@ -248,6 +268,8 @@ The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTT
   - Mouse-down → listener slot 1 `ButtonPress(id)` @ `0x0051a6f0`: plays `SOUND_BUTTONCLICK` (0x105). No RNG.
   - Mouse-up while still over the button → listener slot 2 **`ButtonDepress(id)`** @ `0x00517c70`.
   - **The action fires on mouse-up** (unlike the shop bar, which acts on mouse-down). The Continue button can't receive clicks before t = 170.
+
+`confirmed` (Continue on mouse-up while playing the original). Not under test.
 
 ### ButtonDepress
 
@@ -257,6 +279,8 @@ The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTT
   3. Profile at 5-2 (just beat the boss): `0x0054bd80` → **InterludeScreen** (ending).
   4. Otherwise: **`App::NextLevel(0, 0)` @ `0x00552380`**.
 - **100 (Menu):** remove the hatch screen. At profile 5-2 → InterludeScreen. Otherwise `0x00552100` → **GameSelector** (main menu). The profile is already saved at the next level, so Adventure resumes there.
+
+99 (Continue → NextLevel): `confirmed`. 100 (Menu) and the 5-2 path: `static`.
 
 ### `App::NextLevel(resume=0, help=0)` @ `0x00552380`
 
@@ -274,6 +298,8 @@ The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTT
 
 **What carries over from 1-1 to 1-2:** only profile state (owned pets, tank/level, best time). The money, fish, food upgrades and every other board field are discarded with the board. `food_quality`/`food_quantity` are globals, but InitLevel resets them. On 1-2 there is 1 owned pet (≤ 3), so no PetScreen. `PopulateLevel`'s "≤ 3 owned" branch adds every owned pet with id 0..18 in id order, from `profile[id]`. So **Stinky is added first**, then the two guppies.
 
+`confirmed` for 1-1 → 1-2 with ≤ 3 pets (no PetScreen). The PetScreen and bonus branches are `static`.
+
 ## 7. RNG
 
 | Where | Stream | Draws |
@@ -289,6 +315,8 @@ The two buttons draw themselves as standard `DialogButton`s with `IMAGE_MAINBUTT
 
 The bubbles are **never drawn**. Neither Draw nor DrawOverlay calls the BubbleMgr draw (`0x00504b60`), so the bubbles only consume global draws. We can drop them (the global stream is re-synced per capture), or model them only if a trace needs global-stream continuity across the screen.
 
+`traced` for the per-tick draws. The bubble pre-warm (global stream) is `static`.
+
 ## Other paths
 
 - **`profile+0x59` set** (replaying after beating the game): no hatch screen.
@@ -297,13 +325,15 @@ The bubbles are **never drawn**. Neither Draw nor DrawOverlay calls the BubbleMg
 - **Mode 4** (Challenge): sets `profile+0x77 + tank`, records, and shows BonusScreen. **Mode 1** returns early ("random pet"), and mode 3 ends the level. So the mode-1 sound cues in Update and the mode-1/4 branch of ButtonDepress are dead code in this build.
 - **Board 5 (`BuyEggPiece`):** before recording, the ids of pets *not present* on the board (`board+0x144[id] == 0`, id < 18) are stored in globals `0x005e8fe0[]`, count `0x005e9080`. Also, instead of the time, the number of pets is recorded as the score. Not relevant to tank 1.
 
+`static`.
+
 ## Deviations
 
 - **Out-of-range cel at T = 140** (normal pets): `EGGCRACK2` cel 10 of a 10-cel image. `DrawImageCel` turns it into column 0, row 1, i.e. a source rect below the image, so (probably) nothing is drawn for one frame, while the shards start at the same frame. Implementation artifact. Our implementation should draw nothing for the egg at T = 140 to match what's visible (`guess`; confirm with a screenshot).
 
 ## Open questions
 
-- CE: confirm the 2 app draws per hatch tick (watch `mti` at `[app+0x7b0]+0x9c0`), and confirm that the Update count before a click is ≥ 171. Check whether an Update runs on the frame the Continue click is processed.
+- Confirmed: 2 app draws per hatch tick (traced). Still open: whether an Update runs on the frame the Continue click is processed.
 - CE: whether a mouse-down + mouse-up inside one frame triggers the skip.
 - `DialogButton` drawing with a 3-cel `IMAGE_MAINBUTTON` stretched to 264 px: slicing and label baseline. Belongs in a widget spec.
 - KillDialog ids 0x1f / 0x20 (which dialogs).

@@ -58,7 +58,8 @@ Spec conventions:
 - Cite original addresses for traceability: `Fish::Update @ 0x0041A2B0`. Addresses are facts, not copyrightable expression.
 - Give exact constants with units and the tick basis (e.g. "hunger decrements by 1 per tick; starves at 0, initial 500").
 - Note every RNG call site and its order within the tick — this is what makes or breaks determinism.
-- Mark confidence: `confirmed` (verified dynamically), `static` (read from code only), `guess`.
+- Mark confidence **per section, and per claim where a section mixes them**: `traced` (a differential test compares it against a capture; name the test), `confirmed` (verified dynamically, e.g. CE or a capture, but not under test), `static` (read from code only), `guess`. A file-level status is never enough. `tools/spec_confidence.py` lists sections with no tag and fails CI-style (`--check`).
+- **Never build or state game behaviour from a `static`/`guess` claim without saying so.** Before a level or feature is built, record the original playing it; the replay against that recording is what turns `static` into `traced`. (Example of what this prevents: the "new breed" warning was written down as 1-3 from a misread argument; the code says 2-3.)
 - One spec per class/system. Keep `docs/re/INDEX.md` listing every spec and its status.
 
 Ghidra conventions:

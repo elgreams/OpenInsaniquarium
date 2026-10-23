@@ -1,10 +1,12 @@
 # Music (`music/*.mo3`)
 
-Status: `draft` (static). Decoding is verified: the system libopenmpt 0.7.3 loads all three modules (`Insaniq2.mo3`: 67 orders, 113.7 s).
+Status: track selection, orders, volumes and fades on tank 1 are `traced` (`presentation.rs` `tank_1_2_music_and_dialogs_match` and the music unit tests); decoding is `confirmed` (libopenmpt 0.7.3 plays all three modules; `Insaniq2.mo3`: 67 orders, 113.7 s). Tracks used only by other screens are `static`.
 
 ## Format
 
 All music is **MO3**: un4seen's compressed tracker-module container, played by BASS (`bass.dll`, `BassMusicInterface`, vtable `0x005c11bc`). libopenmpt decodes MO3 natively, including MP3/Vorbis-compressed samples, so we use it rather than reimplementing a tracker.
+
+`confirmed`.
 
 ## Tracks
 
@@ -30,6 +32,8 @@ Remap table (id, order → 4, order):
 | 2, 54 | 4, 49 |
 | 2, 5 | 4, 50 |
 | … | (remaining cases in `0x0054b090`; extend when needed) |
+
+Tracks 1 and 4 and the remap of (0, 22) and (2, 54): `traced`. Track 3 (Lullaby) and the other remap rows: `static`.
 
 ## Selection & transitions
 

@@ -1,6 +1,8 @@
 # Board dialogs (`MoneyDialog`)
 
-Status: `draft` (static). Covers the in-tank message boxes ("DANGER!", "YOUR LAST FISH HAS DIED!", "GAME OVER", "OUT OF MONEY!", and the other `Board::Update` hints).
+Covers the in-tank message boxes ("DANGER!", "YOUR LAST FISH HAS DIED!", "GAME OVER", "OUT OF MONEY!", and the other `Board::Update` hints).
+
+Status: per section. Drawing is `confirmed` by the frame diff (GAME OVER, pixel-exact); the hint dialogs' timing is `traced` on 1-2.
 
 ## Creation
 
@@ -16,6 +18,8 @@ Status: `draft` (static). Covers the in-tank message boxes ("DANGER!", "YOUR LAS
 - **Size** (`NewDialog`): width `w = header font's text width + 150`, at least 348. Height = the dialog's preferred height for that width, at least `2/3 · DIALOGBUTTON height + 10`. **Position (143, 142)**, i.e. near the centre of the 640×480 board.
 - Button mode 1 is a single button whose label is the "button text" argument ("Click to Continue" for every board hint).
 
+`confirmed` (size 348×170 and position read live, and matched by the frame diff).
+
 ## Drawing (`Dialog::Draw`, slot 26 @ `0x00476710`)
 
 1. The **panel image drawn as a 3×3 grid** (`0x00456430`, SexyApp "DrawImageBox"):
@@ -27,6 +31,8 @@ Status: `draft` (static). Covers the in-tank message boxes ("DANGER!", "YOUR LAS
 4. The button at the bottom (inset by the content margins, height = button image height). It is drawn with the same 3×3 box routine from the button image's current state cel, with its label centred.
 
 Text wrap details (`Widget` slots 63/65) are approximated: greedy word wrap, centred lines.
+
+`confirmed` by the frame diff for a one-line body (GAME OVER). Multi-line wrapping (the hint dialogs) is `static`: no frame captured with one up.
 
 ## Buttons
 
@@ -52,6 +58,6 @@ The game's button setup helper (`0x005034e0`) sets the text offset to **(−2, 0
 
 All of them use the button `Click to Continue`.
 
-The three hints are chosen in order at countdown 276, when not in Virtual Tank mode and the profile hasn't completed the game (`0x00537bb0(tank, level)`). Each sets its board byte when shown, so a hint appears at most once per level. Its board byte is cleared at level start. `confirmed`: `tank1-2_full_02` paused at 276 on both waves.
+The three hints are chosen in order at countdown 276, when not in Virtual Tank mode and the profile hasn't completed the game (`0x00537bb0(tank, level)`). Each sets its board byte when shown, so a hint appears at most once per level. Its board byte is cleared at level start. `traced`: `tank_1_2_music_and_dialogs_match` compares the dialog id every tick (both 1-2 waves). The 2-3 row is `static` (corrected 2026-10-23: it was wrongly listed as 1-3).
 
 A click anywhere other than the button does nothing. The button fires on mouse-up.

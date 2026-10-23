@@ -11,6 +11,8 @@ Notation:
 - "Tick" = one 28 ms logic tick (`framework/timing.md`).
 - `ix, iy` = the object's widget position (`+0x30/+0x34`, ints). `x, y` = its double position.
 
+Confidence: per section below. Kind 1 on tank 1-2 is `traced`; anything about other kinds or levels is `static`.
+
 ## 1. Wave timing (`Board::Update` @ `0x00547610`, section `0x005481c4`–`0x00548e05`)
 
 ### Board fields
@@ -28,6 +30,8 @@ Notation:
 | `+0x488` | int | fish lost counter (+1 per fish eaten, `0x004df0b0`) |
 | `+0x110` | ptr | boss alien (kind `0x15`). While set, the countdown is paused |
 
+`traced` for the fields the replays restore and compare (countdown, lockout, spawn A, waves: `tank1_1.rs` `sylvester_wave_matches`, `full_tank_1_2_replays`). `+0x2c4`'s purpose and B (kinds 9–12) are `static`.
+
 ### Level setup
 
 Level start (`0x00541a20`) sets `+0x2c0 = 3000`, `+0x2bc = 2` and `+0x3e4 = 2` (laser level). At its end (`0x00541c1a`) it calls the per-level table `0x00541200`, which overwrites them. For the normal game (`app+0x880 == 0`), tank 1 (`board+0x3c8 == 1`), it jumps on `board+0x3cc − 1` (table `0x00541888`):
@@ -41,6 +45,8 @@ Level start (`0x00541a20`) sets `+0x2c0 = 3000`, `+0x2bc = 2` and `+0x3e4 = 2` (
 | 1-5 | 3 | 3000 | 5000 |
 
 No RNG on tank 1. Some later levels draw one here, e.g. 2-5: `kind = 4 | (rand() & 1)`.
+
+`traced` for 1-1 and 1-2 (kind and countdown restored and replayed). The rows for 1-3 to 1-5 and the other tanks are `static`; they come from the jump table at `0x00541888` (re-read 2026-10-23: 1-3 → kind 2, countdown 3000).
 
 ### Per-tick countdown
 
@@ -64,6 +70,8 @@ This runs after the ambient-bubble draw (`rand(1000)`, `sim/board.md`) and after
 
 **Timeline on 1-2 (static):** the countdown starts at 1750. The warning comes on the 1475th counted tick and the spawn on the 1750th (≈ 49 s). The next wave is counted from 3000 again, but **only once the alien is gone**: a warning 2725 ticks after the kill and a spawn 3000 ticks after it. Paused ticks don't count.
 
+`traced` for steps 1–3 and 5 on 1-2 (countdown, warning draws, spawn: `full_tank_1_2_replays`). Step 4 (Sneeze of Power) and the kind re-roll for 1-5 are `static`.
+
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`, kind 1 path)
 
 1. Global `0x005e8f18 = app+0x484 − 216` (only used by the Virtual-Tank helper `0x00503580`, which always returns true in the normal game).
@@ -76,12 +84,16 @@ This runs after the ambient-bubble draw (`rand(1000)`, `sim/board.md`) and after
 
 **Spawn cost: 3 app draws** (ctor 2, shadow 1), with no global draws in the normal game.
 
+`traced` (kind 1): spawn position, ctor draws and the warp are compared in `sylvester_wave_matches`.
+
 ### Alien constructor RNG order (kind 1)
 
 1. `r = rand()`: even → `vx = −3.0`, last-vx `+0x1c8 = −1.0`. Odd → `vx = +3.0`, `+0x1c8 = +1.0`.
 2. (Kind `0x14` only: `rand(5)` for its speed.)
 3. (Only if `app+0x880` [Virtual Tank]: health = `grand() % 100 + 150`, or `% 50 + 70` for kind 4. These are the `0x4ed2c6`/`0x4ed2de` call sites. Not reached in Adventure.)
 4. `+0x1d0 = rand(10)` = initial wander mode (§3.3). Values 4–9 mean "no target change".
+
+`traced` (kind 1, via `rng_mti` in the replays). The kind-0x14 and Virtual-Tank branches are `static`.
 
 ### Fields (raw offsets) and initial values
 
@@ -125,6 +137,8 @@ Per-kind ctor values:
 | 7 | 0.5 | 260 | |
 | `0x14` | 0.8 + rand(5)/10 | 1.0 | 80×80, eat delay 40, `+0x200 = 30` |
 
+`traced` for kind 1 (every field in `alien_json`). The per-kind table rows other than kind 1 are `static`.
+
 ## 3. `Alien::Update` (vtable slot 22 @ `0x004fd560`), kind 1
 
 1. Return if there is no board or it is paused. Run the common `GameObject` pre-update `0x004f22c0` (counter housekeeping, no RNG).
@@ -146,6 +160,8 @@ Per-kind ctor values:
 9. **Animation** `0x004daa00` (§3.4). It can move the alien.
 10. If health ≤ 0: die (`0x004f9c70(1)`, §4.3).
 
+`traced` for kind 1 on 1-2 (`full_tank_1_2_replays`).
+
 ### 3.1 Nearest prey (`0x004e8b60`)
 
 Alien centre = `(ix + 160/2, iy + 160/2)`. Best = 100,000,000. The candidates are **every object in the board's master set `+0x104`**. It is a `std::set<GameObject*>`, so iteration is in **pointer-address order**, not list order.
@@ -157,6 +173,8 @@ An object must have `+0xac < 0` and `+0x120 < 1` (GameObject fields with default
 - Everything else: skipped.
 
 `d² = (cx − (o.ix + o.w/2))² + (cy − (o.iy + o.h/2))²` (ints). The candidate wins if `d² < best`. Ties keep the earlier one in address order.
+
+`traced` for kind 1 (prey choice drives position, compared every tick). Address-order ties: see Deviations.
 
 ### 3.2 Steering and eating (`0x004ed460` → `0x004e8f70`)
 
@@ -182,6 +200,8 @@ Then, **only if eat delay `+0x1a0` < 1** (for a fresh Sylvester that is about ti
      - **1 draw** `n = rand(3) + 2`;
      - then n times: `y = rand(20) + 15 + victim.iy`, `x = rand(20) + 15 + victim.ix` (Ultravore victims: +55 instead of +15), followed by `EffectShot(x, y, 1)` (§6 note on effect shots).
 
+`traced` for kind 1 (`full_tank_1_2_replays`, including fish eaten).
+
 ### 3.3 Wander (`0x004f03d0` returned false)
 
 1. Wander mode `+0x1d0`:
@@ -200,6 +220,8 @@ Then, **only if eat delay `+0x1a0` < 1** (for a fresh Sylvester that is about ti
    Since `+0x1d8` starts at 20, the first wander tick draws. After that, every 21st wander tick costs 1 draw, with a 10 % chance of a 2nd. The timer doesn't advance while chasing.
 
 There is no wall bounce. The alien presses against the clamp until its mode changes.
+
+`traced` for kind 1.
 
 ### 3.4 Animation (`0x004daa00`, no RNG, but it moves the alien)
 
@@ -223,6 +245,8 @@ There is no wall bounce. The alien presses against the clamp until its mode chan
 5. If vx differs from last-vx and both are non-zero: last-vx = vx.
 6. If `+0x98` (missile) is set, `0x004d7020`. N/A here.
 
+`traced` for kind 1 (`anim` compared).
+
 ## 4. Being shot
 
 ### 4.1 Input routing (`Board` mouse-down @ `0x00543920`)
@@ -238,6 +262,8 @@ While `+0xb8` (aliens) is non-empty, and the first alien isn't kind 4 (or a spec
    - **draw 2**: `rand(10) == 0` → also play `0x132`.
 
 A click with y ≤ 40 does nothing. Clicking a **coin** that lies inside an alien's 160×160 widget rect re-dispatches the click to the board (`0x00539d40`, called from the coin's mouse-down), so it also shoots. TODO: whether the coin is collected as well.
+
+`traced` for clicks inferred from captures (shots on the alien, coins under it are `static`).
 
 ### 4.2 `Alien::Hit(cx, cy)` (`0x004fa6f0`), kind 1
 
@@ -262,6 +288,8 @@ A click with y ≤ 40 does nothing. Clicking a **coin** that lies inside an alie
    "—" = unchanged. The original mixes `<` and `≤` at the 100 boundaries exactly as shown.
 6. If health ≤ 0: die (§4.3) and return true. Otherwise set `+0x200 = 10` (cooldown, and the white flash at alpha `25·+0x200` in `0x004dae20`) and return false.
 
+`traced` for kind 1 (health and knockback compared after each inferred shot).
+
 ### 4.3 Death (`0x004f9c70(1)`), kind 1
 
 1. Release the attached missile, if any.
@@ -284,6 +312,8 @@ A click with y ≤ 40 does nothing. Clicking a **coin** that lies inside an alie
 6. `AddDeadAlien(ix, iy, cel, kind, facingRight = vx > 0)` (`0x005442c0` → ctor `0x004eec10`, type `0x1a`, list `+0x9c`, no ctor RNG).
 7. Boss cleanup `0x004f9950` (kind `0x15` only).
 
+`traced` for kind 1, except the heap-dependent spark draws (re-synced; see Deviations).
+
 ### 4.4 `DeadAlien::Update` (`0x004f6050`)
 
 The lifetime counter `+0x44` starts at 125. Each unpaused tick:
@@ -298,6 +328,8 @@ The lifetime counter `+0x44` starts at 125. Each unpaused tick:
    That is 16 app draws, plus the effect-shot ctor draws.
 6. It drifts and sinks (fixed constants 0.03, 0.05; clamp y ∈ [−10, 490]) with no RNG.
 
+`traced` (`dead_aliens` compared).
+
 ## 5. Guppies while an alien is present
 
 The guppy-side rules are in `fish-guppy.md`, `food.md` and `coin.md`. In summary:
@@ -305,6 +337,8 @@ The guppy-side rules are in `fish-guppy.md`, `food.md` and `coin.md`. In summary
 - Guppies **don't flee**. Without pet 12 (`board+0x174`), `Fish::Update` runs its normal swim/mode logic, including the 21-tick mode re-roll and its RNG. They still chase food, but none can be dropped: clicks become shots, and the 36-tick `+0x2c8` lockout follows the kill.
 - A guppy is eaten whole (§3.2): removed, with no DeadFish and no RNG on its side.
 - Mode 123 "startled" (global RNG) is set only by `0x004d6040`. Its sole caller is `0x0053bfb0`, which the Board's mouse-down calls for a negative click count (**right-click**, guess). The alien does not set it.
+
+`traced` for the no-hunger/no-coin rules and eating (guppies are compared every tick on 1-2). The mode-123 startle and right-click claim are `static`/`guess`.
 
 ## 6. RNG summary (normal game, tank 1-2)
 
@@ -333,11 +367,15 @@ Sub-costs:
   That is 4–5 global draws, and it happens even in Adventure. The earlier observation "global RNG untouched in tank play" only holds without aliens.
 - Click shot, Warp, Shot/Warp updates, Coin ctor, DeadAlien ctor, sounds: no RNG.
 
+`traced` for the rows that occur on 1-2 (app stream; `rng_mti` compared every tick). Global-stream rows (bubbles) are `static`: the global `mti` isn't compared yet.
+
 ## 7. Drawing and sound (presentation)
 
 `static` unless noted. Positions are relative to the object's widget top-left `(+0x30, +0x34)`. "Additive" means SexyApp draw mode 1 (`SetDrawMode(1)`): source colour × tint is added to the destination. "Tint" is `SetColorizeImages(1)` with the given RGBA, which multiplies the image.
 
 Image globals were resolved by matching the writes in `WinFish::ExtractLoadingThreadResources` against the `IMAGE_*` id strings.
+
+Drawing: `static` unless a subsection says otherwise. Only frames without aliens have been compared so far, so none of 7.1–7.5 is frame-checked yet.
 
 ### 7.1 Alien (`Alien` slot 26 @ `0x004db210` → `Alien::DrawSprite` @ `0x004dae20`), kind 1
 
@@ -351,6 +389,8 @@ Image globals were resolved by matching the writes in `WinFish::ExtractLoadingTh
 - **Otherwise** draw the cel normally. While the hit cooldown `+0x200` = c > 0, also draw the same cel again **additive with white at alpha `25·c`**: a white flash that fades over 10 ticks.
 - The boss/health-bar branch (`+0x1ec == 0x15` or a boss present) doesn't apply on tank 1.
 
+`static` (not frame-checked yet).
+
 ### 7.2 Warp hole (`Warp`, type 0x21, list `+0xf0`)
 
 - Ctor `0x004ecf00`: widget at **(alien.ix + 30, alien.iy − 40)**, size 100×220, counter `+0x15c = 36`. No RNG.
@@ -362,6 +402,8 @@ Image globals were resolved by matching the writes in `WinFish::ExtractLoadingTh
 
   Out-of-range cels (f ≥ 17 at counter 0 or −1) are skipped by `DrawImageCel` (it ignores column/row outside the sheet).
 - Z-order: warps are after coins(sub) and before food (`board.md`), so behind fish and the alien.
+
+`static` (not frame-checked yet).
 
 ### 7.3 Shot (`Shot` slot 26 @ `0x004d9340`)
 
@@ -400,6 +442,8 @@ Nothing is drawn while the start delay `+0x164` is non-zero. Otherwise the base 
 
   Frames past a sheet's column count draw nothing (`DrawImageCel` uses `cel % cols, cel / cols`, then bounds-checks the row).
 
+`static` (not frame-checked yet).
+
 ### 7.4 Dead alien (`DeadAlien` slot 26 @ `0x004dddb0`)
 
 DeadAlien fields: drift x/y velocity `+0x170/+0x178`, fade `+0x190` (f64, starts 1.0), cel `+0x188`, mirrored `+0x158` (byte), kind `+0x1a0`. Positions are x `+0x168` and y `+0x160` (doubles; note the order).
@@ -415,9 +459,13 @@ DeadAlien fields: drift x/y velocity `+0x170/+0x178`, fade `+0x190` (f64, starts
 - **Draw:** tint alpha `trunc(fade · 255)`. The kind 1/2 sheet is `IMAGE_SYLV` (through the image-id table, `0x5e0a10[0xbd]`), row 0, column = cel, mirrored per the flag.
   - While life > 115: also draw the same cel **additive white at alpha `(life − 115)·20`, five times over**. This is a bright flash on death that fades in 10 ticks.
 
+`static` (not frame-checked yet).
+
 ### 7.5 Shadows
 
 See `sim/board.md#shadows`. The alien's shadow is type 2.
+
+`static` (alien shadows aren't frame-checked yet; guppy and Stinky shadows are, see `sim/board.md#shadows`).
 
 ### 7.6 Sounds (sample ids = manifest `<Sound>` order + 0x105)
 
@@ -436,11 +484,15 @@ Correction to §3.2: the eat sound picks `CHOMP2` when `r % 3 == 0` and `CHOMP` 
 
 The `0x00538230(id, gap, volume)` helper plays a sample only if the board clock is ≥ `gap` past that sample's last play (`board+0x1a4 + 4·(id − 0x106)`), and records the play. The sim already models this throttle for RNG purposes.
 
+`traced`: sound ids per tick are compared in every replay (`sounds`).
+
 ### 7.7 Music
 
 - Warning (countdown 275): `PlayAlienMusic` (`0x0054c480`): fade the tank song out (speed 0.008/update) and start `Alien.mo3` from the start, fading in at 0.002/update.
 - Last alien gone (`0x00539c90`, from death): `PlayTankMusic(1)`: back to the tank song.
 - Fade (`BassMusicInterface` slot 19 @ `0x004997d0`) is linear: `volume += speed` per update, clamped to [0, max]. A song that reaches 0 while fading out is stopped.
+
+`traced` (`presentation.rs` `tank_1_2_music_and_dialogs_match`).
 
 ### 7.8 Danger reticles
 
@@ -452,9 +504,13 @@ The draw code **writes A.y = 280** (`+0x2d0 = 0x118`), and for kind 11 B.y too, 
 
 `board+0x178` is not set on 1-2: in `tank1-2_full_02` both aliens spawned at the drawn A.y (297 and 116), not 280. TODO: what sets it (likely a pet or a later level), and moving this gameplay write out of the draw path when it's implemented.
 
+`static`. The non-use on 1-2 is `confirmed` (spawn y values in `tank1-2_full_02`).
+
 ## Note: the 1-2 "DANGER!" dialog
 
 On tank 1-2 (game not completed), when the countdown reaches **276**, the board raises hint dialog 0x0e: "DANGER!" on the first wave and "BATTLE TIP" on the second, each once (`framework/dialog.md#board-dialogs`, `0x005483e0`). That pauses the board; the countdown resumes when it is dismissed. Confirmed in `tank1-2_full_01` and `_02`. Modelled as `Dialog::AlienWarning`; objects skip the tick that raises it.
+
+`traced` (dialog id per tick in `tank_1_2_music_and_dialogs_match`).
 
 ## Deviations
 

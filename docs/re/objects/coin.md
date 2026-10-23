@@ -4,6 +4,8 @@ Status: `draft`, **confirmed** for guppy coins. Replays bit-exact against `tank1
 
 Only the coin kinds a guppy drops in the normal game are covered. Pet, star, treasure, Virtual Tank shells and "drop from above" behaviour are only noted.
 
+Confidence: silver, gold and diamond coins on tank 1 are `traced` (`coin_json` compared each tick). Other kinds (stars, chests, pearls, beetles) are `static`.
+
 ## Fields (raw offsets)
 
 | Offset | Type | Meaning |
@@ -25,6 +27,8 @@ Only the coin kinds a guppy drops in the normal game are covered. Pet, star, tre
 
 Constructor `Coin::Coin` @ `0x004eead0`: zeroes the counters, sets multiplier 1 and fall speed 1.5, size 72×72. **No RNG.** `Board::AddCoin` @ `0x00544430` appends the coin to its list by kind and rebuilds the z-order.
 
+`traced` for the fields in `coin_json`.
+
 ## Guppy coin drop (`Fish::UpdateCoin`, slot 81 @ `0x004f1400`)
 
 It runs inside `Fish::Update` **after the mode reroll and before the damping timers**, and only when there are no aliens.
@@ -39,6 +43,8 @@ It runs inside `Fish::Update` **after the mode reroll and before the damping tim
 
 Confirmed: a coin appears at `(fish.wx + 5, fish.wy + 10)` on the tick the timer would reach the interval, and the timer reads 0.
 
+`traced`.
+
 ## `Coin::Update` (`0x004f5050`), normal game, basic kinds
 
 1. Return if the board is paused. `PreUpdate`.
@@ -51,6 +57,8 @@ Confirmed: a coin appears at `(fish.wx + 5, fish.wy + 10)` on the tick the timer
 
 Coins update **after** fish (z-order: `+0xa8` coins are near the front).
 
+`traced` (fall, floor rest 150/20, expiry).
+
 ## Collecting (`Coin` mouse-down, slot 54 @ `0x004e5450` → `0x004e51f0`)
 
 Coins sit in front of fish and food, so a click inside a coin's 72×72 widget goes to the coin, not to the food drop.
@@ -59,6 +67,8 @@ Coins sit in front of fish and food, so a click inside a coin's 72×72 widget go
 - Set `flight = 1`, record the position, `collected = 1`.
 - Sound by kind. Silver/gold/star (and their variants): **`0x005383d0`**. If sample `0x12c` is off cooldown (3 ticks), **one RNG draw** (`Next() & 3`) picks the variant. Diamonds and pearls play fixed samples (no RNG).
 - With aliens on the board, the click also counts as a shot (`0x00539d40`).
+
+`traced` (glide, banking, collect sounds).
 
 ## Values (`0x004d53a0`, normal game)
 
@@ -75,6 +85,10 @@ Coins sit in front of fish and food, so a click inside a coin's 72×72 widget go
 
 Banking (`0x0053c1e0`): `money += value`, capped at 9,999,999. Also adds to the level's earnings total `+0x460`.
 
+`traced` for kinds 1, 2 and 4 (money compared every tick). The other rows are `static`.
+
 ## Ambient bubbles (Board::Update, related RNG)
 
 Each running tick, `Board::Update` draws `Next() % 1000`. On 0 it emits a burst of `(Next() & 3) + 3` ambient bubbles, each with two draws (`x = 150 + r % 22`, `y = 400 + r % 6`, `0x00538a50`). That's skipped if the bubble emitter already holds ≥ 50. Confirmed: a 14-draw tick in `tank1-1_coin_01` (1 + 1 + 6×2).
+
+`traced` for the app-stream draws. The bubbles themselves aren't modelled (global stream; see `sim/board.md`).

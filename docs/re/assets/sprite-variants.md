@@ -1,6 +1,8 @@
 # Sprite variants: mirroring, scaled pet images, load-time derived images
 
-Status: `draft`. Static analysis of the inner PE only; nothing here has been checked dynamically yet. Addresses are inner-PE VAs. Function names are the ones now applied in the Ghidra project.
+Addresses are inner-PE VAs. Function names are the ones now applied in the Ghidra project.
+
+Status: mirroring and the tank cut-out are `confirmed` by the frame diff (mirrored guppies, Stinky, the mirrored wave side and light band, and the foreground cut-out all match pixel for pixel). The scaled pet images, crease strips, title cut-out and pet thumbnails are `static` (not in a captured frame).
 
 ## Summary
 
@@ -21,6 +23,8 @@ Status: `draft`. Static analysis of the inner PE only; nothing here has been che
 
 The ids used below are `5` TITLEPAGE, `6` TITLEPAGEMASK, `0x50` HORZCREASE, `0x51` VERTCREASE, `0x9f..0xa4` AQUARIUM1–6, `0xa5..0xaa` TANKMASK1–6, `0xca..0xe1` STINKY…WALTER (the 24 full-size pets), and `0xe8..0xff` SCL_STINKY…SCL_WALTER (the 24 scaled pets, in the same order as the full-size ones).
 
+`confirmed` for the ids the tank-1 frames use; the rest `static`.
+
 ## Mirrored drawing (draw time)
 
 ### API
@@ -32,6 +36,8 @@ The ids used below are `5` TITLEPAGE, `6` TITLEPAGEMASK, `0x50` HORZCREASE, `0x5
 | `Graphics::DrawImageMirror_Stretch(img, destRect, srcRect, mirror)` | `0x004561c0` | Mirrored stretch (hit-shrink and pulse effects); not used by the loader |
 | `WinFish::DrawImageMirrorMaybeStretch` | `0x005008f0` | Calls the plain mirror draw when dest size == src size, otherwise the mirrored stretch |
 | `DDImage::BltMirror` (vtable slot 15, `+0x3c`) | `0x004490f0` | Dispatches by draw mode to `NormalBltMirror` `0x00444550` or `AdditiveBltMirror` `0x00447b70` |
+
+`confirmed` (mirrored draws in the frame diff).
 
 ### Semantics of `DrawImageMirror_SrcRect` (static)
 
@@ -49,9 +55,13 @@ The ids used below are `5` TITLEPAGE, `6` TITLEPAGEMASK, `0x50` HORZCREASE, `0x5
 - **Per-cel, never whole-sheet.** Callers pick the cel with `srcRect = (col*cw, row*ch, cw, ch)` and pass the flag. Flipping the whole sheet would reverse cel order; that never happens.
 - Only `DDImage` (screen and surface) implements the mirror blit. On `Sexy::Image` and `MemoryImage` the slot `+0x3c` is a no-op (`0x00457b90`, `ret 0x18`). **A mirrored draw into an off-screen MemoryImage draws nothing.** That is another reason no mirrored copies can have been built at load time.
 
+`confirmed` (frame diff).
+
 ### Native facing
 
 The source art faces **left**: guppy, pets, aliens. The flag is `true` when the object should face right.
+
+`confirmed` (frame diff: guppies face left unmirrored).
 
 ### Who passes what (static; the offsets are raw `this` offsets taken from disassembly)
 
@@ -84,6 +94,8 @@ Mirror-capable call sites seen (images): SMALLSWIM / HUNGRYSWIM / SMALLEAT / HUN
 
 **Implementer note:** the app layer needs only one capability: "draw cel with optional horizontal flip". In Bevy that is `Sprite { flip_x, rect }`, with no extra textures. The sim must expose the inputs to the flag (turn timer, vx, facing scale, invert flag) or the flag itself.
 
+`confirmed` for guppies, Stinky and the backdrop; others `static`.
+
 ## Scaled pet images (`SCL_*`): shipped files, no runtime scaling
 
 Shipped dimensions, read from the GIFs:
@@ -98,15 +110,21 @@ Only the first animation row was pre-rendered. No code resamples a full-size she
 
 Readers (static): the tutorial / egg-piece text (`0x005220a0`: SCL_STINKY, SCL_ITCHY), `PetButtonWidget` (`0x00531300`: SCL_AMP), the FoodDialog / store (`0x00534030`: SCL_OSCAR, SCL_ULTRA), and the store tutorial (`0x005406a0`: SCL_OSCAR … SCL_ULTRA). The PetDialog does **not** draw the SCL sheets directly; it uses the thumbnails below.
 
+`static`.
+
 ## Load-time derived images (must be reproduced by our loader)
 
 All four are built **after** the resource groups have loaded. Each new image is a fresh 32-bit MemoryImage whose pixels start at `0x00000000`. Drawing into it uses the normal (non-mirror) blit.
+
+`static` unless an item below says otherwise.
 
 ### 1. Crease strips: `WinFishApp::LoadingThreadProc` `0x005510b0` (static)
 
 - `VERTCREASE` (8×3) is tiled vertically: copies at y = 0, 3, 6, … while y < 60. The result is **8×60** and replaces resource id `0x51`.
 - `HORZCREASE` (3×8) is tiled horizontally the same way. The result is **60×8** and replaces id `0x50`.
 - Both sources have implicit `…_` masks, so the result keeps per-pixel alpha.
+
+`static`.
 
 ### 2. Tank foreground cut-outs: same function, loop `i = 0..5` (static)
 
@@ -119,9 +137,13 @@ All four are built **after** the resource groups have loaded. Each new image is 
 
 With shipped data the results are 640×80. RGB comes from rows 365–444 of `aquariumN.jpg`; alpha comes from `_maskN.jpg` (`TANKMASKn` is mask-only, so its alpha is the mask's byte 0; see `images.md`). `Board::DrawBackdrop` draws the cut-out at (0, 365) over the backdrop.
 
+`confirmed` by the frame diff (tank 1 cut-out).
+
 ### 3. Title-page cut-out: `WinFishApp::Init` `0x005503c0` (static)
 
 `TITLEPAGEMASK := CreateMaskedCutout(TITLEPAGE, TITLEPAGEMASK, 384, 388)`. It replaces id `6`. The mask `titlescreenmask_.gif` is 202×67, so the result is the 202×67 region of `titlescreen.jpg` at (384, 388) with the mask's alpha.
+
+`static`.
 
 ### 4. PetDialog thumbnails: `LoadingThreadProc`, loop `i = 0..23` (static)
 
@@ -145,6 +167,8 @@ The result is stored in an app-owned array, `app+0x73c` (0x518 bytes = 326 slots
 - The upscale branch (dst > src) is a different, bilinear-like path (weights `0x101 − f`). No load-time variant uses it.
 
 Fidelity here is visual only; nothing in the sim depends on it. A Rust implementation can start with "box-filter downscale of cel 0 into 40×40 (AMP: into the 40×20 band at y=10)" and refine to the exact fixed-point weights later if screenshot diffs show a difference.
+
+`static`.
 
 ## Open questions
 

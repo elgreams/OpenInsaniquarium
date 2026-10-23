@@ -4,6 +4,8 @@ Status: `draft`. Static analysis of the inner PE, checked against the live captu
 
 Covers basic pellets dropped by the player. Potions (type 2), the "drop from above" variant (`+0x190`), drifting food (`+0x18c` ≠ 0) and level-3 food are only noted.
 
+Confidence: basic pellets (level 0 and 1) on tank 1 are `traced`. Level 2 food, star potions, drifting/carried variants and alien-type-4 rules are `static`.
+
 ## Fields (raw offsets)
 
 | Offset | Type | Meaning |
@@ -22,6 +24,8 @@ Covers basic pellets dropped by the player. Potions (type 2), the "drop from abo
 | `+0x198` | int | edible delay; counts down each tick. Player drops set it to 0 (the ctor's default is 20) |
 | `+0x30`, `+0x34` | int | widget position = `trunc(x), trunc(y)` |
 
+`traced` for the fields in `food_json`; the rest `static`.
+
 ## Dropping food (player click)
 
 `Board` mouse-down handler (`0x00543920`), normal path (no aliens, no special widgets):
@@ -34,6 +38,8 @@ Covers basic pellets dropped by the player. Potions (type 2), the "drop from abo
 
 So a successful drop costs exactly one app-RNG draw (confirmed: one extra draw on each drop tick).
 
+`traced` (every food click in the 1-1/1-2 replays). The buzzer/out-of-money branch is `static`.
+
 ## `Food::Update` (`0x004f8aa0`), basic pellet
 
 1. Return if the board is paused. Run the common `PreUpdate`.
@@ -45,6 +51,8 @@ So a successful drop costs exactly one app-RNG draw (confirmed: one extra draw o
 7. Set the widget position to `trunc(x), trunc(y)`.
 
 Food updates **before** guppies (z-order: Food precedes Fish).
+
+`traced`.
 
 ## Guppy hunger and feeding
 
@@ -61,6 +69,8 @@ Food updates **before** guppies (z-order: Food precedes Fish).
 5. If hunger < 500 and (no aliens, or the first alien isn't type 4): return the result of the **food chase** (slot 84). Otherwise return "not chasing".
 
 When this returns "chasing", `Fish::Update` skips the swim-mode state machine. Everything after it (timers, reroll, damping, clamps, integration) still runs.
+
+`traced` for steps on tank 1 (see `fish-guppy.md#hunger`).
 
 ### Food chase (slot 84 @ `0x004d5b20`)
 
@@ -86,9 +96,13 @@ When this returns "chasing", `Fish::Update` skips the swim-mode state machine. E
 5. If there is food: run the **eat check** (slot 86).
 6. Return "chasing" iff there is food.
 
+`traced`.
+
 ### Find food (slot 85 @ `0x004ef050`)
 
 Iterate the food list in order. For each pellet: `dx = trunc((wx + 20) − (x + 40))`, `dy = trunc((wy + 20) − (y + 40))`, `d = dx² + dy²` (int). Keep the **first** pellet with the strictly smallest `d` among those the fish can eat (`0x004d5f20`: not carried, delay 0, and kind 0; potions follow other rules). If the best `d < 10000`, set `+0xf8 = 100` (`+0x104` effects are off for guppies).
+
+`traced` (including `+0xf8`, compared as `timers`).
 
 ### Eat check (slot 86 @ `0x004ef1b0`)
 
@@ -96,6 +110,8 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
 
 - **Bite box:** `wx + 5 < cx < wx + 35` and `wy < cy < wy + 35`, and edible. Then **eat** (slot 77), **remove the pellet**, set `eat_timer (+0x1c8) = 8` if it was 0, and stop iterating.
 - Otherwise, if `eat_timer == 0` and the fish is in the **mouth-open box** (`wx − 10 < cx < wx + 50`, `wy − 5 < cy < wy + 40`) and the pellet is edible: `eat_timer = 20`. Keep iterating.
+
+`traced`.
 
 ### Eat (slot 77 @ `0x004f1ba0`), basic pellet, outside Virtual Tank
 
@@ -111,6 +127,8 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
 6. If `was_hungry_look` and the fish no longer looks hungry: `+0xa8 = 0`, `fade = 5` (fade back to the fed colours).
 
 Checked against the trace: hunger −14 + 700 = 686, and 297 + 700 → clamped to 800. The eat timer goes 20 → … while approaching, then is held because it's non-zero at the bite. The fade runs 5 → 0 after eating and 1 → 5 → 0 at hunger 304.
+
+`traced` for levels 0 and 1 (1-2 buys food quality once). Level 2 and star potions are `static`.
 
 ## Open questions
 

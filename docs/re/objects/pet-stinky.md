@@ -10,6 +10,8 @@ Class: `Sexy::OtherTypePet` (type code `0x14`), vtable `0x00596d74`, object size
 
 **Offset note:** Ghidra's `OtherTypePet_data` struct is based at `this+0x154`. All offsets below are **raw `this`-relative**.
 
+Confidence: `traced` on tank 1-2 (`pet_json` compared every tick by `tank_1_2_until_alien_matches` and `full_tank_1_2_replays`, including alien waves). Click handling is `static`.
+
 ## Fields
 
 | Offset | Type | Meaning (our name) | Initial value |
@@ -42,6 +44,8 @@ Class: `Sexy::OtherTypePet` (type code `0x14`), vtable `0x00596d74`, object size
 
 TODO: `+0x1b8`, `+0x1bc`, `+0x1c0` for pet 0.
 
+`traced` for the fields in `pet_json`.
+
 ## Construction
 
 ### `Board::AddPet(id, x, y, flagA, flagB)` @ `0x00544a90`
@@ -51,6 +55,8 @@ TODO: `+0x1b8`, `+0x1bc`, `+0x1c0` for pet 0.
 3. Ids 0, 1, 5, 7, 14 → `new OtherTypePet(x, y, id, board[+1000], flagA)`; others → `FishTypePet`.
 4. Virtual Tank-only (`app+0x87c == 5` and !flagB): sets `+0x24 = (flagA ? 0x13 : id) + 1000`.
 5. `AddGameObject` (joins list `+0xb0`, `++board[+0x144 + 4*id]`), `wm->AddWidget`, shadow creation `0x00544800`, `RebuildZOrder`.
+
+`traced` (`level_1_2_start_with_stinky`).
 
 ### Constructor `0x004eb5c0`
 
@@ -62,15 +68,21 @@ In order:
 5. **App RNG draw 3**: `mode = Next() % 10`.
 6. **App RNG draw 4**: `+0x1b8 = Next() % 250 + 250`.
 
+`traced`.
+
 ### Shadow (`0x00544800`)
 
 **App RNG draw 5**: shadow y = `410 + Next() % 5` (see board.md / fish-guppy.md).
 
 So `AddPet(0, -1, -1, 0, 0)` costs **5 app-RNG draws**: x, (discarded) y, mode, `+0x1b8`, shadow.
 
+`traced` for the ctor draw; the drawn shadow is frame-checked (`tank12_start_01`).
+
 ### Update order
 
 `+0xb0` OtherTypePet comes after aliens (pass 1) and before FishTypePet, missiles, shots and coins in `RebuildZOrder`. So in tank 1-2 Stinky updates **after all guppies and food and before the `+0xa8` coins** — he sees coin positions from the previous tick.
+
+`traced`.
 
 ## `Update` (`0x004f2e80`), pet 0, normal game
 
@@ -90,6 +102,8 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
 9. **Animation** (`0x004eb7c0`, pet 0 path). See [Animation](#animation).
 10. **Move:** `x += vx / div`, `y += vy / div`. With the slow flag the divisor is `div × 5`.
 11. Widget position = `trunc(x), trunc(y)`.
+
+`traced`.
 
 ## Coin chasing
 
@@ -122,6 +136,8 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
    Only one coin is collected per tick.
 4. (The return value is ignored for pet 0; see Update step 3.)
 
+`traced`.
+
 ## Animation
 
 `0x004eb7c0`, pet 0. No RNG.
@@ -133,6 +149,8 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
 3. Turn > 0: cel = 9 − turn / 2. Turn < 0: cel = turn / 2 + 9.
 4. If shell > 0: cel = shell (hiding).
 5. If vx ≠ facing, vx ≠ 0, facing ≠ 0 and shell == 0: facing = vx.
+
+`traced` (`anim`).
 
 ## Drawing
 
@@ -154,13 +172,17 @@ Field names: x `+0x158`, y `+0x160`, vx `+0x168`, vy `+0x170`, facing `+0x178`, 
 
 The pet has a 40-wide-shadow `Shadow` (type 0) under it, like a guppy's ([Shadows](../sim/board.md#shadows)).
 
+`confirmed` by the frame diff (`tank12_start_01`).
+
 ## Interactions
 
 - **Aliens:** while any alien is present, Stinky stops chasing coins and hides in his shell (cel = shell counter 1..9). Aliens target fish only (`alien-sylvester.md#31`), so Stinky can't be eaten.
 - **Clicks** (slot 54 @ `0x004f3a70`): TODO. Probably a click-through to the board.
 - **Food:** none.
 
+Aliens: `traced`. Clicks: `static`/TODO.
+
 ## Summary / open questions
 
 - Stinky costs **5 app draws** when added (2 position, 2 ctor, 1 shadow). After that he draws every 21 ticks while wandering (`% 10`, then `% 3` w.p. 1/10), on every edge bump, and when collecting coins (the points sound).
-- TODO: confirm with a tank 1-2 capture.
+- Confirmed with tank 1-2 captures (see the status at the top).

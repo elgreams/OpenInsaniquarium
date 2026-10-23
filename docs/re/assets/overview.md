@@ -1,9 +1,10 @@
 # Asset formats — survey
 
-Status: `draft` (from inspecting the shipped data files; no binary analysis yet).
 Target: Insaniquarium Deluxe 1.1 (see CLAUDE.md for hashes).
 
 All assets are loose files under the install root. There is no archive in this build (SexyApp's `PakInterface` is linked in but no `.pak` ships).
+
+Status: a survey of the shipped files. What the engine loads is `confirmed` by tests (`resources.xml` parsing, every image and font loading, the frame diff). Fish songs and save data are `static` (not loaded yet).
 
 ## Install layout
 
@@ -18,6 +19,8 @@ All assets are loose files under the install root. There is no archive in this b
 | `userdata/` | Created at runtime — saves (see below) |
 | `drm/`, `properties/partner.xml(.sig)` | PopCap DRM wrapper — out of scope |
 
+`confirmed`.
+
 ## `resources.xml`
 
 SexyApp ResourceManager manifest. **Not strict XML:** some attributes are unquoted (`cols=3`, lines 64–67). The parser must be lenient, so a stock XML crate won't do without preprocessing.
@@ -28,6 +31,8 @@ Structure:
 - Entries: `<Image>` (246), `<Sound>` (65), `<Font>` (15).
 
 Extension resolution: entry paths have no extension. The loader must probe for the actual file (`.gif`, `.jpg`, `.png`, `.ogg`, `.au`, …). The exact probe order is TODO (binary).
+
+`confirmed` (parser test over the shipped file).
 
 ### `<Image>` attributes
 
@@ -50,9 +55,13 @@ Alpha masks are grayscale: the mask's luminance (probably the red channel; TODO)
 
 The XML comment "Characters that need to be mirrored (and scaled)" means some sprites get **mirrored/scaled copies generated at load time** rather than shipped. We need to find which ones and how (binary TODO).
 
+`confirmed` for the attributes used by tank-1 images; see `images.md`.
+
 ### `<Sound>` attributes
 
 `path`, `volume` (7 entries; a 0–1 float base volume). Formats: Ogg Vorbis, and Sun/NeXT `.au` (μ-law or PCM; TODO check encodings).
+
+`confirmed` (sounds load and play; ids traced).
 
 ## ImageFont descriptors (`data/*.txt`)
 
@@ -85,6 +94,8 @@ All 15 shipped fonts use one layer (`Main`). The "outline"/"outback" variants ar
 
 The SexyApp framework source PopCap published publicly documents this format. Use it as a behavioral reference for edge cases (layer draw order, color modulation), and confirm the details against this binary.
 
+`confirmed` (fonts render pixel-exact in the frame diff).
+
 ## Fish songs (`fishsongs/*.txt`)
 
 Plain-text note format for the Virtual Tank singing fish. 72 files, many in `_long`/`_short` pairs.
@@ -96,10 +107,16 @@ Plain-text note format for the Virtual Tank singing fish. 72 files, many in `_lo
 
 Synthesis method (which instrument sample, envelope) is unknown. Binary TODO, M5.
 
+`static`.
+
 ## Music (`music/*.mo3`)
 
 Un4seen MO3 (compressed tracker module). libopenmpt decodes MO3, including Vorbis/MP3-compressed samples. The original plays via BASS and switches song **positions/orders within one module** for different game states (TODO: map which orders). Matching playback speed and fades is a framework concern.
 
+See `music.md` (`traced`/`confirmed` there).
+
 ## Save data (`userdata/`)
 
 File names from the exe strings: `users.dat` (profile list), `user%d.dat` (per-profile progress), `highscores.dat`, `scr%d.dat` (likely screensaver/virtual-tank state), `screensaver.dat`. Binary format TODO. Saving (`DataWriter`/`DataReader` classes exist) is M4.
+
+`static` (the profile layout used by the hatch-screen spec is `confirmed` from save files).

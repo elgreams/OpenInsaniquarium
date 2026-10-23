@@ -5,6 +5,8 @@ Class: `Sexy::Fish` (type code `0x00`), vtable `0x00597d54`. `Fish::Update` = vt
 
 **Offset note:** Ghidra's recovered `Fish_data` struct is based at `this+0x154`. The offsets below are **raw `this`-relative** (decompiler `field_0xNN` + `0x154`).
 
+Confidence: guppy behaviour on tanks 1-1/1-2 is `traced` (every field in `fish_json` compared each tick by the `tank1_1.rs` replays). Branches no tank-1 capture exercises (Virtual Tank, cursor-follow, star potions, gold-capable coins, crowned stage 4, other species) are `static`.
+
 ## Fields
 
 | Offset | Type | Meaning (our name) | Notes |
@@ -42,6 +44,8 @@ Class: `Sexy::Fish` (type code `0x00`), vtable `0x00597d54`. `Fish::Update` = vt
 
 **Numeric types:** position, velocity and divisor are `double` (x87). Bounds and timers are `int`. Comparisons between them convert the int to double.
 
+`traced` for the fields in `fish_json`; the rest of the table is `static`.
+
 ## Construction (`Fish::Init` @ `0x004de370`, called by every Fish ctor with x, y)
 
 In order, with **app-RNG draws numbered**:
@@ -60,9 +64,13 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
 
 `FUN_00564160` = **`_ftol2`**, i.e. `CVTTSD2SI`, **truncation toward zero**. All double→int position conversions truncate.
 
+`traced` (`level_start_matches_original`, `level_1_2_start_with_stinky`).
+
 ## Constants (from `.rdata`)
 
 `0.05, 0.1, 0.2, 0.25, 0.3, 0.5, 0.7, 0.75, 0.8, 0.9, 0.95, 1.0, 1.3, 2.0, 3.0, 4.0, −0.1, −0.5, −1.0, −3.0, −4.0, 5.0, 15.0, 30.0, 40.0, 115.0, 175.0, 240.0, 250.0`. Each is cited below where it's used.
+
+`static` (list); each constant used by a traced path is covered by that path.
 
 ## `Fish::Update` order (per tick)
 
@@ -94,6 +102,8 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
 13. **Integrate:** `div = +0x180`, unless byte `+0xf6` is set, in which case div = 0.8 while `+0xf8` > 0, else 0.3. Then `x += vx / div` and `y += vy / div`.
 14. Set the widget position (slot 42) to `trunc(x), trunc(y)` (`_ftol2`, truncation toward zero).
 
+`traced` for tank 1 (no aliens and with Sylvester). The follow-cursor branch (step with `0x005e89d0`) and Virtual-Tank branches are `static`.
+
 ### App-RNG call order per guppy per tick (summary)
 
 | When | Draws | Expression |
@@ -102,6 +112,8 @@ So **constructing a guppy draws 6 app-RNG values (R1–R6)**. `Board::AddRandomG
 | Every 21st tick (`+0x1b4 > 20`) | 1, plus 1 more w.p. 1/10 | `%10`, then `%9 + 1` |
 | Bubble emission (`+0xb4` ≥ 31) | 1 + (1–6) | `%n`, offsets |
 | Food chase / hunger | TODO | (`UpdateHunger` sub-calls) |
+
+`traced` (`rng_mti` compared every tick).
 
 ## Animation and drawing
 
@@ -132,6 +144,8 @@ Confirmed bit-exact on `tank1-1_raw_01` (turns, all 10 swim cels).
 - Mirroring: art faces **left**. With turn timer 0, the fish is drawn mirrored (facing right) when vx > 0, or when vx == 0 and facing > 0. During a turn the mirror flag is inverted relative to the turn direction: `t > 0` (turning left) draws mirrored, `t < 0` draws unmirrored. Byte `+0xf5` inverts all of this.
 - Draw origin is the widget position (`trunc(x), trunc(y)`), the cel's top-left.
 
+Animation fields: `traced` (`anim` compared). Sheet and cel choice when drawing: `confirmed` by the frame diff (`tank12_start_01`).
+
 
 ## Spawn (`Board::AddRandomGuppy` @ `0x00546d70`)
 
@@ -146,12 +160,16 @@ Static, from disassembly (resolves the earlier open question about the two trail
 
 So a bought or mercy guppy splashes in from the surface at 18–22 px/tick. Damping (×0.9 per tick) slows it, and it emits bubbles (`clamp_and_bubbles`, RNG) while the timer is above 30 and vy > 0. The y passed to the constructor is overwritten. **11 app draws** in total (2 position + 6 constructor + vy + damp timer + shadow), plus bubble draws on the following ticks. Buying from the shop adds one more: the splash sound variant (`0x00538360`, `% 3`). Confirmed by `tank1-1_buy_01` (12 draws on the purchase tick, bit-exact afterwards).
 
+`traced` (`tank1-1_buy_01` purchase tick, 12 draws).
+
 ## Death and the empty tank
 
 - A guppy dies when hunger drops below −500 (`food.md#guppy-hunger-and-feeding`). Death (slot 88 @ `0x004d5f90`) plays the die sound (throttled), clears the eat state and spawns a `DeadFish` (`Board::AddDeadFish` @ `0x005441f0`) carrying x, y, vx, vy, divisor, stage and facing. **No RNG.** The `DeadFish` (type 0x1b, vtable `0x00597bfc`) only animates and sinks; it's cosmetic.
 - `Board::Update` (`0x00548e29`): when no fish of any kind remain (`0x005392a0`: guppies, carnivores, breeders, and four other kinds), the board pauses (`0x0053db80`), banks the pending coin value (`0x0053c2d0`), and raises:
   - **dialog 0x10** "Your last fish has died! … we'll give you another fish" on the tutorial level (`0x00537b80`: tank 1, level 1, tutorial not skipped). Its button handler (`WinFishApp` slot 3, case 0x10 @ `0x00552a8a`) closes the dialog and calls **`Board::AddRandomGuppy`** (8 app-RNG draws).
   - dialog 0x11 (game over) otherwise.
+
+`traced` (starvation and DeadFish in `tank1-2_full_01`; GAME OVER dialog in the frame capture). The LastFishDied mercy guppy is `confirmed` by an older capture but not in a current test.
 
 ## Hunger (`Fish::UpdateHunger`, slot 83 @ `0x004f15c0`)
 
@@ -166,12 +184,16 @@ So a bought or mercy guppy splashes in from the surface at 18–22 px/tick. Damp
 
 So a guppy lasts **500 ticks hungry ≈ 14 s** after hunger hits 0 before dying (`< −499`). Starting hunger is set at spawn (TODO: find the value; `AddRandomGuppy` doesn't set it, so it comes from the ctor `0x004de370`).
 
+`traced` for announcing guppies on 1-1 and normal guppies on 1-2 (hunger, death, messages). Virtual-Tank thresholds are `static`.
+
 ## Coins (`Fish::UpdateCoin`, slot 82 @ `0x004f1400`)
 
 - Runs only if stage > 0 or state ≥ 0.
 - `coin_timer (+0x220) += 1`. The interval is `+0x224` (35 if `0x005e89cc` is set). `0x004d7100`: drop when `timer ≥ interval` (normal modes).
 - On a drop: reset the timer. If `0x004d6bd0` allows it, pick the coin type by **growth stage** (gold-capable table when `+0x22a` is set): stage 1→4, 2→6, 4→7, else 2. Spawn via `Board::AddCoin` (`0x00544430`) with vy = −1.0.
 - Small guppies (stage 0) don't drop coins.
+
+`traced` for stages 1 and 2 (coin kinds 1/2). The gold-capable table (`+0x22a`) and stage 4 are `static`.
 
 ## Open questions
 
@@ -184,7 +206,7 @@ Partial decompiles from the interrupted research run are in `re/scratch/` (local
 
 ## Dead fish (`Sexy::DeadFish`)
 
-Status: `confirmed` by `traces/frames/tank12_start_01` (raw state: vy +0.05 per tick to 2.0, cel 9 at life 105, cel 6 and alpha 0.88 at life 98).
+Status: `traced` (`tank_1_2_until_alien_matches` compares every DeadFish field) and frame-checked (`traces/frames/tank12_start_01`; raw state: vy +0.05 per tick to 2.0, cel 9 at life 105, cel 6 and alpha 0.88 at life 98).
 
 Type 0x1b, list `board+0x98`, vtable `0x00597bfc`, ctor `0x004eed20`. It is spawned by `Fish::Die` (slot 88/89 @ `0x004d5f90`) → `Board::AddDeadFish` (`0x005441f0`). It gets the guppy's x, y, vx, vy, divisor, stage, "facing right" (`vx > 0`, from `+0x168`) and its shadow. The shadow is handed over to the dead fish (`shadow+0x158` = dead fish), so the fish's shadow stays. **No RNG.**
 

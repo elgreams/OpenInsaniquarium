@@ -28,6 +28,8 @@ Binary: inner game PE extracted from `Insaniquarium.exe` (see `docs/re/framework
 | `+0x5b0` | byte | VSync / "wait for vblank" mode flag |
 | `+0x5b4` | int | Display refresh rate (Hz) used in vsync mode |
 
+`confirmed` (CE).
+
 ## Loop structure (`SexyAppBase::Process` @ `0x00486390`, vtable slot 7)
 
 Per call (one Windows message-pump iteration):
@@ -47,12 +49,16 @@ Per call (one Windows message-pump iteration):
 - calls `WidgetManager::UpdateFrame` (the widget tree's `Update()`, where `Board::Update` lives)
 - `WinFishApp` wraps this. It has two compile-time debug toggles (`0x005e9635` slow-mo: 1 update per 4 calls; `0x005e9636` turbo: 100 updates per call). Both bytes are **never written** in the binary, so they're always off in shipped builds. We may expose them as dev options.
 
+Tick length: `traced` (all replays run at one logic tick per update). The catch-up and draw scheduling details are `static`, except the catch-up bursts, which are `confirmed` (they show as torn snapshots in captures).
+
 ## Implications for our engine
 
 - The sim ticks at a fixed **28 ms**. Model the tick as an integer counter, never as `f32` seconds.
 - Our frontend runs the sim with a classic fixed-step accumulator (Bevy `FixedUpdate` with `Time::<Fixed>::from_duration(28ms)` is suitable), capping catch-up at **200 ms** (≈7 ticks) to match the original's stall behavior.
 - Rendering may interpolate, but the original draws the latest state with no interpolation for game objects (TODO confirm in `Board::Draw`). Default to no interpolation for fidelity.
 - `speed` (`+0x490`) is a global time-scale knob. TODO: find whether the game ever sets it (possibly the debug key `+`/`-`).
+
+Design notes (no claims about the original).
 
 ## Open questions
 

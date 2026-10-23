@@ -1,6 +1,6 @@
 # Level start (Adventure)
 
-Status: `draft`, static. Covers how a tank level is set up and populated in the normal game. Addresses are inner-PE VAs.
+Status: tank 1 (1-1 and 1-2, owned pets ≤ 3) is `traced` (`level_start_matches_original`, `level_1_2_start_with_stinky`, `tank_1_1_from_start_with_messages`); the pet-screen, tank-4/5, bonus and Time Trial paths are `static`. Covers how a tank level is set up and populated in the normal game. Addresses are inner-PE VAs.
 
 ## Call chain
 
@@ -8,6 +8,8 @@ Status: `draft`, static. Covers how a tank level is set up and populated in the 
 1. `0x0054c540` (screen setup) constructs a fresh **`Board`** (`0x00542150`). The Board constructor makes **3 app draws**: `r % 640` each, stored as floats at `board+0x3d8..0x3e0` (the light-band x positions, `board.md#backdrop`; cosmetic). Confirmed by `tank1-1_full_01`. Then **`Board::InitLevel`** (`0x00541a20`), which resets per-level state and the shop. See `shop-bar.md#level-init-and-per-level-layout`. It sets money 200, food price 5, wave countdown 3000, egg counter 1, laser 2, food level 0 and food quantity 1, then calls `Board::SetupShop`, which overrides the alien kind and countdown per level (`objects/alien-sylvester.md#level-setup`). **No RNG** on tank 1.
 2. If `0x0054b2a0` is set (the final bonus level, or `board+0x2a5`), a different path is taken. Not covered here.
 3. Otherwise **`Board::PopulateLevel`** (`0x005498b0`), then `0x0054b2d0`.
+
+`traced` for tank 1 (Board ctor draws and InitLevel values are restored and replayed). The bonus path (step 2) is `static`.
 
 ## `Board::PopulateLevel` (`0x005498b0`), normal game
 
@@ -27,6 +29,8 @@ In order:
 5. Time Trial (mode 1) only: a timer `+0x3bc` (300 or 600).
 6. Welcome message by level: 1-1 "Welcome to the Insaniquarium!", 1-2 "Welcome to the next level!", 2-1 "Welcome to the second tank!…". No RNG.
 
+Steps 1–4 and 6: `traced` for 1-1 and 1-2. The ≥ 4 owned-pets branch, tanks 4–5 and step 5 (Time Trial) are `static`.
+
 ### App-RNG draws at a tank-1 level start
 
 | Step | Draws |
@@ -39,9 +43,13 @@ In order:
 
 On **1-1** (no pets): `3 + 1 + 2·k + 18` draws, where k is 3..6. Confirmed: 29 draws with k = 3 in `tank1-1_full_01`, and both guppies match exactly.
 
+`traced`.
+
 ### Where the starting guppies sit
 
 Unlike bought guppies, the starting pair is constructed in place at `(x, y)` with the constructor defaults (vy −0.5, no damping timer).
+
+`traced`.
 
 ## Open questions
 

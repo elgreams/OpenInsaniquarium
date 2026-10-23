@@ -1,7 +1,8 @@
 # Image loading, alpha masks & cel animation
 
-Status: `draft` (static analysis of the inner PE; shipped data checked against it).
 Addresses are inner-PE VAs.
+
+Status: everything the tank-1 frames use is `confirmed` by the frame diff (images, masks and fonts render pixel-exact against the original's screenshots). Formats or attributes those frames don't touch are `static`.
 
 ## Loader entry points
 
@@ -18,6 +19,8 @@ Addresses are inner-PE VAs.
 
 Pixels are 32-bit `0xAARRGGBB`. "Byte 0" below is the low byte (blue).
 
+`static`.
+
 ## Extension resolution (`GetImage`)
 
 The path is split into directory, stem and extension at the last `.` that comes after the last `/` or `\`.
@@ -26,6 +29,8 @@ The path is split into directory, stem and extension at the last `.` that comes 
   **`.tga` → `.jpg` → `.png` → `.gif` → `.j2k` → `.jp2`**
 
 The shipped data only uses `.jpg` and `.gif`. Where both exist for one stem, `.jpg` wins. Filesystem lookups are case-insensitive (Windows).
+
+`confirmed` (every manifest image loads: `sexy-core` test `loads_every_manifest_image`).
 
 ## Implicit alpha mask (`GetImage` with `lookForAlpha = true`)
 
@@ -42,6 +47,8 @@ If no mask is found, the colour image keeps its own alpha (opaque, except GIF tr
 
 Masks in the install are pure grayscale, so taking byte 0 (blue) is the same as taking luminance.
 
+`confirmed` by the frame diff (masked sprites such as guppies, Stinky and buttons match pixel for pixel).
+
 ## Explicit alpha attributes (`DoLoadImage`)
 
 Applied after `GetImage`, so they override any implicit mask:
@@ -49,11 +56,15 @@ Applied after `GetImage`, so they override any implicit mask:
 - `alphagrid="name"`: the mask is **one cel**. It must be exactly `(width / cols) × (height / rows)` and is stamped into every cel of the grid. A mismatch is an error.
 - `alphacolor="RRGGBB"` (hex, via `sscanf("%x")`): RGB used when the colour image is missing. Not used by the shipped manifest.
 
+`confirmed` that every image loads; pixel use `static` for images not in a captured frame.
+
 ## GIF specifics (`GetGIFImage`)
 
 - Palette entries become opaque (`0xFF000000 | rgb`).
 - If a Graphic Control Extension sets the transparency flag, **the transparent index decodes to `0x00000000`**: fully transparent black. That also applies inside masks, where a transparent mask pixel gives alpha 0.
 - Only the first image frame is decoded. Interlaced images are supported. NETSCAPE loop and comment extensions are skipped.
+
+`confirmed` by the frame diff (GIF sprites).
 
 ## Other `<Image>` attributes
 
@@ -68,6 +79,8 @@ Applied after `GetImage`, so they override any implicit mask:
 | `variant` | Locale/variant suffix | Not used |
 | `rows`, `cols` | Cel grid; default 1 | **Required** |
 | `anim`, `framedelay`, `begindelay`, `enddelay`, `perframedelay`, `framemap` | Animation | **Required** (below) |
+
+`static`.
 
 ## Cel animation (`AnimInfo`)
 
@@ -94,6 +107,8 @@ Build steps (`Compute`):
 `-1` in a frame map (`MERYLBLINK`: `0,1,2,1,0,-1` with `anim=once`) is returned as cel `-1`. Callers treat a negative cel as "draw nothing". That's how the blink overlay disappears once the one-shot ends (guess; confirm at the call site).
 
 **Time units:** `GetCel` is unitless. Game objects pass their own update counters, so `framedelay` counts **28 ms logic ticks** (see `framework/timing.md`). TODO: confirm at a call site (e.g. `Sylvester` draw).
+
+`confirmed` for the wave strip (ping-pong, frame-checked at several level ticks). Other anim types: `static`.
 
 ## Open questions
 

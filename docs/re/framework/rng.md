@@ -1,7 +1,8 @@
 # Random number generation
 
-Status: `draft` (static). The algorithm is fully identified. The order of the seeding chain needs dynamic confirmation.
 Addresses are inner-PE VAs.
+
+Status: the algorithm and the app stream are `traced` (every replay compares the app `mti` each tick; any wrong draw diverges immediately). The seeding chain at startup is `static`: the harness always starts from captured RNG state.
 
 ## Algorithm: PopCap `MTRand` (MT19937, 31-bit output)
 
@@ -19,6 +20,8 @@ Ranged and float helpers (`Next(range)`, `Next(float)`) are **inlined** at call 
 
 **Implementation note:** this is reproducible from the public MT19937 reference plus the `& 0x7FFFFFFF` mask. We implement it ourselves in `sexy-core` with test vectors captured from the original.
 
+`traced`.
+
 ## Instances
 
 | Instance | Location | Seed | Used by |
@@ -28,6 +31,8 @@ Ranged and float helpers (`Next(range)`, `Next(float)`) are **inlined** at call 
 | **Store** `StoreScreen::mRand` | inline at `storescreen+0x1d0` | Deterministic: `profile_field(+0x748..0x74c, int64) + ctr(0x005e8f1c) + arg + game_state(+0x8b8 → +0x98)` (`0x0052fea0`) | Virtual Tank store stock generation, so the shop inventory is reproducible from save state |
 
 The CRT `rand()` (MSVC LCG, `0x005647dc`) is **also** present, seeded with `srand(GetTickCount())` at init (`0x0048892b`). It has 7 callers, mostly framework/UI (dialog effects, the StoreScreen overlay, a vfunction84). TODO: confirm none of the 7 are gameplay-relevant; if any are, the sim needs the MSVC LCG (`seed = seed*214013 + 2531011; return (seed>>16) & 0x7FFF`) too.
+
+App stream: `traced`. Global stream: `confirmed` (captured, but its `mti` isn't compared because the bubble systems aren't modelled). Store stream: `static`.
 
 ## Determinism consequences
 
@@ -39,12 +44,16 @@ The CRT `rand()` (MSVC LCG, `0x005647dc`) is **also** present, seeded with `sran
   **Option 1 is the plan:** snapshot full MT state at trace start.
 - Our `MTRand` must support exact state import/export (`[u32; 624]` + `mti`).
 
+`traced` for tank 1.
+
 ## Dynamic confirmation (CE, 2026-10-21)
 
 - App MTRand at `[app+0x7b0]` (app = `[0x005eb680]`). Captured state at the title screen: `mti == 624`, and **all 624 words equal `SRand(mt[0])`** with `mt[0] = 0x7FEF1344`. So the app RNG is freshly seeded and **has not drawn once** before gameplay starts. The seed is < 2³¹, consistent with it being one 31-bit output of `gMTRand` (seeded from `GetTickCount`).
 - It does not advance on the title screen (no change over several seconds).
 - **Harness consequence:** capturing the app RNG at the start of a level reduces to capturing a single `u32` (`mt[0]`) as long as `mti == 624`. Otherwise capture all 2500 bytes.
 - `gMTRand` (`0x005eb928`) had `mti == 6` at the title screen, so a few draws happen during startup.
+
+`confirmed`.
 
 ## Open questions
 
