@@ -55,6 +55,17 @@ fn draw_cel(out: &mut Rgba, c: &Cel, sheets: &Sheets) {
         return;
     }
     let src = &sheet.image;
+    // Fast path: unscaled, unmirrored, untinted, normal blending. Rows are
+    // copied (opaque pixels) or blended per pixel.
+    if (dw as u32, dh as u32) == (sw, sh)
+        && !c.mirror
+        && !c.additive
+        && c.tint == [255; 3]
+        && c.alpha == 255
+    {
+        blit_rows(out, src, (sx, sy, sw, sh), (c.x, c.y));
+        return;
+    }
     for j in 0..dh {
         let y = c.y + j;
         if y < 0 || y >= out.height as i32 {
@@ -77,6 +88,40 @@ fn draw_cel(out: &mut Rgba, c: &Cel, sheets: &Sheets) {
             let s = src.pixels[(v * src.width + u) as usize];
             let d = &mut out.pixels[(y as u32 * out.width + x as u32) as usize];
             blend(d, s, c.tint, c.alpha, c.additive);
+        }
+    }
+}
+
+/// Copy `src`'s rect to `(x, y)` with normal alpha blending, clipped.
+fn blit_rows(
+    out: &mut Rgba,
+    src: &Rgba,
+    (sx, sy, sw, sh): (u32, u32, u32, u32),
+    (x, y): (i32, i32),
+) {
+    let (ow, oh) = (out.width as i32, out.height as i32);
+    let x0 = x.max(0);
+    let x1 = (x + sw as i32).min(ow);
+    if x0 >= x1 {
+        return;
+    }
+    for j in 0..sh as i32 {
+        let dy = y + j;
+        let v = sy as i32 + j;
+        if dy < 0 || dy >= oh || v as u32 >= src.height {
+            continue;
+        }
+        let u0 = (sx as i32 + x0 - x) as u32;
+        let n = (x1 - x0) as u32;
+        let n = n.min(src.width.saturating_sub(u0));
+        let s = &src.pixels[(v as u32 * src.width + u0) as usize..][..n as usize];
+        let d = &mut out.pixels[(dy as u32 * out.width + x0 as u32) as usize..][..n as usize];
+        for (d, &s) in d.iter_mut().zip(s) {
+            match s[3] {
+                0 => {}
+                255 => *d = s,
+                _ => blend(d, s, [255; 3], 255, false),
+            }
         }
     }
 }

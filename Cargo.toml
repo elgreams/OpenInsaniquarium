@@ -27,3 +27,8 @@ all = { level = "warn", priority = -1 }
 [profile.dev.package."*"]
 opt-level = 3
 debug = "line-tables-only"
+
+# The CPU compositor (the app draws every frame through it) is too slow
+# unoptimised; build the app crate with optimisations in dev too.
+[profile.dev.package.insaniquarium-app]
+opt-level = 2

@@ -7,7 +7,9 @@
 //! (`--finish` puts the last egg piece up for sale, to reach the hatch screen.)
 //!
 //! What a frame shows comes from [`insaniquarium_app::scene`] (Bevy-free,
-//! with the draw rules and their specs); this binary turns it into sprites.
+//! with the draw rules and their specs). It is composited on the CPU by
+//! [`insaniquarium_app::render`], the same code the frame-diff tests check
+//! against the original, and shown as one texture.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -18,15 +20,12 @@ use bevy::asset::RenderAssetUsages;
 use bevy::audio::AudioSource;
 use bevy::audio::{AddAudioSource, Volume};
 use bevy::image::Image;
-use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::sprite::Anchor;
-use bevy::sprite_render::Material2dPlugin;
 use bevy::window::PrimaryWindow;
-use insaniquarium_app::additive::{Additive, AdditiveMaterial};
 use insaniquarium_app::assets::{ALIEN_SONG, GameImages, TANK1_SONG, load_sound_bytes};
-use insaniquarium_app::scene::{self, Cel, Fonts, HATCH_CONTINUE};
+use insaniquarium_app::render::render;
+use insaniquarium_app::scene::{self, Fonts, HATCH_CONTINUE};
 use insaniquarium_app::song::Song;
 use insaniquarium_sim::Board;
 use insaniquarium_sim::board::Input;
@@ -127,7 +126,6 @@ fn main() {
                 })
                 .set(ImagePlugin::default_nearest()),
         )
-        .add_plugins(Material2dPlugin::<AdditiveMaterial>::default())
         .add_audio_source::<Song>()
         .insert_resource(Time::<Fixed>::from_duration(TICK))
         .insert_resource(Sim {
@@ -136,11 +134,13 @@ fn main() {
             hatch_inputs: Vec::new(),
             hatch_sound: false,
         })
-        .insert_resource(Sheets {
-            table: scene::sheets(&images, &manifest),
-            handles: HashMap::new(),
-        })
+        .insert_resource(Sheets(scene::sheets(&images, &manifest)))
         .insert_resource(Sources(images))
+        .insert_resource(DumpDir(arg("--dump-frames").map(PathBuf::from).inspect(
+            |d| {
+                let _ = std::fs::create_dir_all(d);
+            },
+        )))
         .init_resource::<Cursor>()
         .insert_resource(SoundBytes(sounds))
         .insert_resource(songs)
@@ -171,6 +171,9 @@ impl Sim {
 
 #[derive(Resource)]
 struct Sources(GameImages);
+
+#[derive(Resource)]
+struct DumpDir(Option<PathBuf>);
 
 const ALL_SOUNDS: &[Sound] = &[
     Sound::Hatch,
@@ -219,23 +222,19 @@ struct Songs {
 #[derive(Resource, Default)]
 struct SoundHandles(HashMap<&'static str, Handle<AudioSource>>);
 
-/// The sheets' cel size and grid, and their uploaded images.
+/// The sheets' cel size and grid (`scene::sheets`).
 #[derive(Resource)]
-struct Sheets {
-    table: scene::Sheets,
-    handles: HashMap<&'static str, Handle<Image>>,
-}
+struct Sheets(scene::Sheets);
+
+/// The 640×480 screen texture the CPU compositor draws into, and where to
+/// also save each new frame (`--dump-frames DIR`, for checking the window
+/// against the compositor).
+#[derive(Resource)]
+struct ScreenImage(Handle<Image>, Option<PathBuf>);
 
 /// Fonts and the text they've rendered (`scene::Fonts`).
 #[derive(Resource)]
 struct Hud(Fonts);
-
-/// Uploaded text images, keyed by the address of the cached `Arc<Rgba>`
-/// they came from (the `Arc` is kept so the address isn't reused).
-#[derive(Default)]
-struct TextHandles {
-    uploads: HashMap<usize, (Arc<Rgba>, Handle<Image>)>,
-}
 
 /// Mouse position in board pixels and whether the left button is held
 /// (button hover/press art).
@@ -246,20 +245,6 @@ struct Cursor {
     /// The current press began on the hatch screen itself (not a button).
     hatch_press: bool,
 }
-
-/// The unit quad additive cels are drawn on.
-#[derive(Resource)]
-struct Quad(Handle<Mesh>);
-
-/// An additive cel: a quad with its own material, kept and updated in
-/// place from frame to frame (materials are GPU resources, too costly to
-/// recreate every frame).
-#[derive(Component)]
-struct Pooled(Handle<AdditiveMaterial>);
-
-/// Per-frame sprites; rebuilt each frame from sim state.
-#[derive(Component)]
-struct Drawn;
 
 fn to_bevy(img: &Rgba) -> Image {
     Image::new(
@@ -275,18 +260,12 @@ fn to_bevy(img: &Rgba) -> Image {
     )
 }
 
-fn setup(
-    mut commands: Commands,
-    mut sheets: ResMut<Sheets>,
-    mut images: ResMut<Assets<Image>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, dump: Res<DumpDir>) {
     commands.spawn(Camera2d);
-    commands.insert_resource(Quad(meshes.add(Rectangle::new(1.0, 1.0))));
-    let Sheets { table, handles } = &mut *sheets;
-    for (&id, sheet) in table.iter() {
-        handles.insert(id, images.add(to_bevy(&sheet.image)));
-    }
+    let blank = Rgba::new_transparent(W as u32, H as u32);
+    let handle = images.add(to_bevy(&blank));
+    commands.spawn(Sprite::from_image(handle.clone()));
+    commands.insert_resource(ScreenImage(handle, dump.0.clone()));
 }
 
 fn step(mut sim: ResMut<Sim>) {
@@ -439,143 +418,34 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
     }
 }
 
-/// The cel as a `ColorMaterial` on a unit quad: the UV transform picks
-/// (and mirrors) the cel; the transform places and sizes the quad.
-fn additive_parts(c: &Cel, sheets: &Sheets) -> Option<(ColorMaterial, Transform)> {
-    let sheet = sheets.table.get(c.sheet)?;
-    let handle = sheets.handles.get(c.sheet)?;
-    sheet.cel_rect(c.col, c.row)?;
-    let (gw, gh) = (sheet.grid.0 as f32, sheet.grid.1 as f32);
-    let (u0, v0) = (c.col as f32 / gw, c.row as f32 / gh);
-    let (su, sv) = (1.0 / gw, 1.0 / gh);
-    let uv = if c.mirror {
-        Affine2::from_cols(
-            Vec2::new(-su, 0.0),
-            Vec2::new(0.0, sv),
-            Vec2::new(u0 + su, v0),
-        )
-    } else {
-        Affine2::from_cols(Vec2::new(su, 0.0), Vec2::new(0.0, sv), Vec2::new(u0, v0))
-    };
-    let (w, h) = c
-        .size
-        .map_or((sheet.cel.0 as f32, sheet.cel.1 as f32), |(w, h)| {
-            (w as f32, h as f32)
-        });
-    let [r, g, b] = c.tint;
-    let mat = ColorMaterial {
-        color: Color::srgba_u8(r, g, b, c.alpha),
-        alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
-        uv_transform: uv,
-        texture: Some(handle.clone()),
-    };
-    let t = Transform::from_xyz(
-        c.x as f32 + w / 2.0 - W / 2.0,
-        H / 2.0 - c.y as f32 - h / 2.0,
-        c.z,
-    )
-    .with_scale(Vec3::new(w, h, 1.0));
-    Some((mat, t))
-}
-
-/// `DrawImageCel` semantics: out-of-range cels draw nothing.
-fn cel_sprite(c: &Cel, sheets: &Sheets) -> Option<(Sprite, Anchor, Transform)> {
-    let (cx, cy, w, h) = sheets.table.get(c.sheet)?.cel_rect(c.col, c.row)?;
-    let handle = sheets.handles.get(c.sheet)?;
-    let [r, g, b] = c.tint;
-    Some((
-        Sprite {
-            image: handle.clone(),
-            rect: Some(Rect::new(
-                cx as f32,
-                cy as f32,
-                (cx + w) as f32,
-                (cy + h) as f32,
-            )),
-            flip_x: c.mirror,
-            color: Color::srgba_u8(r, g, b, c.alpha),
-            custom_size: c.size.map(|(w, h)| Vec2::new(w as f32, h as f32)),
-            ..default()
-        },
-        Anchor::TOP_LEFT,
-        Transform::from_xyz(c.x as f32 - W / 2.0, H / 2.0 - c.y as f32, c.z),
-    ))
-}
-
+/// Composite the frame on the CPU (`render.rs`, the same compositor the
+/// frame-diff harness checks against the original's screenshots) into the
+/// screen texture. Redrawn only when the frame changes.
 #[allow(clippy::too_many_arguments)] // Bevy system parameters.
 fn draw(
-    mut commands: Commands,
     sim: Res<Sim>,
-    sheets: Res<Sheets>,
     src: Res<Sources>,
+    sheets: Res<Sheets>,
     mut hud: ResMut<Hud>,
-    quad: Res<Quad>,
     cursor: Res<Cursor>,
+    screen: Res<ScreenImage>,
     mut images: ResMut<Assets<Image>>,
-    mut text_handles: Local<TextHandles>,
-    mut materials: ResMut<Assets<AdditiveMaterial>>,
-    old: Query<Entity, With<Drawn>>,
-    mut pool: Query<(&Pooled, &mut Transform, &mut Visibility)>,
+    mut last: Local<Option<Vec<u8>>>,
 ) {
-    for e in &old {
-        commands.entity(e).despawn();
-    }
     let frame = scene::frame(&sim.game, cursor.pos, cursor.down, &mut hud.0, &src.0);
-    let mut slots = pool.iter_mut();
-    for c in &frame.cels {
-        if !c.additive {
-            if let Some(b) = cel_sprite(c, &sheets) {
-                commands.spawn((Drawn, b.0, b.1, b.2));
-            }
-            continue;
-        }
-        let Some((mat, transform)) = additive_parts(c, &sheets) else {
-            continue;
-        };
-        if let Some((p, mut tf, mut vis)) = slots.next() {
-            if let Some(mut m) = materials.get_mut(&p.0) {
-                m.base = mat;
-            }
-            *tf = transform;
-            *vis = Visibility::Inherited;
-        } else {
-            let h = materials.add(AdditiveMaterial {
-                base: mat,
-                extension: Additive {},
-            });
-            commands.spawn((
-                Pooled(h.clone()),
-                Mesh2d(quad.0.clone()),
-                MeshMaterial2d(h),
-                transform,
-            ));
-        }
+    let rgba = render(&frame, &sheets.0);
+    let bytes = rgba.as_bytes();
+    if last.as_deref() == Some(bytes) {
+        return;
     }
-    for (_, _, mut vis) in slots {
-        vis.set_if_neq(Visibility::Hidden);
+    if let Some(mut img) = images.get_mut(&screen.0)
+        && let Some(data) = img.data.as_mut()
+    {
+        data.copy_from_slice(bytes);
     }
-    // Text images the font cache has dropped (old money values, a closed
-    // dialog) are only held here now: free their uploads.
-    text_handles
-        .uploads
-        .retain(|_, (img, _)| Arc::strong_count(img) > 1);
-    for t in &frame.texts {
-        let handle = text_handles
-            .uploads
-            .entry(Arc::as_ptr(&t.image) as usize)
-            .or_insert_with(|| (t.image.clone(), images.add(to_bevy(&t.image))))
-            .1
-            .clone();
-        let [r, g, b] = t.colour;
-        commands.spawn((
-            Drawn,
-            Sprite {
-                image: handle,
-                color: Color::srgb_u8(r, g, b),
-                ..default()
-            },
-            Anchor::TOP_LEFT,
-            Transform::from_xyz(t.x - W / 2.0, H / 2.0 - t.y, t.z),
-        ));
+    if let Some(dir) = &screen.1 {
+        let tick = sim.board().map_or(0, |b| b.tick);
+        let _ = insaniquarium_app::framediff::save_png(&rgba, &dir.join(format!("{tick:08}.png")));
     }
+    *last = Some(bytes.to_vec());
 }

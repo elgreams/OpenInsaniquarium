@@ -2,7 +2,6 @@
 //! game binary and tools (asset browser). `scene` and `render` are
 //! Bevy-free: what a frame shows, and a CPU compositor for it.
 
-pub mod additive;
 pub mod assets;
 pub mod framediff;
 pub mod render;
