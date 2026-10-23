@@ -427,6 +427,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
             board.message.flash = g("flash") != 0;
             board.message.id = g("hint");
             board.message.text = m.get("text").and_then(Value::as_str).unwrap_or("").into();
+            // Captures don't record the colour; the warning texts are the
+            // only red ones (board.md#the-alien-warning-line).
+            board.message.warning = board.message.text.contains("APPROACHING")
+                || board.message.text.contains("DETECTED");
         }
         if let Some(l) = b.get("lights").and_then(Value::as_array) {
             for (x, v) in board.light_x.iter_mut().zip(l) {

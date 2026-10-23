@@ -292,3 +292,17 @@ Tank-1 callers. "1-1" means the tutorial predicate `0x00537b80` (tank 1, level 1
 - Hunger: if byte 0x17 is set, show 0x18; if byte 8 is set, show 0x17; then show 8. All three calls are made and only unused ids take effect, so the 1st, 2nd and 3rd times use 8, 0x17 and 0x18. `static`; the 1-2 rows are `confirmed` by `traces/frames/tank12_start_01` (both 1-2 texts on screen; the live widget showed id 0x14 for the alien line).
 
 `confirmed` for 1-1 by `traces/original/tank1-1_pres_01.trace.jsonl` (the whole level, with `board.msg`). The replay test `tank_1_1_from_start_with_messages` matches text, timer and blink on every tick: welcome, first fish (tick 150), grown, the coin message three times (ids 5, 0x19, 0x1a) and the egg-piece hint. A new message's timer shows 184 on its first tick: the widget updates after the board in the same tick.
+
+### The alien warning line
+
+At wave countdown **275** (the warning tick, `Board::Update` @ `0x005486e1`), before the alien music starts and the spawn position is drawn, the board writes the message line directly: it doesn't go through `ShowMessage`, so no one-time byte is involved and it shows on every wave.
+
+- Text by the wave's alien kind (`+0x2bc`):
+  - kinds 9–12: "MULTIPLE ALIEN SIGNATURES DETECTED" (or, on 4-4 without byte `+0x4de`, "FOURTEEN ALIEN SIGNATURES DETECTED");
+  - 4 "ALIEN SIGNATURE TYPE-G DETECTED", 5 "…TYPE-D…", 6 "…TYPE-U…", 7 "…TYPE-P…", 8 "…TYPE-II…";
+  - 0x15: "%s OF DOOM APPROACHING" with an ordinal of the times beaten;
+  - otherwise (kinds 1, 2, 3 on tank 1): **"ENEMY APPROACHING"**.
+- Flash off, **timer 274** (`0x112`).
+- Colours: text **(255, 50, 50)**, outline **(100, 20, 20)**.
+
+`traced` for kind 2 (`tank1-3_full_01`: "ENEMY APPROACHING", timer 273 on the first snapshot after the warning, both waves). Kind 1 (1-2) is `static` (older 1-2 captures don't record the message line), but it is the same branch. The colours are `static`.

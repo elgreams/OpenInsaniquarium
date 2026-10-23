@@ -34,7 +34,7 @@ local RAW_LISTS = {
   {0xac,"food",0x200},{0xa8,"coin",0x200},{0xe8,"coin_b",0x200},{0xec,"coin_c",0x200},
   {0xb8,"alien",0x210},{0xbc,"alien_b",0x210},{0xd8,"shot",0x170},{0x9c,"dead_alien",0x1a8},
   {0x98,"dead_fish",0x1a8},{0xf0,"warp",0x170},{0xb0,"pet_other",0x1d0},{0xb4,"pet_fish",0x268},
-  {0xe4,"shadow",0x170},
+  {0xe4,"shadow",0x170},{0xa4,"oscar",0x230},
 }
 
 local out_path = CAPTURE_OUT or "/tmp/trace.jsonl"
@@ -205,6 +205,15 @@ while captured < max_ticks and polls < max_ticks * 40 do
         end
         for _, a in ipairs(vec_ptrs(u32(board + 0xb8))) do
           gf:write(string.format("A %d %d\n", i32(a + 0x30), i32(a + 0x34)))
+        end
+        -- Coins in the other coin lists (pearls etc.), carnivores' hunger.
+        for _, off in ipairs({0xe8, 0xec}) do
+          for _, c in ipairs(vec_ptrs(u32(board + off))) do
+            gf:write(string.format("C %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0))
+          end
+        end
+        for _, o in ipairs(vec_ptrs(u32(board + 0xa4))) do
+          gf:write(string.format("O %d %d %d\n", i32(o + 0x30), i32(o + 0x34), i32(o + 0x9c)))
         end
         gf:write(string.format("R %s\n", hex_block(board + 0x3a4, 12)))
         -- Open dialogs: id, x, y, w, h (to click their button).

@@ -617,6 +617,9 @@ impl Board {
                 }
             }
             275 => {
+                // The warning line (board.md#the-alien-warning-line).
+                // TODO(spec): the other kinds' texts (tanks 2–5).
+                message::show_warning(&mut self.message, "ENEMY APPROACHING");
                 self.music = Some(Music::Alien);
                 self.play(0x106, Sound::Awooga);
                 self.wave_a = (

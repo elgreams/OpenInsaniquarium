@@ -20,6 +20,12 @@ MAX_S = float(sys.argv[sys.argv.index("--max-seconds") + 1]) if "--max-seconds" 
 BTN_X = [18, 87, 144, 217, 290, 363, 436]
 GUPPY_BTN = (BTN_X[0] + 29, 33)
 QUALITY_BTN = (BTN_X[1] + 29, 33)
+QUANTITY_BTN = (BTN_X[2] + 29, 33)
+CARNIVORE_BTN = (BTN_X[3] + 29, 33)
+# Later levels (1-3+): how many guppies to buy, and whether to buy a
+# carnivore once rich (`--guppies N`, `--carnivore`).
+MAX_GUPPIES = int(sys.argv[sys.argv.index("--guppies") + 1]) if "--guppies" in sys.argv else 1
+BUY_CARNIVORE = "--carnivore" in sys.argv
 EGG_BTN = (BTN_X[6] + 29, 33)
 RESUME = (312, 258)
 # Egg price by level (shop-bar.md): 1-1 150, 1-2 500.
@@ -53,7 +59,8 @@ def read_state():
         lines = open(GPOS).read().splitlines()
     except OSError:
         return None
-    st = {"guppies": [], "coins": [], "aliens": [], "revealed": [0] * 12, "dialogs": []}
+    st = {"guppies": [], "coins": [], "aliens": [], "revealed": [0] * 12, "dialogs": [],
+          "oscars": []}
     for ln in lines:
         p = ln.split()
         if not p:
@@ -65,6 +72,8 @@ def read_state():
             st["guppies"].append(tuple(map(int, p[1:4])))
         elif p[0] == "C":
             st["coins"].append(tuple(map(int, p[1:4])))
+        elif p[0] == "O":
+            st["oscars"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
             st["aliens"].append(tuple(map(int, p[1:3])))
         elif p[0] == "D" and len(p) >= 6:
@@ -80,6 +89,7 @@ def main():
     last_feed = 0.0
     bought_guppies = 0
     bought_quality = False
+    bought_carnivore = False
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -109,9 +119,14 @@ def main():
             bought_quality = True
         elif st["rev_egg"] and st["money"] >= EGG_PRICE:
             click(win, *EGG_BTN)
-        elif st["rev_guppy"] and bought_guppies < 1 and st["money"] >= 120 and not st["rev_egg"]:
+        elif (st["rev_guppy"] and bought_guppies < MAX_GUPPIES and st["money"] >= 120
+              and (not st["rev_egg"] or MAX_GUPPIES > 1)):
             click(win, *GUPPY_BTN)
             bought_guppies += 1
+        elif (BUY_CARNIVORE and not bought_carnivore and st["revealed"][4]
+              and st["money"] >= 1100 and len(st["guppies"]) >= 4):
+            click(win, *CARNIVORE_BTN)
+            bought_carnivore = True
         elif any(c[2] == 0 for c in st["coins"]):
             c = max((c for c in st["coins"] if c[2] == 0), key=lambda c: c[1])
             click(win, c[0] + 36, min(c[1] + 36, 440))

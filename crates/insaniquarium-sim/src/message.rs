@@ -19,6 +19,9 @@ pub struct Message {
     pub flash: bool,
     /// `+0xd8`: id of the last one-time message, −1 for none.
     pub id: i32,
+    /// Red alien-warning colours instead of the normal green
+    /// (`+0xa8`/`+0xb8`; `ShowMessage` resets them to green).
+    pub warning: bool,
 }
 
 impl Default for Message {
@@ -29,6 +32,7 @@ impl Default for Message {
             timer: 185,
             flash: false,
             id: -1,
+            warning: false,
         }
     }
 }
@@ -61,6 +65,7 @@ impl Message {
 /// shows; otherwise only the first time per level (`hints[id]`).
 pub fn show(msg: &mut Message, hints: &mut [bool; HINTS], text: &str, flash: bool, id: i32) {
     if id < 0 {
+        msg.warning = false;
         msg.text = text.to_string();
         msg.flash = flash;
         msg.timer = if flash { 500 } else { 100 };
@@ -71,11 +76,22 @@ pub fn show(msg: &mut Message, hints: &mut [bool; HINTS], text: &str, flash: boo
     if hints[i] {
         return;
     }
+    msg.warning = false;
     msg.text = text.to_string();
     msg.flash = flash;
     msg.timer = 185;
     msg.id = id;
     hints[i] = true;
+}
+
+/// The alien warning (`Board::Update` @ `0x005486e1`, board.md#the-alien-
+/// warning-line): written directly, not through `ShowMessage`, so it shows
+/// on every wave; red, no blink, 274 ticks.
+pub fn show_warning(msg: &mut Message, text: &str) {
+    msg.text = text.to_string();
+    msg.flash = false;
+    msg.timer = 274;
+    msg.warning = true;
 }
 
 /// A message that can show up to three times per level: the first unused

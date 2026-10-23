@@ -257,7 +257,7 @@ pub struct Fonts {
     /// `FONT_CONTINUUMBOLD14OUTLINE` and `FONT_CONTINUUMBOLD14`: the
     /// message line (board.md#message-line).
     message_fonts: Option<[ImageFont; 2]>,
-    message: Option<(String, Arc<Rgba>)>,
+    message: Option<((String, bool), Arc<Rgba>)>,
     /// "Tank t-l" in the bottom-left corner.
     tank_label: Option<((i32, i32), Arc<Rgba>)>,
     money: Option<(i32, Arc<Rgba>)>,
@@ -363,11 +363,12 @@ impl Fonts {
                 self.labels.insert(text, Arc::new(img));
             }
         }
-        if self.message.as_ref().is_none_or(|m| m.0 != b.message.text)
+        let key = (b.message.text.clone(), b.message.warning);
+        if self.message.as_ref().is_none_or(|m| m.0 != key)
             && let Some(fonts) = &self.message_fonts
         {
-            let img = render_message(fonts, &b.message.text);
-            self.message = Some((b.message.text.clone(), Arc::new(img)));
+            let img = render_message(fonts, &b.message.text, b.message.warning);
+            self.message = Some((key, Arc::new(img)));
         }
         let tl = (b.tank, b.level);
         if self.tank_label.as_ref().is_none_or(|l| l.0 != tl)
@@ -981,15 +982,21 @@ const MESSAGE_RECT: (i32, i32, i32) = (90, 445, 460);
 /// (`MessageWidget::Draw` @ `0x00530830`, board.md#message-line): the
 /// outline font in (0, 75, 0), then the plain font in (180, 250, 90), with
 /// the baseline at ascent + (h − height) / 2, centred + 2.
-fn render_message([outline, plain]: &[ImageFont; 2], text: &str) -> Rgba {
+fn render_message([outline, plain]: &[ImageFont; 2], text: &str, warning: bool) -> Rgba {
     let fh = outline.glyph_height();
     let (w, h) = (MESSAGE_RECT.2, fh + 6);
     let mut out = Rgba::new_transparent(w as u32, h as u32);
     let t = text.as_bytes();
     let x = (w - outline.width(t)) / 2 + 2;
     let y = outline.ascent() + (h - fh) / 2;
-    outline.draw(&mut out, t, x, y, [0, 75, 0]);
-    plain.draw(&mut out, t, x, y, [180, 250, 90]);
+    // The alien warning is red (board.md#the-alien-warning-line).
+    let (edge, fill) = if warning {
+        ([100, 20, 20], [255, 50, 50])
+    } else {
+        ([0, 75, 0], [180, 250, 90])
+    };
+    outline.draw(&mut out, t, x, y, edge);
+    plain.draw(&mut out, t, x, y, fill);
     out
 }
 
