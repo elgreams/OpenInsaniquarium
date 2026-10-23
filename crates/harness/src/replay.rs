@@ -362,6 +362,15 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
             b.get("level").and_then(Value::as_i64),
         ) {
             board.tutorial = tank == 1 && level == 1;
+            board.tank = tank as i32;
+            board.level = level as i32;
+        }
+        // One-time hint bytes (`+0x4b3`, `+0x4b4`, `+0x4c1`); captures
+        // without them start with none shown.
+        if let Some(h) = b.get("hints").and_then(Value::as_str).and_then(hex_bytes) {
+            for (i, off) in [0x4b3usize, 0x4b4, 0x4c1].iter().enumerate() {
+                board.hints_shown[i] = h.get(off - 0x4b0).is_some_and(|&v| v != 0);
+            }
         }
         if let Some(c) = b.get("clock").and_then(Value::as_i64) {
             board.clock = c as i32;

@@ -37,64 +37,6 @@ local RAW_LISTS = {
   {0xe4,"shadow",0x170},
 }
 
--- Presentation state (docs/re/framework/presentation-capture.md): music
--- tracks (BassMusicInterface map at [app+0x374]+4: key +0x10, volume
--- +0x20, fade +0x28, max +0x30, stop-when-faded +0x38, handles +0x18/+0x1c),
--- the requested track/order (app+0x88c/+0x890), open dialogs (map at
--- app+0x31c: key +0xc, dialog +0x10), and the screen widgets.
-local SCREENS = {
-  {0x730,"board"},{0x814,"hatch"},{0x80c,"pets"},{0x81c,"interlude"},
-  {0x818,"bonus"},{0x738,"selector"},{0x834,"help"},
-}
-
--- In-order walk of an MSVC std::map: header node at `head`, root at
--- head+4, left +0, right +8, isnil byte at `nil_off`.
-local function map_nodes(head, nil_off)
-  local res = {}
-  if not head or head == 0 then return res end
-  local function walk(n, depth)
-    if not n or n == 0 or n == head or depth > 64 or (readBytes(n + nil_off, 1) or 1) ~= 0 then return end
-    walk(u32(n), depth + 1)
-    res[#res+1] = n
-    walk(u32(n + 8), depth + 1)
-  end
-  walk(u32(head + 4), 0)
-  return res
-end
-
-local function presentation(app)
-  local parts = {}
-  local music = u32(app + 0x374)
-  local tracks = {}
-  if music and music ~= 0 then
-    for _, n in ipairs(map_nodes(u32(music + 8), 0x41)) do
-      tracks[#tracks+1] = string.format('{"id":%d,"vol":%s,"fade":%s,"max":%s,"stop":%d,"h":%d}',
-        i32(n + 0x10), num(f64(n + 0x20)), num(f64(n + 0x28)), num(f64(n + 0x30)),
-        readBytes(n + 0x38, 1) or 0, u32(n + 0x18) or 0)
-    end
-  end
-  parts[#parts+1] = string.format('"music":{"track":%d,"order":%d,"tracks":[%s]}',
-    i32(app + 0x88c), i32(app + 0x890), table.concat(tracks, ","))
-  local dialogs = {}
-  for _, n in ipairs(map_nodes(u32(app + 0x320), 0x15)) do
-    dialogs[#dialogs+1] = tostring(i32(n + 0xc))
-  end
-  parts[#parts+1] = string.format('"dialogs":[%s]', table.concat(dialogs, ","))
-  local screens = {}
-  for _, sc in ipairs(SCREENS) do
-    local p = u32(app + sc[1])
-    if p and p ~= 0 then screens[#screens+1] = '"' .. sc[2] .. '"' end
-  end
-  parts[#parts+1] = string.format('"screens":[%s]', table.concat(screens, ","))
-  -- Hatch screen counter and pet (hatch-screen.md#2).
-  local h = u32(app + 0x814)
-  if h and h ~= 0 then
-    parts[#parts+1] = string.format('"hatch":{"t":%d,"pet":%d,"jx":%d,"jy":%d}',
-      i32(h + 0x94), i32(h + 0x98), i32(h + 0x9c), i32(h + 0xa0))
-  end
-  return "{" .. table.concat(parts, ",") .. "}"
-end
-
 local out_path = CAPTURE_OUT or "/tmp/trace.jsonl"
 local max_ticks = CAPTURE_TICKS or 300
 
@@ -135,6 +77,64 @@ local function vec_ptrs(vec)
   if not first or not last or last < first or (last - first) > 4096 then return res end
   for p = first, last - 4, 4 do res[#res+1] = u32(p) end
   return res
+end
+
+-- Presentation state (docs/re/framework/presentation-capture.md): music
+-- tracks (BassMusicInterface map at [app+0x374]+4: key +0x10, volume
+-- +0x20, fade +0x28, max +0x30, stop-when-faded +0x38, handles +0x18/+0x1c),
+-- the requested track/order (app+0x88c/+0x890), open dialogs (map at
+-- app+0x324 (header at +0x328): key +0xc, dialog +0x10), and the screen widgets.
+local SCREENS = {
+  {0x730,"board"},{0x814,"hatch"},{0x80c,"pets"},{0x81c,"interlude"},
+  {0x818,"bonus"},{0x738,"selector"},{0x834,"help"},
+}
+
+-- In-order walk of an MSVC std::map: header node at `head`, root at
+-- head+4, left +0, right +8, isnil byte at `nil_off`.
+local function map_nodes(head, nil_off)
+  local res = {}
+  if not head or head == 0 then return res end
+  local function walk(n, depth)
+    if not n or n == 0 or n == head or depth > 64 or (readBytes(n + nil_off, 1) or 1) ~= 0 then return end
+    walk(u32(n), depth + 1)
+    res[#res+1] = n
+    walk(u32(n + 8), depth + 1)
+  end
+  walk(u32(head + 4), 0)
+  return res
+end
+
+local function presentation(app)
+  local parts = {}
+  local music = u32(app + 0x374)
+  local tracks = {}
+  if music and music ~= 0 then
+    for _, n in ipairs(map_nodes(u32(music + 8), 0x41)) do
+      tracks[#tracks+1] = string.format('{"id":%d,"vol":%s,"fade":%s,"max":%s,"stop":%d,"h":%d}',
+        i32(n + 0x10), num(f64(n + 0x20)), num(f64(n + 0x28)), num(f64(n + 0x30)),
+        readBytes(n + 0x38, 1) or 0, u32(n + 0x18) or 0)
+    end
+  end
+  parts[#parts+1] = string.format('"music":{"track":%d,"order":%d,"tracks":[%s]}',
+    i32(app + 0x88c), i32(app + 0x890), table.concat(tracks, ","))
+  local dialogs = {}
+  for _, n in ipairs(map_nodes(u32(app + 0x328), 0x15)) do
+    dialogs[#dialogs+1] = tostring(i32(n + 0xc))
+  end
+  parts[#parts+1] = string.format('"dialogs":[%s]', table.concat(dialogs, ","))
+  local screens = {}
+  for _, sc in ipairs(SCREENS) do
+    local p = u32(app + sc[1])
+    if p and p ~= 0 then screens[#screens+1] = '"' .. sc[2] .. '"' end
+  end
+  parts[#parts+1] = string.format('"screens":[%s]', table.concat(screens, ","))
+  -- Hatch screen counter and pet (hatch-screen.md#2).
+  local h = u32(app + 0x814)
+  if h and h ~= 0 then
+    parts[#parts+1] = string.format('"hatch":{"t":%d,"pet":%d,"jx":%d,"jy":%d}',
+      i32(h + 0x94), i32(h + 0x98), i32(h + 0x9c), i32(h + 0xa0))
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
 end
 
 local app = u32(APP_PTR)
@@ -207,6 +207,11 @@ while captured < max_ticks and polls < max_ticks * 40 do
           gf:write(string.format("A %d %d\n", i32(a + 0x30), i32(a + 0x34)))
         end
         gf:write(string.format("R %s\n", hex_block(board + 0x3a4, 12)))
+        -- Open dialogs: id, x, y, w, h (to click their button).
+        for _, n in ipairs(map_nodes(u32(app + 0x328), 0x15)) do
+          local dlg = u32(n + 0x10)
+          gf:write(string.format("D %d %d %d %d %d\n", i32(n + 0xc), i32(dlg + 0x30), i32(dlg + 0x34), i32(dlg + 0x38), i32(dlg + 0x3c)))
+        end
         gf:close()
         os.rename(CAPTURE_GPOS .. ".tmp", CAPTURE_GPOS)
       end
@@ -228,6 +233,8 @@ while captured < max_ticks and polls < max_ticks * 40 do
         i32(board + 0x2cc), i32(board + 0x2d0), i32(board + 0x2d4), i32(board + 0x2d8),
         i32(board + 0x45c), i32(board + 0x3e4), i32(0x5e89dc), i32(0x5df58c))
       bclock = bclock .. string.format(',"shot_x":%d,"shot_y":%d', i32(board + 0x3d0), i32(board + 0x3d4))
+      -- Hint bytes +0x4b0..+0x4e5 (one-time hint flags; dialog.md).
+      bclock = bclock .. string.format(',"hints":"%s"', hex_block(board + 0x4b0, 0x36))
     end
     local board_json = "null"
     if board and board ~= 0 then

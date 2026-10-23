@@ -35,7 +35,11 @@ Remap table (id, order → 4, order):
 
 - **Tank music** (`WinFishApp::PlayTankMusic` @ `0x0054c390`): chosen by tank number (`board+0x3c8`, or the profile when there's no board): tank 1 → (0, 22), tank 2 → (0, 0), tank 3 → (2, 32), tank 4 → (2, 45). Each then goes through the remap above. Virtual Tank (mode 5) stops all music instead.
 - **Fade-out** before switching: speed **0.008** per update (`0x005a1a00`).
-- **Alien music** (`0x0054c480`): fade the tank song out at 0.008 per update, then `0x00498d10(1)` (slot 3) sets track 1's volume to its maximum and clears its fade, and `PlayMusic(1, −1, 0.002, loop)` resumes it with fade speed 0.002. That "fade-in" starts from the maximum and is clamped there, so **the alien song plays at full volume at once**, over the tank song's 125-update fade-out.
+- **Alien music** (`0x0054c480`), at countdown 275: fade the tank song out (−0.008/update, without stopping it); play track 1 from order 0, stop it (volume 0), then `PlayMusic(1, −1, 0.002)`. So **the alien song fades in from silence at 0.002 per update while the tank song fades out at 0.008**. It's at 0.548 by countdown 2.
+- **Countdown 1** (`0x0054b1a0(1, 1, 0)`): the alien song jumps to **order 1 at full volume**. This is the fight section, starting as the alien warps in.
+- **Last alien gone** (`PlayTankMusic(1)`): the alien song fades out at 0.008 and stops at 0; the tank song restarts from its order, fading in from 0 at 0.002 (≈ 500 updates, 14 s).
+
+`confirmed` tick by tick in `tank1-2_pres_01` (two waves), `crates/harness/tests/presentation.rs`. Correction: an earlier note said the alien song starts at full volume. That was wrong: its fade starts from 0 (the stop sets the volume to 0), and the full-volume part is the fight section at countdown 1.
 - **Stop all** (`0x0054b020`): stops ids 0–4 and resets the current-track fields (`app+0x88c` id, `app+0x890` order).
 - **PlayMusic** (interface slot 11, `0x004992e0`): `(id, order, fade_speed: f64, no_loop: bool)`. Order −1 means "resume". Otherwise BASS seeks to the order. Looping is on unless `no_loop`.
 

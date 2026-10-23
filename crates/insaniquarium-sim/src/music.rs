@@ -196,6 +196,7 @@ impl MusicState {
         match cue {
             Some(Cue::Alien) => self.alien(),
             Some(Cue::Tank) => self.tank(tank, true),
+            Some(Cue::AlienFight) => self.play_now(ALIEN, 1),
             None => {}
         }
     }

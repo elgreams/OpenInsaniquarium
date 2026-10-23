@@ -68,10 +68,11 @@ impl Game {
         let Screen::Tank(board) = &mut self.screen else {
             return;
         };
-        // UpdateApp: the music fades first, then the widgets update.
-        self.music.update();
+        // The board updates, then the music fades (seen in captures: a cue's
+        // tick already shows one fade step).
         board.step(inputs);
         self.music.cue(board.music, board.tank);
+        self.music.update();
         if board.level_complete {
             let pet = self.profile.finish_level(board.tank, board.level);
             let (rng, global_rng) = (board.rng.clone(), board.global_rng.clone());
@@ -95,7 +96,6 @@ impl Game {
             rng,
             global_rng,
         } = &mut **h;
-        self.music.update();
         if inputs.contains(&HatchInput::Continue) && hatch.can_continue() {
             let (rng, global_rng) = (rng.clone(), global_rng.clone());
             let board = Self::level_board(&self.profile, rng, global_rng);
@@ -103,7 +103,9 @@ impl Game {
             self.music.tank(self.profile.tank, false);
             return HatchOut::default();
         }
-        hatch.update(rng, inputs.contains(&HatchInput::Held))
+        let out = hatch.update(rng, inputs.contains(&HatchInput::Held));
+        self.music.update();
+        out
     }
 
     pub fn board(&self) -> Option<&Board> {

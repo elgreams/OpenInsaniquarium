@@ -163,6 +163,9 @@ pub enum Music {
     Alien,
     /// `PlayTankMusic(1)` (`0x0054c390`): fade back to the tank song.
     Tank,
+    /// Countdown 1 (`0x0054b1a0(1, 1, 0)`): the alien song jumps to its
+    /// order 1 (the fight section) at full volume.
+    AlienFight,
 }
 
 impl From<Sound> for Played {

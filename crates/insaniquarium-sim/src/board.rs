@@ -560,6 +560,9 @@ impl Board {
                     self.rng.next_range(195) as i32 + 105,
                 );
             }
+            // `0x0054b1a0(1, 1, 0)`: the alien song moves on to its fight
+            // section as the alien arrives.
+            1 => self.music = Some(Music::AlienFight),
             c if c <= 0 => {
                 self.wave_2c4 = 35;
                 let a = Alien::new(self.wave_a.0, self.wave_a.1, self.wave_kind, &mut self.rng);

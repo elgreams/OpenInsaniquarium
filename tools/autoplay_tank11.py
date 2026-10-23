@@ -53,7 +53,7 @@ def read_state():
         lines = open(GPOS).read().splitlines()
     except OSError:
         return None
-    st = {"guppies": [], "coins": [], "aliens": [], "revealed": [0] * 12}
+    st = {"guppies": [], "coins": [], "aliens": [], "revealed": [0] * 12, "dialogs": []}
     for ln in lines:
         p = ln.split()
         if not p:
@@ -67,6 +67,8 @@ def read_state():
             st["coins"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
             st["aliens"].append(tuple(map(int, p[1:3])))
+        elif p[0] == "D" and len(p) >= 6:
+            st["dialogs"].append(tuple(map(int, p[1:6])))
         elif p[0] == "R" and len(p) > 1:
             st["revealed"] = [int(p[1][i:i + 2], 16) for i in range(0, 24, 2)]
     return st if "paused" in st else None
@@ -87,6 +89,13 @@ def main():
             print("level complete")
             return
         now = time.time()
+        if st["dialogs"]:
+            # A board dialog (DANGER!, ...): click its button, centred along
+            # the bottom (framework/dialog.md: inset 36, button 33 high).
+            _, dx, dy, dw, dh = st["dialogs"][0]
+            click(win, dx + dw // 2, dy + dh - 36 - 16)
+            time.sleep(0.4)
+            continue
         if st["paused"]:
             click(win, *RESUME)
         elif st["aliens"]:

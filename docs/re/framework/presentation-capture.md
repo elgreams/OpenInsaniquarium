@@ -1,6 +1,6 @@
 # Presentation state and events (sound, music, dialogs, screens)
 
-Status: sounds `confirmed` (every replay test compares them against the captures' sample tables); music, dialog and screen fields `draft` (static; untested live). Read-only anchors that let a capture record what the player *hears* and *which screen and dialog is up*, so the harness can compare them tick by tick with what our app does. See `crates/harness/README.md` ("Presentation").
+Status: `confirmed`. Sounds: every replay test compares them against the captures' sample tables. Music, hint dialogs and screens: checked live (`tank1-2_pres_01`: title → menu → help → 1-2 → two waves → hatch screen) and compared by `crates/harness/tests/presentation.rs`. Read-only anchors that let a capture record what the player *hears* and *which screen and dialog is up*, so the harness can compare them tick by tick with what our app does. See `crates/harness/README.md` ("Presentation").
 
 ## Sound effects
 
@@ -35,7 +35,7 @@ Not recorded: the module's playback position (BASS-internal). Looping and sectio
 
 ## Dialogs
 
-`SexyAppBase` keeps open dialogs in a `std::map<int, Dialog*>` at `app+0x31c` (header pointer at `+0x320`; nodes: key `+0xc`, dialog `+0x10`, isnil `+0x15`; `0x0048a630`). The set of keys is the open-dialog ids, e.g. `0x0e` hint, `0x10` last fish, `0x11` game over (`framework/dialog.md`).
+`SexyAppBase` keeps open dialogs in a `std::map<int, Dialog*>` at `app+0x324` (header pointer at `+0x328`; `0x0047aa10`; nodes: key `+0xc`, dialog `+0x10`, isnil `+0x15`; `0x0048a630`). The set of keys is the open-dialog ids, e.g. `0x0e` hint, `0x10` last fish, `0x11` game over (`framework/dialog.md`).
 
 ## Screens
 
