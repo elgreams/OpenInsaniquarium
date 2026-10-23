@@ -261,7 +261,9 @@ While `+0xb8` (aliens) is non-empty, and the first alien isn't kind 4 (or a spec
    - **draw 1**: `rand() & 1` → play `0x144`, or `0x144` + `0x145`;
    - **draw 2**: `rand(10) == 0` → also play `0x132`.
 
-A click with y ≤ 40 does nothing. Clicking a **coin** that lies inside an alien's 160×160 widget rect re-dispatches the click to the board (`0x00539d40`, called from the coin's mouse-down), so it also shoots. TODO: whether the coin is collected as well.
+A click with y ≤ 40 does nothing.
+
+**Clicking a coin while aliens are present** (`Coin` mouse-down @ `0x004e5450`): when the board has aliens (`0x004da780`) or a special widget (`0x004e3ea0`), the coin first calls `0x00539d40(x, y)`. That checks whether the click lies inside any **alien** widget (`+0xb8`, the 160×160 rect), any widget in `+0xdc` (missiles), or any alien shadow (`+0xf4`'s owner at `+0x158`). If one contains it, the click is re-dispatched to the board's mouse-down above (a shot, with its sound draws). Then, **either way, the coin is collected** (`0x004e51f0`). `traced` (`tank1-3_full_01` tick 7991: the coin collects and the click is also a shot).
 
 `traced` for clicks inferred from captures (shots on the alien, coins under it are `static`).
 

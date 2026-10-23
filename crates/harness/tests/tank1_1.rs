@@ -586,36 +586,72 @@ fn hatch_screen_after_1_1_matches() {
 }
 
 /// Tank 1-3 from its first tick (`tank1-3_full_01`): Stinky and Niko, kind-2
-/// aliens, a carnivore, food upgrades. Ignored until 1-3 is implemented (it
-/// diverges at Niko on the second tick); run with `--ignored` to see the
-/// first divergence.
+/// aliens, a carnivore, food upgrades. Ignored until 1-3 is implemented;
+/// run with `--ignored` to see the first divergence. Niko, pearls and the
+/// first two alien waves already match.
 #[test]
-#[ignore = "tank 1-3 not implemented yet (Niko, carnivores)"]
+#[ignore = "tank 1-3 not finished: diverges at the carnivore purchase (tick 9059)"]
 fn tank_1_3_from_start() {
-    use harness::replay::window;
+    use harness::replay::{
+        debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
+    };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-3_full_01.trace.jsonl");
     let Ok(f) = File::open(&path) else { return };
     let full = Trace::read(BufReader::new(f)).unwrap();
     let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
-    // The capture starts on the level's first tick: rebuild from it.
-    let last = full
+    // The capture starts on the level's first tick; run to the last board
+    // tick. Keyed on the board clock, like the full 1-2 replay.
+    let from = full.snapshots[0].tick;
+    let to = full
         .snapshots
         .iter()
         .take_while(|s| board_of(s))
         .last()
         .unwrap()
         .tick;
-    let t = window(&full, full.snapshots[0].tick, last);
+    let raw = window(&full, from, to);
+    let mut t = harness::replay::by_board_clock(&raw);
+    for stream in ["app", "global"] {
+        t.header
+            .rng
+            .insert(stream.into(), rebase_rng(&full, stream, from).unwrap());
+    }
+    let mut inferred = inferred_clicks(&t);
+    inferred.dirty.extend(harness::replay::after_gaps(&t));
+    let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();
-    board.shop = insaniquarium_sim::shop::Shop::adventure(1, 3);
-    let inferred = inferred_clicks(&t);
-    let expected = inferred.clean(&decode_capture(&t));
-    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    board.shop = {
+        let mut sh = insaniquarium_sim::shop::Shop::adventure(1, 3);
+        sh.revealed = board.shop.revealed;
+        sh
+    };
+    let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
+    let resync: std::collections::BTreeMap<u32, _> = debris_ticks(&t)
+        .into_iter()
+        .filter_map(|ct| {
+            Some((
+                ct,
+                deviation_resyncs(&full, &[tick_of(ct)?])
+                    .into_values()
+                    .next()?,
+            ))
+        })
+        .collect();
+    let mut actual = harness::replay::replay_resync_dirty(
+        board,
+        &expected,
+        &inferred.inputs,
+        &resync,
+        &inferred.dirty,
+    )
+    .unwrap();
+    harness::replay::mask_rng_sounds(&mut actual, &expected);
     eprintln!(
-        "1-3 from start: ticks {}..={last}, {} inputs",
-        t.snapshots[0].tick,
-        inferred.inputs.values().map(Vec::len).sum::<usize>()
+        "1-3 from start: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
+        inferred.inputs.values().map(Vec::len).sum::<usize>(),
+        inferred.dirty.len(),
+        resync.len()
     );
     if let Some(d) = diff(&expected, &actual) {
         panic!("{d}");

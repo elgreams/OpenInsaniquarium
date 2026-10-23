@@ -163,6 +163,7 @@ pub fn pet_from_raw(b: &[u8]) -> Pet {
         countdown_1ac: rd_i32(b, 0x1ac),
         slow: b[0x1b0] != 0,
         shell: rd_i32(b, 0x1b4),
+        pearl_taken: b[0x1c0] != 0,
         unk_1b8: rd_i32(b, 0x1b8),
         unk_1bc: rd_i32(b, 0x1bc),
         widget_x: rd_i32(b, 0x30),
@@ -296,6 +297,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .map(|b| food_from_raw(b))
         .collect();
     board.coins = raw_list(first, "coin")
+        .iter()
+        .map(|b| coin_from_raw(b))
+        .collect();
+    board.pearls = raw_list(first, "coin_c")
         .iter()
         .map(|b| coin_from_raw(b))
         .collect();
@@ -468,6 +473,7 @@ fn pet_json(p: &Pet) -> Value {
         "id": p.id, "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy, "facing": p.facing,
         "tvx": p.target_vx, "mode": p.mode,
         "timers": [p.counter, p.reroll_timer, p.counter_1a8, p.countdown_1ac, p.shell],
+        "pearl_taken": p.pearl_taken,
         "anim": [p.turn, p.anim, p.cel], "widget": [p.widget_x, p.widget_y],
     })
 }
@@ -553,6 +559,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
         Value::Array(board.coins.iter().map(coin_json).collect()),
     );
     state.insert(
+        "pearls".into(),
+        Value::Array(board.pearls.iter().map(coin_json).collect()),
+    );
+    state.insert(
         "pets".into(),
         Value::Array(board.pets.iter().map(pet_json).collect()),
     );
@@ -629,6 +639,13 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| coin_json(&coin_from_raw(b)))
                 .collect();
             s.state.insert("coins".into(), Value::Array(coins));
+            if raw_present(&s) {
+                let pearls = raw_list(&s, "coin_c")
+                    .iter()
+                    .map(|b| coin_json(&coin_from_raw(b)))
+                    .collect();
+                s.state.insert("pearls".into(), Value::Array(pearls));
+            }
             let pets = raw_list(&s, "pet_other")
                 .iter()
                 .map(|b| pet_json(&pet_from_raw(b)))
@@ -1030,6 +1047,8 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
     let mut prev_prev_snap: Option<&Snapshot> = None;
     let mut prev_food = 0;
     let mut prev_coins: Vec<Coin> = Vec::new();
+    let mut prev_pearls: Vec<Coin> = Vec::new();
+    let mut coins_collected_at: Vec<u32> = Vec::new();
     for s in &t.snapshots {
         let foods: Vec<Food> = raw_list(s, "food")
             .iter()
@@ -1071,10 +1090,30 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                     x: c.from_x + 36,
                     y: c.from_y + 36,
                 };
+                coins_collected_at.push(if mid { s.tick + 1 } else { s.tick });
                 push(s.tick, mid, click, &mut out);
             }
         }
         prev_coins = coins;
+        // Pearls (`coin_c`): same inference as coins.
+        let pearls: Vec<Coin> = raw_list(s, "coin_c")
+            .iter()
+            .map(|b| coin_from_raw(b))
+            .collect();
+        for c in pearls.iter().filter(|c| c.collected) {
+            let was_free = prev_pearls
+                .iter()
+                .any(|p| !p.collected && p.kind == c.kind && p.age + 1 == c.age);
+            if was_free {
+                let mid = c.x as i32 == c.from_x && c.y as i32 == c.from_y;
+                let click = Input::Click {
+                    x: c.from_x + 36,
+                    y: c.from_y + 36,
+                };
+                push(s.tick, mid, click, &mut out);
+            }
+        }
+        prev_pearls = pearls;
         // A guppy appearing at the surface (y = 30 before its first move)
         // was bought; money drops by the price on the same snapshot.
         let guppies = s
@@ -1127,6 +1166,23 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                     x: f.widget_x + 40,
                     y: f.widget_y + 40,
                 };
+                // A coin clicked inside an alien collects *and* shoots, so
+                // one click shows as both a collected coin (inferred above)
+                // and a flash. The coin's click point is its centre, the
+                // flash's is the real one: replace the coin's.
+                let at = if f.age == 0 { s.tick + 1 } else { s.tick };
+                let coin_click = out.inputs.get(&at).and_then(|v| {
+                    v.iter().position(|i| {
+                        matches!(*i, Input::Click { x, y }
+                            if (x - (f.widget_x + 40)).abs() <= 36 && (y - (f.widget_y + 40)).abs() <= 36)
+                    })
+                });
+                if let Some(k) = coin_click
+                    && coins_collected_at.contains(&at)
+                {
+                    out.inputs.get_mut(&at).unwrap()[k] = click;
+                    continue;
+                }
                 push(s.tick, f.age == 0, click, &mut out);
             }
         }

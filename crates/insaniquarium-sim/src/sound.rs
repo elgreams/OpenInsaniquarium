@@ -33,6 +33,9 @@ pub enum Sound {
     Diamond,
     Hatch,
     Bubbles,
+    NikoOpen,
+    NikoClose,
+    Pearl,
 }
 
 impl Sound {
@@ -68,6 +71,9 @@ impl Sound {
             Sound::Splash3 => 0x13f,
             Sound::Zap => 0x144,
             Sound::Zzam => 0x145,
+            Sound::NikoOpen => 0x129,
+            Sound::NikoClose => 0x12a,
+            Sound::Pearl => 0x12b,
         }
     }
 
@@ -116,6 +122,9 @@ impl Sound {
             Sound::Diamond => "SOUND_DIAMOND",
             Sound::Hatch => "SOUND_HATCH",
             Sound::Bubbles => "SOUND_BUBBLES",
+            Sound::NikoOpen => "SOUND_NIKOOPEN",
+            Sound::NikoClose => "SOUND_NIKOCLOSE",
+            Sound::Pearl => "SOUND_PEARL",
         }
     }
 

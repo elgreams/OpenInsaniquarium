@@ -11,7 +11,12 @@ pub mod kind {
     pub const GOLD: i32 = 2;
     pub const STAR: i32 = 3;
     pub const DIAMOND: i32 = 4;
+    /// Niko's pearl (pet-niko.md#the-pearl).
+    pub const PEARL: i32 = 15;
 }
+
+/// A resting pearl disappears after this many ticks (`0xd9`; `static`).
+const PEARL_LIFE: i32 = 217;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Coin {
@@ -80,6 +85,13 @@ impl Coin {
         }
     }
 
+    /// Niko's pearl (`AddCoin(x, y, 15, owner, vy 1.0)`).
+    pub fn new_pearl(x: i32, y: i32) -> Self {
+        let mut c = Coin::new(x, y, kind::PEARL);
+        c.vy = 1.0;
+        c
+    }
+
     /// Value in money when banked (`0x004d53a0`, normal game).
     pub fn value(&self) -> i32 {
         match self.kind {
@@ -134,6 +146,15 @@ impl Coin {
                     CoinStep::Keep
                 };
             }
+        }
+        if self.kind == kind::PEARL && !self.collected {
+            // A pearl only waits (`+0x48`, our floor time), then vanishes.
+            self.floor_time += 1;
+            return if self.floor_time >= PEARL_LIFE {
+                CoinStep::Remove
+            } else {
+                CoinStep::Keep
+            };
         }
         if self.collected {
             // Glide toward the money counter, 1/7 of the way per tick.

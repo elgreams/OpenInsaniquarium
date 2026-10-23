@@ -10,7 +10,7 @@ use crate::coin::{Coin, CoinStep};
 use crate::fish::{DeadFish, Fish, FishEnv, World};
 use crate::food::{Food, FoodStep};
 use crate::message::{self, HINT_BATTLE_TIP, HINT_DANGER, HINT_NEW_BREED, HINTS, Message};
-use crate::pet::{Pet, PetOut, STINKY};
+use crate::pet::{NIKO, Pet, PetOut, STINKY};
 use crate::shop::{EGG_DONE, Shop, Slot};
 use crate::sound::{Music, Played, Sound};
 
@@ -115,6 +115,9 @@ pub struct Board {
     pub foods: Vec<Food>,
     /// `board+0xa8`: coins in insertion order.
     pub coins: Vec<Coin>,
+    /// `board+0xec`: pearls (coin kind 15). Last in z-order, so in front of
+    /// everything and updated after the other coins (pet-niko.md#the-pearl).
+    pub pearls: Vec<Coin>,
     /// `board+0xb0`: `OtherTypePet` pets (Stinky) in insertion order.
     pub pets: Vec<Pet>,
     /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
@@ -192,6 +195,7 @@ impl Board {
             guppies: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
+            pearls: Vec::new(),
             pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
@@ -322,6 +326,10 @@ impl Board {
             let mut p = Pet::stinky(a, _b, &mut self.rng);
             p.shadow_y = self.rng.next_range(5) as i32 + 410;
             self.pets.push(p);
+        } else if id == NIKO {
+            let mut p = Pet::niko(a, _b, &mut self.rng);
+            p.shadow_y = self.rng.next_range(5) as i32 + 410;
+            self.pets.push(p);
         } else {
             self.rng.next_range(5);
         }
@@ -337,23 +345,38 @@ impl Board {
 
     /// Board mouse-down, normal food-drop path. Spec: food.md#dropping-food.
     pub fn click(&mut self, x: i32, y: i32) -> ClickResult {
-        // Food lockout after a kill only covers clicks within 50 px of the
-        // last shot; a click elsewhere ends it (`0x00543972`).
-        if self.food_lockout > 0 {
-            let (dx, dy) = (self.last_shot.0 - x, self.last_shot.1 - y);
-            if dx * dx + dy * dy > 2500 {
-                self.food_lockout = 0;
-            }
-        }
         // Shop buttons are top-level widgets: they take the click first and
         // purchase on mouse-down (shop-bar.md#input-path).
         if let Some(slot) = self.shop.hit(x, y) {
             return self.purchase(slot);
         }
-        // With aliens present, clicks are shots (`alien-sylvester.md#41`).
-        // TODO(spec): coins inside an alien's rect re-dispatch here too.
+        // With aliens present, a click on a coin collects it, and is also a
+        // shot if it lands inside an alien (`alien-sylvester.md#41`).
         if !self.aliens.is_empty() {
+            if let Some(i) = self.coins.iter().rposition(|c| c.hit(x, y)) {
+                if self.aliens.iter().any(|a| a.contains(x, y)) {
+                    self.shoot(x, y);
+                }
+                let c = &mut self.coins[i];
+                if !c.collected {
+                    c.collect();
+                    let kind = c.kind;
+                    self.play_collect_sound(kind);
+                }
+                return ClickResult::CoinCollected;
+            }
             return self.shoot(x, y);
+        }
+        // Pearls are the front-most widgets (pet-niko.md#the-pearl).
+        if let Some(i) = self.pearls.iter().rposition(|c| c.hit(x, y)) {
+            if !self.pearls[i].collected {
+                self.pearls[i].collect();
+                for p in self.pets.iter_mut().filter(|p| p.id == NIKO) {
+                    p.pearl_taken = true;
+                }
+                self.play(Sound::Pearl.sample_id(), Sound::Pearl);
+            }
+            return ClickResult::CoinCollected;
         }
         // Widgets on top get the click first: coins are in front of fish
         // and food (z-order), last-added on top.
@@ -366,6 +389,16 @@ impl Board {
                 self.play_collect_sound(kind);
             }
             return ClickResult::CoinCollected;
+        }
+        // Food lockout after a kill only covers clicks within 50 px of the
+        // last shot; a click elsewhere ends it (`0x00543972`). This is in the
+        // board's own handler: clicks a coin or pearl takes don't reach it.
+        // TODO(spec): whether a guppy's own handler checks it.
+        if self.food_lockout > 0 {
+            let (dx, dy) = (self.last_shot.0 - x, self.last_shot.1 - y);
+            if dx * dx + dy * dy > 2500 {
+                self.food_lockout = 0;
+            }
         }
         // Guppies are next in z-order (the last one on top): a click on one
         // drops food through its own handler (food.md#clicking-on-a-guppy).
@@ -960,6 +993,25 @@ impl Board {
         }
     }
 
+    /// One pet's update and what it asks the board to do.
+    fn update_pet(&mut self, i: usize) {
+        let mut out = PetOut::default();
+        self.pets[i].update(self.has_aliens, &self.coins, &mut self.rng, &mut out);
+        if let Some(ci) = out.picked {
+            // `0x004ddc40`: bank the coin, remove it, play its sound.
+            let c = self.coins.remove(ci);
+            self.money = (self.money + c.value() * c.multiplier).min(9_999_999);
+            self.play_collect_sound(c.kind);
+        }
+        if let Some(sound) = out.sound {
+            self.play(sound.sample_id(), sound);
+        }
+        if let Some((x, y)) = out.pearl {
+            // The pearl list updates later this tick (Niko is first).
+            self.pearls.push(Coin::new_pearl(x, y));
+        }
+    }
+
     /// One logic tick (28 ms).
     pub fn update(&mut self) {
         // `tick` mirrors the app's update counter, which runs while the
@@ -1018,6 +1070,14 @@ impl Board {
         }
         // Objects update in RebuildZOrder order: dead aliens, food, guppies,
         // aliens, pets, shots, coins.
+        // Niko is put behind the board overlay, not brought to the front
+        // with the other pets (`RebuildZOrder` @ `0x0053b604`): he is the
+        // back-most object and updates first (pet-niko.md#update-order).
+        for i in 0..self.pets.len() {
+            if self.pets[i].id == NIKO {
+                self.update_pet(i);
+            }
+        }
         // Dead fish come right after shadows (cosmetic, no RNG).
         self.dead_fish.retain_mut(DeadFish::update);
         self.update_dead_aliens();
@@ -1091,19 +1151,22 @@ impl Board {
         }
         // Pets (`+0xb0`) update after aliens and before coins (z-order).
         for i in 0..self.pets.len() {
-            let mut out = PetOut::default();
-            self.pets[i].update(self.has_aliens, &self.coins, &mut self.rng, &mut out);
-            if let Some(ci) = out.picked {
-                // `0x004ddc40`: bank the coin, remove it, play its sound.
-                let c = self.coins.remove(ci);
-                self.money = (self.money + c.value() * c.multiplier).min(9_999_999);
-                self.play_collect_sound(c.kind);
+            if self.pets[i].id != NIKO {
+                self.update_pet(i);
             }
         }
         self.shots.retain_mut(Shot::update);
         let mut banked = 0;
         let long_rest = self.tutorial;
         self.coins.retain_mut(|c| match c.update(long_rest) {
+            CoinStep::Keep => true,
+            CoinStep::Remove => false,
+            CoinStep::Bank(v) => {
+                banked += v;
+                false
+            }
+        });
+        self.pearls.retain_mut(|c| match c.update(long_rest) {
             CoinStep::Keep => true,
             CoinStep::Remove => false,
             CoinStep::Bank(v) => {

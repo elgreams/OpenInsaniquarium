@@ -1,5 +1,5 @@
-//! Pets. Spec: `docs/re/objects/pet-stinky.md` (pet 0, Stinky the snail).
-//! Only Stinky is modelled; other pets are TODO(spec).
+//! Pets. Specs: `docs/re/objects/pet-stinky.md` (pet 0, Stinky the snail)
+//! and `pet-niko.md` (pet 1, Niko the oyster). Other pets are TODO(spec).
 
 use sexy_core::rand::MtRand;
 
@@ -7,6 +7,13 @@ use crate::coin::Coin;
 
 /// Pet ids (profile order). `OtherTypePet` covers 0, 1, 5, 7 and 14.
 pub const STINKY: i32 = 0;
+pub const NIKO: i32 = 1;
+
+/// Niko's pearl timer milestones (`0x004e2a20`, pet-niko.md#update).
+const NIKO_OPEN: i32 = 1224;
+const NIKO_PEARL: i32 = 1233;
+const NIKO_CLOSE: i32 = 1440;
+const NIKO_RESET: i32 = 1450;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pet {
@@ -39,8 +46,12 @@ pub struct Pet {
     pub countdown_1ac: i32,
     /// `+0x1b0`
     pub slow: bool,
-    /// `+0x1b4`: shell counter (hiding while > 0).
+    /// `+0x1b4`: Stinky's shell counter (hiding while > 0); Niko's pearl
+    /// timer.
     pub shell: i32,
+    /// `+0x1c0`: Niko's pearl was taken (set when it's collected, cleared
+    /// when a new one appears).
+    pub pearl_taken: bool,
     /// `+0x1b8`, `+0x1bc`
     pub unk_1b8: i32,
     pub unk_1bc: i32,
@@ -56,6 +67,11 @@ pub struct Pet {
 pub struct PetOut {
     /// Index into the coin list of a coin picked up this tick.
     pub picked: Option<usize>,
+    /// Niko made a pearl at this widget position (`AddCoin(wx + 1, wy − 2,
+    /// kind 15)`).
+    pub pearl: Option<(i32, i32)>,
+    /// Niko's open / close sample (`0x129` / `0x12a`).
+    pub sound: Option<crate::sound::Sound>,
 }
 
 impl Pet {
@@ -81,6 +97,7 @@ impl Pet {
             countdown_1ac: 0,
             slow: false,
             shell: 0,
+            pearl_taken: false,
             unk_1b8: 0,
             unk_1bc: 0,
             widget_x: x,
@@ -92,10 +109,25 @@ impl Pet {
         p
     }
 
+    /// `OtherTypePet::OtherTypePet` for Niko (pet-niko.md#construction):
+    /// like Stinky, but y isn't forced and the divisor is the default 2.0.
+    pub fn niko(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut p = Pet::stinky(x, y, rng);
+        p.id = NIKO;
+        p.y = f64::from(y);
+        p.widget_y = y;
+        p.divisor = 2.0;
+        p
+    }
+
     /// `OtherTypePet::Update` (`0x004f2e80`), pet 0, normal game.
     /// A collected coin is reported in `out`; the board banks it and plays
     /// its sound (which may draw RNG).
     pub fn update(&mut self, has_aliens: bool, coins: &[Coin], rng: &mut MtRand, out: &mut PetOut) {
+        if self.id == NIKO {
+            self.update_niko(rng, out);
+            return;
+        }
         // Coin chase (`0x004efe80`): for pet 0, runs whenever the coin list is
         // non-empty, there are no aliens and he isn't slowed, and then
         // reports "chasing" regardless of whether any coin was eligible
@@ -185,6 +217,59 @@ impl Pet {
         };
         self.x += self.vx / div;
         self.y += self.vy / div;
+        self.widget_x = self.x as i32;
+        self.widget_y = self.y as i32;
+    }
+
+    /// `OtherTypePet::Update` for pet 1 (pet-niko.md#update): no steering,
+    /// the 21-tick mode re-roll (RNG), the pearl timer, clamps and the
+    /// simple animation counter.
+    fn update_niko(&mut self, rng: &mut MtRand, out: &mut PetOut) {
+        self.counter += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 || (self.x <= 10.0 && self.target_vx <= 0.0) {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(3) as i32;
+            }
+        }
+        if self.countdown_1ac != 0 {
+            self.countdown_1ac -= 1;
+        }
+        if self.counter_1a8 < 20 {
+            self.counter_1a8 += 1;
+        }
+        // Pearl timer (`0x004e2a20`).
+        self.shell += 1;
+        match self.shell {
+            NIKO_OPEN => out.sound = Some(crate::sound::Sound::NikoOpen),
+            NIKO_PEARL => {
+                out.pearl = Some((self.widget_x + 1, self.widget_y - 2));
+                self.pearl_taken = false;
+                // TODO(spec): two global-stream bubbles (not modelled).
+            }
+            NIKO_CLOSE => out.sound = Some(crate::sound::Sound::NikoClose),
+            NIKO_RESET => self.shell = rng.next_range(50) as i32,
+            _ => {}
+        }
+        #[allow(clippy::manual_clamp)]
+        if self.x > 540.0 {
+            self.x = 540.0;
+        }
+        if self.x < 10.0 {
+            self.x = 10.0;
+        }
+        if self.y > 350.0 {
+            self.y = 350.0;
+            self.vy = 0.0;
+        }
+        if self.y < 95.0 {
+            self.y = 95.0;
+        }
+        // `0x004eb7c0`, ids other than 0/5/7/14: a bare counter.
+        self.anim = (self.anim + 1) % 19;
+        self.x += self.vx / self.divisor;
+        self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
     }

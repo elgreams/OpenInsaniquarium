@@ -286,6 +286,13 @@ impl Alien {
         }
     }
 
+    /// The widget rect test (`Widget` slot 68 @ `0x0046e800`): the 160×160
+    /// widget contains the point (integer, half-open).
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        (self.widget_x..self.widget_x + 160).contains(&x)
+            && (self.widget_y..self.widget_y + 160).contains(&y)
+    }
+
     /// `Alien::Hit(cx, cy)` (`0x004fa6f0`): returns `Some(killed)` if hit.
     pub fn hit(&mut self, cx: i32, cy: i32, laser: i32) -> Option<bool> {
         let (cx, cy) = (f64::from(cx), f64::from(cy));

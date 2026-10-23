@@ -97,7 +97,7 @@ board+0xfc (BoardOverlay)   ← TODO: verify it's really at the back
 +0xf8 SylvesterFish/BallFish/BiFish   (special handling when +0x1a0 == 4, and board+0x110)
 +0xb8 Alien         (pass 1: only objects with +0xfc == 0 or +0x100 != 0)
 +0xf4 Bilaterus     (pass 1)
-+0xb0 OtherTypePet  (special case for petId +0x1c4 == 1 with flag +0x1c8)
++0xb0 OtherTypePet  (Niko, id 1 without the drop-in flag, goes behind the overlay instead: back-most; pet-niko.md#update-order)
 +0xb4 FishTypePet
 +0xdc Missle
 +0xe0 Missle(alt)
