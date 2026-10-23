@@ -116,3 +116,20 @@ Checked against the trace: hunger −14 + 700 = 686, and 297 + 700 → clamped t
 
 - The cooldown clock `board+0x28` for sample throttling: assumed to be the board's update counter (`guess`).
 - Death (slot 88 @ `0x004d5f90`) spawns a `DeadFish`. Not modelled yet.
+
+## Clicking on a guppy (`Fish` mouse-down, slot 55 @ `0x004e4c10`)
+
+Guppies are widgets above the board, so a click that lands on a guppy's 80×80 rect goes to the guppy, not to the board's handler above. `confirmed` in `tank1-1_pres_01`, tick 4893: a click at (219, 113) on a guppy at widget (208, 94) produced a pellet with delay 25.
+
+With the click local to the widget, `lx = x − wx` and `ly = y − wy`:
+
+1. If any alien (`+0xb8`, `+0xf4`) or missile (`+0xdc`) exists, or the fish's `+0x229` is 0, nothing happens. Every guppy sets `+0x229 = 1` in its ctor, so for guppies this only means "no aliens or missiles".
+2. **Tank bounds** use the fish's float position: `30 < lx + fish.x < 587` and `60 < ly + fish.y < 400` (strict). Outside them, nothing happens.
+3. If a potion pellet is under the cursor (`0x00539f30`), it is picked up instead. Not in tank 1.
+4. `TrySpend(food price, buzz)`. If that fails, nothing more happens.
+5. **`AddFood`** at `(trunc(fish.x + lx − 10), trunc(fish.y + ly − 10))`, motion 0, flag 0, level −1, with the **edible delay**:
+   - `(70 − ly) / 2` (C division) if `10 ≤ lx ≤ 70` and `10 ≤ ly ≤ 70` (a click on the fish's body, so the pellet starts out of reach of its own mouth);
+   - 0 otherwise.
+6. Set the auto-feed state: `+0x4ec = 1` and `+0x3c0` = now, the same as the board path.
+
+The board path (`0x00543920`) handles clicks that reach the board: where no guppy, coin or other widget is under the cursor.

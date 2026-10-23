@@ -254,6 +254,7 @@ Tank-1 callers. "1-1" means the tutorial predicate `0x00537b80` (tank 1, level 1
 | `Board::Update` (`0x0054913b`), Adventure, `+0x444 == 150` | 1-1 | 1, no | Here are your first fish! Take good care of them! |
 | 〃 | 1-2 (`0x00537bb0(1,2)`) | 0x14, no | On this level you will meet your 1st alien opponent! |
 | `AddFood` (`0x0054337c`), food limit reached | 1-1, idle | 6, no | You can only drop 1 food pellet at a time for now |
+| 〃 | 1-2 (`0x00537bb0(1,2)`), idle, slot 3 revealed (`+0x3a7`) | 0xd, no | Upgrade Food Quantity to drop more food at once! |
 | `Fish::UpdateCoin` (`0x004f1502`), after each coin-drop attempt | 1-1 | chain 5 → 0x19 → 0x1a, yes | Click on coins for extra money! |
 | `Fish::UpdateHunger`, hunger == −1, announcing fish | – | chain 8 → 0x17 → 0x18, yes | Fish are hungry! Click to drop food! |
 | 〃 hunger == −200 | – | 0x15, yes | Fish are REALLY hungry! Click to feed! (+ sound 0x106); id = byte 0x15 |
@@ -269,3 +270,5 @@ Tank-1 callers. "1-1" means the tutorial predicate `0x00537b80` (tank 1, level 1
 **Chains:** the coin and hunger messages show up to three times per level.
 - Coin: if byte 0x19 is set, show with id 0x1a; else if byte 5 is set, show with id 0x19; else show with id 5.
 - Hunger: if byte 0x17 is set, show 0x18; if byte 8 is set, show 0x17; then show 8. All three calls are made and only unused ids take effect, so the 1st, 2nd and 3rd times use 8, 0x17 and 0x18. `static`; the 1-2 rows are `confirmed` by `traces/frames/tank12_start_01` (both 1-2 texts on screen; the live widget showed id 0x14 for the alien line).
+
+`confirmed` for 1-1 by `traces/original/tank1-1_pres_01.trace.jsonl` (the whole level, with `board.msg`). The replay test `tank_1_1_from_start_with_messages` matches text, timer and blink on every tick: welcome, first fish (tick 150), grown, the coin message three times (ids 5, 0x19, 0x1a) and the egg-piece hint. A new message's timer shows 184 on its first tick: the widget updates after the board in the same tick.

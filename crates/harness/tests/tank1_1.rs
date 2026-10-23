@@ -282,6 +282,23 @@ fn tank_1_2_until_alien_matches() {
         inferred.dirty.len()
     );
     if let Some(d) = diff(&expected, &actual) {
+        if std::env::var_os("DBG").is_some() {
+            eprintln!(
+                "inputs near: {:?}",
+                inferred
+                    .inputs
+                    .range(d.tick - 5..=d.tick + 1)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "dirty near: {:?}",
+                inferred
+                    .dirty
+                    .iter()
+                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
+                    .collect::<Vec<_>>()
+            );
+        }
         panic!("{d}");
     }
 }
@@ -361,6 +378,23 @@ fn sylvester_wave_matches() {
         inferred.dirty.len()
     );
     if let Some(d) = diff(&expected, &actual) {
+        if std::env::var_os("DBG").is_some() {
+            eprintln!(
+                "inputs near: {:?}",
+                inferred
+                    .inputs
+                    .range(d.tick - 5..=d.tick + 1)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "dirty near: {:?}",
+                inferred
+                    .dirty
+                    .iter()
+                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
+                    .collect::<Vec<_>>()
+            );
+        }
         panic!("{d}");
     }
 }
@@ -442,6 +476,93 @@ fn full_tank_1_2_replays() {
         resync.len()
     );
     if let Some(d) = diff(&expected, &actual) {
+        if std::env::var_os("DBG").is_some() {
+            eprintln!(
+                "inputs near: {:?}",
+                inferred
+                    .inputs
+                    .range(d.tick - 5..=d.tick + 1)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "dirty near: {:?}",
+                inferred
+                    .dirty
+                    .iter()
+                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
+                    .collect::<Vec<_>>()
+            );
+        }
+        panic!("{d}");
+    }
+}
+
+/// Tank 1-1 from its first tick to the hatch screen with the message line
+/// recorded (`tank1-1_pres_01`): our `start_level` builds the board from
+/// the pre-level RNG state, and the whole level replays with the inferred
+/// inputs. Every tutorial message (welcome, first fish, grown, coin ×3,
+/// egg pieces) must show with the same text and timer on the same tick.
+#[test]
+fn tank_1_1_from_start_with_messages() {
+    use harness::replay::{rebase_rng, window};
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-1_pres_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
+    let i = full.snapshots.iter().position(board_of).unwrap();
+    let before = full.snapshots[i - 1].tick;
+    // Up to the last board snapshot (the next click opens the hatch screen).
+    let last = full.snapshots[i..]
+        .iter()
+        .take_while(|s| board_of(s))
+        .last()
+        .unwrap()
+        .tick;
+    let rng = |stream: &str| match rebase_rng(&full, stream, before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    let mut board = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 1, 1, &[]);
+    board.tick = before;
+    let t = window(&full, full.snapshots[i].tick, last);
+    let inferred = inferred_clicks(&t);
+    let expected = inferred.clean(&decode_capture(&t));
+    let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
+    let msgs = expected
+        .snapshots
+        .windows(2)
+        .filter(|w| w[0].state.get("message") != w[1].state.get("message"))
+        .filter(|w| w[1].state["message"]["t"].as_i64() == Some(184))
+        .count();
+    eprintln!(
+        "1-1 from start: ticks {}..={last}, {} inputs, {} masked, {msgs} messages shown",
+        t.snapshots[0].tick,
+        inferred.inputs.values().map(Vec::len).sum::<usize>(),
+        inferred.dirty.len()
+    );
+    // (The welcome line is already up in the first snapshot.)
+    assert!(msgs >= 6, "the capture shows the tutorial messages");
+    if let Some(d) = diff(&expected, &actual) {
+        if std::env::var_os("DBG").is_some() {
+            eprintln!(
+                "inputs near: {:?}",
+                inferred
+                    .inputs
+                    .range(d.tick - 5..=d.tick + 1)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "dirty near: {:?}",
+                inferred
+                    .dirty
+                    .iter()
+                    .filter(|t| (d.tick - 5..=d.tick + 1).contains(*t))
+                    .collect::<Vec<_>>()
+            );
+        }
         panic!("{d}");
     }
 }

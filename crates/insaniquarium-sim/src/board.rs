@@ -367,6 +367,13 @@ impl Board {
             }
             return ClickResult::CoinCollected;
         }
+        // Guppies are next in z-order (the last one on top): a click on one
+        // drops food through its own handler (food.md#clicking-on-a-guppy).
+        if let Some(i) = self.guppies.iter().rposition(|f| {
+            (0..80).contains(&(x - f.widget_x)) && (0..80).contains(&(y - f.widget_y))
+        }) {
+            return self.click_guppy(i, x, y);
+        }
         if !(31..=586).contains(&x) || !(61..=399).contains(&y) || self.food_lockout > 0 {
             return ClickResult::Ignored;
         }
@@ -376,6 +383,36 @@ impl Board {
         }
         self.money -= self.food_price;
         self.add_food(x - 10, y - 10)
+    }
+
+    /// `Fish` mouse-down (slot 55 @ `0x004e4c10`, food.md#clicking-on-a-
+    /// guppy): drop food where the guppy was clicked; a click on its body
+    /// makes the pellet inedible for a while.
+    fn click_guppy(&mut self, i: usize, x: i32, y: i32) -> ClickResult {
+        let f = &self.guppies[i];
+        let (lx, ly) = (x - f.widget_x, y - f.widget_y);
+        let (ax, ay) = (f64::from(lx) + f.x, f64::from(ly) + f.y);
+        if !(ax < 587.0 && ax > 30.0 && ay < 400.0 && ay > 60.0) {
+            return ClickResult::Ignored;
+        }
+        let (fx, fy) = ((ax - 10.0) as i32, (ay - 10.0) as i32);
+        let delay = if (10..=70).contains(&lx) && (10..=70).contains(&ly) {
+            (70 - ly) / 2
+        } else {
+            0
+        };
+        if self.money < self.food_price {
+            // TODO(spec): buzzer, money flash and "out of money" handling.
+            return ClickResult::TooPoor;
+        }
+        self.money -= self.food_price;
+        let r = self.add_food(fx, fy);
+        if r == ClickResult::FoodDropped
+            && let Some(food) = self.foods.last_mut()
+        {
+            food.delay = delay;
+        }
+        r
     }
 
     /// Board mouse-down with aliens present.
@@ -657,12 +694,24 @@ impl Board {
             if !self.has_aliens {
                 self.money += self.food_price;
             }
-            if self.tutorial && self.message.idle() {
-                self.show_message(
-                    "You can only drop 1 food pellet at a time for now",
-                    false,
-                    6,
-                );
+            // `AddFood` (`0x00543386`): on 1-1 the one-pellet hint; on 1-2,
+            // once food quantity is for sale, the upgrade hint (id 0xd).
+            if self.message.idle() {
+                if self.tutorial {
+                    self.show_message(
+                        "You can only drop 1 food pellet at a time for now",
+                        false,
+                        6,
+                    );
+                } else if (self.tank, self.level) == (1, 2)
+                    && self.shop.revealed[Slot::FoodQuantity as usize]
+                {
+                    self.show_message(
+                        "Upgrade Food Quantity to drop more food at once!",
+                        false,
+                        0xd,
+                    );
+                }
             }
             return ClickResult::FoodLimit;
         }
@@ -919,7 +968,6 @@ impl Board {
             return;
         }
         self.level_ticks += 1;
-        self.message.update();
         // Level-tick-150 line (`Board::Update` @ `0x0054913b`, Adventure).
         if self.level_ticks == 150 {
             match (self.tank, self.level) {
@@ -1062,6 +1110,10 @@ impl Board {
         });
         // `0x0053c1e0`: add money, capped at 9,999,999.
         self.money = (self.money + banked).min(9_999_999);
+        // The message widget updates after the board and its objects (it
+        // is later in the widget list), so a message shown this tick counts
+        // down once already (captures show 184 on the first tick).
+        self.message.update();
         // Board::Update (`0x00548e29`): no fish left → pause and raise the
         // tutorial's second-chance dialog, or game over. (Coins still on the
         // board are banked first in the original via `0x0053c2d0`; that only
