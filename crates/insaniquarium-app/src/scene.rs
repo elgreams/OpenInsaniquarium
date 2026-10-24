@@ -80,6 +80,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_TANKMASK1",
     "IMAGE_SMALLDIE",
     "IMAGE_PEARL",
+    "IMAGE_SCL_OSCAR",
 ];
 
 /// A sheet cels are cut from: the image, one cel's size and the grid
@@ -612,6 +613,16 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     0,
                     b.food_level + 1,
                     bx + 9,
+                    by + 3,
+                    11.1,
+                )),
+                // Carnivore: `IMAGE_SCL_OSCAR` (10 cels, framedelay 2),
+                // animated (shop-bar.md#button-art).
+                Slot::Carnivore => cels.push(Cel::new(
+                    "IMAGE_SCL_OSCAR",
+                    (b.level_ticks / 2) % 10,
+                    0,
+                    bx + 8,
                     by + 3,
                     11.1,
                 )),
