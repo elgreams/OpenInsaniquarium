@@ -16,7 +16,7 @@ use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::Dialog;
 use insaniquarium_sim::game::{Game, Screen};
 use insaniquarium_sim::hatch::Hatch;
-use insaniquarium_sim::pet::Pet;
+use insaniquarium_sim::pet::{NIKO, Pet};
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::anim::AnimInfo;
@@ -79,6 +79,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_TANKLIGHTING",
     "IMAGE_TANKMASK1",
     "IMAGE_SMALLDIE",
+    "IMAGE_PEARL",
 ];
 
 /// A sheet cels are cut from: the image, one cel's size and the grid
@@ -557,9 +558,12 @@ fn guppy_cel_as(f: &Fish, hungry: bool) -> (&'static str, i32, i32, bool) {
         (false, false, false) => "IMAGE_SMALLSWIM",
         (false, false, true) => "IMAGE_HUNGRYSWIM",
     };
+    // Carnivores (stage 5) are row 4 of the same sheets
+    // (carnivore.md#drawing).
     let row = match f.stage {
         3 => 2,
         4 => 3,
+        5 => 4,
         s => s.clamp(0, 2),
     };
     let mirror = match f.turn_timer {
@@ -687,7 +691,7 @@ fn shadow_cels(b: &Board, cels: &mut Vec<Cel>) {
         c.size = Some((80 + 2 * dx, 40 + 2 * dy));
         cels.push(c);
     };
-    for f in &b.guppies {
+    for f in b.guppies.iter().chain(&b.carnivores) {
         moving(f.widget_x, f.widget_y, false);
     }
     for a in &b.aliens {
@@ -695,8 +699,8 @@ fn shadow_cels(b: &Board, cels: &mut Vec<Cel>) {
             moving(a.widget_x, a.widget_y, true);
         }
     }
-    // Type 1 (Stinky): fixed floor y, unstretched.
-    for p in &b.pets {
+    // Type 1 (Stinky): fixed floor y, unstretched. Niko has none.
+    for p in b.pets.iter().filter(|p| p.id != NIKO) {
         let dark = (p.widget_y - 50) / 2;
         cels.push(
             Cel::new("IMAGE_SHADOW", 0, 0, p.widget_x, p.shadow_y, 0.5)
@@ -706,8 +710,26 @@ fn shadow_cels(b: &Board, cels: &mut Vec<Cel>) {
     }
 }
 
+/// Niko (`0x004e2bd0`, pet-niko.md#drawing): the cel follows the pearl
+/// timer; the resting pearl is part of his sprite.
+fn niko_cel(p: &Pet, z: f32) -> Cel {
+    let t = p.shell;
+    let open_row = if p.pearl_taken { 2 } else { 1 };
+    let (col, row) = match t {
+        ..1224 => ((p.anim - 9).abs(), 0),
+        1224..=1233 => ((t - 1224) % 10, 1),
+        1440..=1449 => (9 - (t - 1440) % 10, open_row),
+        _ => (9, open_row),
+    };
+    Cel::new("IMAGE_NIKO", col, row, p.widget_x, p.widget_y, z)
+}
+
 /// Stinky (pet-stinky.md#drawing).
 fn pet_cels(p: &Pet, z: f32, cels: &mut Vec<Cel>) {
+    if p.id == NIKO {
+        cels.push(niko_cel(p, z));
+        return;
+    }
     let mirror = if p.shell > 0 {
         p.facing >= 0.0
     } else if p.turn != 0 {
@@ -1101,7 +1123,8 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             1.0,
         ));
     }
-    for (i, f) in b.guppies.iter().enumerate() {
+    // Guppies, then carnivores (`+0xa4` right after `+0xa0` in z-order).
+    for (i, f) in b.guppies.iter().chain(&b.carnivores).enumerate() {
         let (sheet, col, row, mirror) = guppy_cel(f);
         let z = 2.0 + i as f32 * 0.001;
         cels.push(Cel::new(sheet, col, row, f.widget_x, f.widget_y, z).mirror(mirror));
@@ -1143,6 +1166,20 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             c.widget_y,
             3.0 + i as f32 * 0.001,
         ));
+    }
+    // Pearls (`+0xec`, front-most): a resting one is part of Niko's
+    // sprite; a collected one draws `IMAGE_PEARL` (pet-niko.md#drawing).
+    for (i, c) in b.pearls.iter().enumerate() {
+        if c.collected {
+            cels.push(Cel::new(
+                "IMAGE_PEARL",
+                0,
+                0,
+                c.widget_x,
+                c.widget_y,
+                3.5 + i as f32 * 0.001,
+            ));
+        }
     }
     cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, 10.0));
     shop_cels(b, cursor, down, &mut cels);

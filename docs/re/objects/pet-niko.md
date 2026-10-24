@@ -6,7 +6,7 @@ Confidence: `traced` for Niko's fields and RNG, and for the pearl, over the whol
 
 ## Construction
 
-`Board::AddPet(1, -1, -1, 0, 0)`: the same 2 position draws and 2 ctor draws as Stinky (`pet-stinky.md#construction`), then the shadow draw. Differences from pet 0:
+`Board::AddPet(1, -1, -1, 0, 0)`: the same 2 position draws and 2 ctor draws as Stinky (`pet-stinky.md#construction`). **No shadow, so no shadow draw**: `0x00544800` gives `OtherTypePet` id 5 a type-0 shadow and every id other than 1 a type-1 shadow, and skips id 1 (`confirmed`: `tank1-3_full_01` starts with 3 shadows for 2 guppies and Stinky; the draw count itself is `static`, since that capture begins after the level was populated). Differences from pet 0:
 
 - **y is not forced** to the floor: Niko stays at the drawn y. The draws are named `x = r % 265 + 105`, `y = r % 520 + 20`, so x lands in 105..369 and y in 20..539; y is clamped into range on the first update (below).
 - Divisor `+0x188` = **2.0** (the default).
@@ -56,4 +56,17 @@ Mouse-down (`0x004f3a70` → `0x004f3a00`): not in the drop-in state, so it forw
 
 ## Drawing
 
-`static`: TODO with a frame capture. The draw code (`OtherTypePet` slot 26 @ `0x004f37c0`) picks Niko's open/closed cels from the pearl timer.
+`OtherTypePet::Draw` (slot 26 @ `0x004f37c0`) → `0x004f3590` → Niko's sprite `0x004e2bd0`. `IMAGE_NIKO` is 10×3 cels of 80×80; the cel (col, row) comes from the pearl timer `t = +0x1b4` and the anim counter `a = +0x1a0` (0..18):
+
+| `t` | col | row | |
+|---|---|---|---|
+| < 1224 | `|a − 9|` | 0 | closed, breathing (ping-pong 9..0..9) |
+| 1224..1233 | `(t − 1224) % 10` | 1 | opening |
+| ≥ 1234, outside 1440..1449 | 9 | 2 if the pearl was taken (`+0x1c0`), else 1 | open (with / without the pearl) |
+| 1440..1449 | `9 − (t − 1440) % 10` | 2 if taken, else 1 | closing |
+
+Drawn at the widget position, never mirrored. (On backdrop 3 an extra image is drawn at (4, 67); not tank 1.)
+
+So the pearl is part of **Niko's** sprite while it rests: `Coin::Draw` (`0x004dd7a0`) draws nothing for an uncollected kind-15 coin. Once collected, the pearl coin draws `IMAGE_PEARL` (72×72) at its widget position while it glides to the counter.
+
+`static` (not frame-checked yet).

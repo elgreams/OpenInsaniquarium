@@ -331,9 +331,9 @@ impl Board {
             p.shadow_y = self.rng.next_range(5) as i32 + 410;
             self.pets.push(p);
         } else if id == NIKO {
-            let mut p = Pet::niko(a, _b, &mut self.rng);
-            p.shadow_y = self.rng.next_range(5) as i32 + 410;
-            self.pets.push(p);
+            // Niko gets no shadow (`0x00544800` skips pet id 1), so no draw:
+            // `tank1-3_full_01` starts with 3 shadows for 2 guppies + Stinky.
+            self.pets.push(Pet::niko(a, _b, &mut self.rng));
         } else {
             self.rng.next_range(5);
         }

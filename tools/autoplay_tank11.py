@@ -26,6 +26,9 @@ CARNIVORE_BTN = (BTN_X[3] + 29, 33)
 # carnivore once rich (`--guppies N`, `--carnivore`).
 MAX_GUPPIES = int(sys.argv[sys.argv.index("--guppies") + 1]) if "--guppies" in sys.argv else 1
 BUY_CARNIVORE = "--carnivore" in sys.argv
+# Feed the carnivore: once one is up, keep buying guppies (small ones are
+# its food) whenever affordable (`--feed-carnivore`).
+FEED_CARNIVORE = "--feed-carnivore" in sys.argv
 EGG_BTN = (BTN_X[6] + 29, 33)
 RESUME = (312, 258)
 # Egg price by level (shop-bar.md): 1-1 150, 1-2 500.
@@ -127,6 +130,10 @@ def main():
               and st["money"] >= 1100 and len(st["guppies"]) >= 4):
             click(win, *CARNIVORE_BTN)
             bought_carnivore = True
+        elif (FEED_CARNIVORE and st["oscars"] and st["money"] >= 300
+              and min(o[2] for o in st["oscars"]) < 700):
+            # A hungry carnivore: drop a fresh (small) guppy in for it.
+            click(win, *GUPPY_BTN)
         elif any(c[2] == 0 for c in st["coins"]):
             c = max((c for c in st["coins"] if c[2] == 0), key=lambda c: c[1])
             click(win, c[0] + 36, min(c[1] + 36, 440))
