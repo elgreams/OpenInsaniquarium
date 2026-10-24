@@ -100,6 +100,20 @@ impl Alien {
     /// `prey`: every fish the alien can eat (`alien-sylvester.md#31`):
     /// guppies, then carnivores.
     pub fn update(&mut self, guppies: &[&Fish], rng: &mut MtRand, out: &mut AlienOut) {
+        self.update_preferring(guppies, None, rng, out);
+    }
+
+    /// [`Self::update`], where `prefer` (an index into `guppies`) wins
+    /// distance ties and is tested first for the bite. The original walks
+    /// candidates in object-address order (`alien-sylvester.md#deviations`);
+    /// a replay passes the fish the capture shows it chose.
+    pub fn update_preferring(
+        &mut self,
+        guppies: &[&Fish],
+        prefer: Option<usize>,
+        rng: &mut MtRand,
+        out: &mut AlienOut,
+    ) {
         let mut lunge = 0.0;
         if self.warp != 0 {
             if self.warp <= 10 {
@@ -116,13 +130,13 @@ impl Alien {
         let target = if guppies.is_empty() {
             None
         } else {
-            self.nearest(guppies)
+            self.nearest(guppies, prefer)
         };
         match target {
             Some(t) => {
                 self.steer(guppies[t]);
                 if self.eat_delay < 1 {
-                    out.ate = self.eat_test(guppies);
+                    out.ate = self.eat_test(guppies, prefer);
                 }
             }
             None => self.wander(rng),
@@ -162,11 +176,16 @@ impl Alien {
     }
 
     /// `0x004e8b60`: nearest guppy by widget centre.
-    fn nearest(&self, guppies: &[&Fish]) -> Option<usize> {
+    fn nearest(&self, guppies: &[&Fish], prefer: Option<usize>) -> Option<usize> {
         let (cx, cy) = self.centre();
         let mut best = 100_000_000;
         let mut found = None;
-        for (i, g) in guppies.iter().enumerate() {
+        let order = prefer
+            .filter(|&p| p < guppies.len())
+            .into_iter()
+            .chain((0..guppies.len()).filter(|&i| Some(i) != prefer));
+        for i in order {
+            let g = guppies[i];
             let dx = cx - (g.widget_x + 40);
             let dy = cy - (g.widget_y + 40);
             let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
@@ -198,13 +217,16 @@ impl Alien {
     }
 
     /// `0x004e8f70`: first guppy inside the 45×65 half-extent box.
-    fn eat_test(&self, guppies: &[&Fish]) -> Option<usize> {
+    fn eat_test(&self, guppies: &[&Fish], prefer: Option<usize>) -> Option<usize> {
         let (cx, cy) = self.centre();
-        guppies.iter().position(|g| {
+        let inside = |g: &Fish| {
             let dx = cx - (g.widget_x + 40);
             let dy = cy - (g.widget_y + 40);
             dx.abs() < 45 && dy.abs() < 65
-        })
+        };
+        prefer
+            .filter(|&p| p < guppies.len() && inside(guppies[p]))
+            .or_else(|| guppies.iter().position(|g| inside(g)))
     }
 
     /// §3.3 wander.
@@ -512,13 +534,48 @@ impl Warp {
 /// The intent is no delay (the field is set right after), so we never
 /// draw it (`alien-sylvester.md#deviations`).
 pub fn add_effect_shot(shots: &mut Vec<Shot>, rng: &mut MtRand, x: i32, y: i32, kind: i32) {
+    add_effect_shot_with(shots, rng, x, y, kind, &mut ArtifactPlan::default());
+}
+
+/// Which effect shots of a tick get the original's stale start-delay draw.
+/// The sim never makes it (see [`add_effect_shot`]); a differential harness
+/// replaying a capture can, to keep everything after it in step. Empty by
+/// default: no artifact draws.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ArtifactPlan {
+    /// One flag per effect shot made this tick, in order.
+    pub delay_draws: Vec<bool>,
+    /// When fish tie for an alien's attention (equal distance, or several
+    /// in its eat box), the original takes the first in object-address
+    /// order (`alien-sylvester.md#deviations`); the sim takes the first in
+    /// list order. A replay can name the preferred fish's index in the prey
+    /// list (guppies, then carnivores).
+    pub eat_choice: Option<usize>,
+    /// Effect shots made so far this tick.
+    pub made: usize,
+}
+
+/// [`add_effect_shot`] following `plan`.
+pub fn add_effect_shot_with(
+    shots: &mut Vec<Shot>,
+    rng: &mut MtRand,
+    x: i32,
+    y: i32,
+    kind: i32,
+    plan: &mut ArtifactPlan,
+) {
     if shots.len() >= 20 {
         return;
     }
+    let mut delay = 0;
+    if plan.delay_draws.get(plan.made).copied().unwrap_or(false) {
+        delay = rng.next_range(3) as i32;
+    }
+    plan.made += 1;
     let r = rng.next_range(200) as i32 + 50;
     shots.push(Shot {
         kind,
-        delay: 0,
+        delay,
         age: 0,
         frame: 0,
         r,

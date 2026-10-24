@@ -705,6 +705,17 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| shot_json(&shot_from_raw(b)))
                 .collect();
             s.state.insert("shots".into(), Value::Array(shots));
+            // The full shot state, for replays that adopt the capture's list
+            // (`replay_resync_dirty`). The sim has no such key: not compared.
+            let shots_full: Vec<Value> = raw_list(&s, "shot")
+                .iter()
+                .map(|b| {
+                    let x = shot_from_raw(b);
+                    json!([x.kind, x.delay, x.age, x.frame, x.r, x.widget_x, x.widget_y])
+                })
+                .collect();
+            s.state
+                .insert("shots_full".into(), Value::Array(shots_full));
             let dead = raw_list(&s, "dead_alien")
                 .iter()
                 .map(|b| dead_alien_json(&dead_alien_from_raw(b)))
@@ -1209,16 +1220,24 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .and_then(|p| p.state.get("guppies"))
             .and_then(Value::as_array)
             .map_or(guppies, Vec::len);
-        if guppies > prev_guppies && money_of(Some(s)) < money_of(prev_snap) {
+        let newest = s
+            .state
+            .get("guppies")
+            .and_then(Value::as_array)
+            .and_then(|g| g.last())
+            .and_then(|g| g.get("raw")?.as_str().and_then(hex_bytes))
+            .map(|raw| fish_from_raw(&raw));
+        // Bought: it starts at y 30 falling 18..22 px/tick (÷ div), so it is
+        // near the surface on its first snapshot. Money usually drops, but a
+        // coin banked on the same tick can hide that.
+        let splashed = newest
+            .as_ref()
+            .is_some_and(|f| f.y < 45.0 && f.vy >= 15.0 && f.vy_damp_timer >= 44);
+        let paid = money_of(Some(s)) < money_of(prev_snap);
+        if guppies > prev_guppies && (paid || (splashed && prev_guppies > 0)) {
             // Still at its spawn y (30.0): bought after this tick's update
             // (mid-frame), so it applies before the next tick.
-            let unmoved = s
-                .state
-                .get("guppies")
-                .and_then(Value::as_array)
-                .and_then(|g| g.last())
-                .and_then(|g| g.get("raw")?.as_str().and_then(hex_bytes))
-                .is_some_and(|raw| fish_from_raw(&raw).y == 30.0);
+            let unmoved = newest.is_some_and(|f| f.y == 30.0);
             push(s.tick, unmoved, Input::Buy(Slot::Guppy), &mut out);
         } else if guppies > prev_guppies && prev_guppies == 0 {
             // A free guppy into an empty tank: the "last fish died" dialog
@@ -1350,6 +1369,14 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .or_default()
                 .push(Input::Buy(Slot::FoodQuantity));
         }
+        if let (Some(a), Some(b)) = (field(prev_snap, "laser"), field(Some(s), "laser"))
+            && b > a
+        {
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::Weapon));
+        }
         // Egg pieces: the board's egg counter steps up.
         let eggs = |s: Option<&Snapshot>| {
             s.and_then(|s| s.state.get("board"))
@@ -1391,10 +1418,36 @@ pub fn replay_from(
 /// the app RNG is set to the capture's state there. `full` is the whole
 /// capture whose header RNG the states are derived from.
 pub fn deviation_resyncs(full: &Trace, ticks: &[u32]) -> BTreeMap<u32, MtRand> {
-    ticks
-        .iter()
-        .filter_map(|&t| Some((t, rng_from(&rebase_rng(full, "app", t)?))))
-        .collect()
+    // One pass over the capture, stepping the app stream by each snapshot's
+    // draw count (as `rebase_rng` does) and keeping the wanted ticks.
+    let wanted: std::collections::BTreeSet<u32> = ticks.iter().copied().collect();
+    let mut out = BTreeMap::new();
+    let Some(mut rng) = full.header.rng.get("app").map(rng_from) else {
+        return out;
+    };
+    let mut prev = rng.state().1;
+    for s in &full.snapshots {
+        if wanted.range(s.tick..).next().is_none() {
+            break;
+        }
+        let Some(m) = s
+            .state
+            .get("rng_mti")
+            .and_then(|r| r.get("app"))
+            .and_then(Value::as_u64)
+        else {
+            continue;
+        };
+        let m = m as usize;
+        for _ in 0..(m + 624 - prev) % 624 {
+            rng.next_u31();
+        }
+        prev = m;
+        if wanted.contains(&s.tick) {
+            out.insert(s.tick, rng.clone());
+        }
+    }
+    out
 }
 
 /// Dead-alien debris ticks (effect sparks are allocated): the snapshot shows
@@ -1462,17 +1515,25 @@ pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
                 delayed.insert((x.kind, x.widget_x, x.widget_y, x.r));
             }
         }
+        // Gore (kind 1, a fish eaten): its positions are drawn after the
+        // first spark's possible artifact draw, so a later piece can sit
+        // elsewhere; mask its short life (10 ticks) too.
         if !raw_list(s, "dead_alien").is_empty()
-            || shots
-                .iter()
-                .any(|x| x.kind >= 3 || delayed.contains(&(x.kind, x.widget_x, x.widget_y, x.r)))
+            || shots.iter().any(|x| {
+                x.kind >= 3
+                    || x.kind == 1
+                    || delayed.contains(&(x.kind, x.widget_x, x.widget_y, x.r))
+            })
         {
             debris.insert(s.tick);
         }
     }
+    // Sparks with a different start delay (or none) die a few ticks apart
+    // from ours: keep masking briefly after the last one seen.
+    let tail: std::collections::BTreeSet<u32> = debris.iter().flat_map(|&t| t..=t + 3).collect();
     let mut out = decoded.clone();
     for s in &mut out.snapshots {
-        if debris.contains(&s.tick) {
+        if tail.contains(&s.tick) {
             s.state.remove("shots");
         }
     }
@@ -1530,6 +1591,99 @@ pub fn replay_resync(
     replay_resync_dirty(board, t, inputs, resync, &[])
 }
 
+/// The prey index (guppies, then carnivores) whose loss reproduces the
+/// capture's fish and carnivore lists, when the sim's own pick doesn't.
+fn eat_choice(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> Option<usize> {
+    let target = t.snapshots.iter().find(|s| s.tick == tick)?;
+    let fits = |b: &Board| {
+        let snap = snapshot(b);
+        // Which fish survive (by stage), and where the aliens steer.
+        let key = |v: &Value| v.get("stage").cloned();
+        let lists = ["fish", "carnivores"].iter().all(|k| {
+            match (target.state.get(*k), snap.state.get(*k)) {
+                (Some(Value::Array(x)), Some(Value::Array(y))) => {
+                    x.len() == y.len() && x.iter().zip(y).all(|(a, b)| key(a) == key(b))
+                }
+                _ => true,
+            }
+        });
+        let vel = |v: &Value| (v.get("vx").cloned(), v.get("vy").cloned());
+        let aliens = match (target.state.get("aliens"), snap.state.get("aliens")) {
+            (Some(Value::Array(x)), Some(Value::Array(y))) => {
+                x.len() == y.len() && x.iter().zip(y).all(|(a, b)| vel(a) == vel(b))
+            }
+            _ => true,
+        };
+        lists && aliens
+    };
+    let mut b = board.clone();
+    b.step(inputs);
+    if fits(&b) {
+        return None;
+    }
+    let n = board.guppies.len() + board.carnivores.len();
+    (0..n).find(|&c| {
+        let mut b = board.clone();
+        b.artifacts.eat_choice = Some(c);
+        b.step(inputs);
+        fits(&b)
+    })
+}
+
+/// The artifact plan for one replayed tick (see [`replay_resync_dirty`]).
+/// Tries every set of delayed sparks, fewest first; returns the first that
+/// matches the capture's RNG position and its fish, food and shots, else
+/// the first that matches the RNG alone, else none.
+fn artifact_plan(
+    board: &Board,
+    inputs: &[Input],
+    t: &Trace,
+    tick: u32,
+) -> insaniquarium_sim::alien::ArtifactPlan {
+    use insaniquarium_sim::alien::ArtifactPlan;
+    let Some(want) = mti_at(t, tick) else {
+        return ArtifactPlan::default();
+    };
+    let target = t.snapshots.iter().find(|s| s.tick == tick);
+    let fits = |b: &Board| {
+        let snap = snapshot(b);
+        target.is_none_or(|e| {
+            ["fish", "foods", "shots"]
+                .iter()
+                .all(|k| match (e.state.get(*k), snap.state.get(*k)) {
+                    (Some(x), Some(y)) => x == y,
+                    _ => true,
+                })
+        })
+    };
+    // How many effect shots this tick makes (without artifacts).
+    let n = {
+        let mut b = board.clone();
+        b.artifacts = ArtifactPlan::default();
+        b.step(inputs);
+        b.artifacts.made.min(12)
+    };
+    let mut masks: Vec<u32> = (0..1u32 << n).collect();
+    masks.sort_by_key(|m| m.count_ones());
+    let mut first = None;
+    for m in masks {
+        let plan = ArtifactPlan {
+            delay_draws: (0..n).map(|i| m & (1 << i) != 0).collect(),
+            ..ArtifactPlan::default()
+        };
+        let mut b = board.clone();
+        b.artifacts = plan.clone();
+        b.step(inputs);
+        if b.rng.state().1 == want {
+            if fits(&b) {
+                return plan;
+            }
+            first.get_or_insert(plan);
+        }
+    }
+    first.unwrap_or_default()
+}
+
 /// The capture's app-RNG position at `tick`.
 fn mti_at(t: &Trace, tick: u32) -> Option<usize> {
     t.snapshots
@@ -1560,30 +1714,56 @@ pub fn replay_resync_dirty(
         );
         let next = board.tick + 1;
         let step_inputs = inputs.get(&next).map_or(&[][..], Vec::as_slice);
-        // On a deviation tick with a click, the original may have drawn the
-        // stale start delay (`alien-sylvester.md#deviations`) while handling
-        // the click, before the rest of the tick. Re-syncing after the tick
-        // fixes the RNG but not what the shifted draws decided inside it, so
-        // discard that many draws first: the count whose result lands on the
-        // capture's RNG position.
-        let skip =
-            if resync.contains_key(&next) && !dirty.contains(&next) && !step_inputs.is_empty() {
-                let want = mti_at(t, next);
-                (0..3).find(|&k| {
-                    let mut b = board.clone();
-                    for _ in 0..k {
-                        b.rng.next_u31();
-                    }
-                    b.step(step_inputs);
-                    want == Some(b.rng.state().1)
+        // Before a deviation tick, take the capture's shot list: delayed
+        // sparks outlive ours, and the 20-shot cap on new effect shots then
+        // decides differently how many sparks (and draws) a burst makes.
+        // Shots are cosmetic and masked while debris lives. (A mid-frame
+        // snapshot isn't usable: take the latest whole one, aged to now.)
+        if resync.contains_key(&next)
+            && let Some(prev) = t
+                .snapshots
+                .iter()
+                .rev()
+                .find(|s| s.tick <= board.tick && !dirty.contains(&s.tick))
+            && board.tick - prev.tick <= 3
+            && let Some(Value::Array(list)) = prev.state.get("shots_full")
+        {
+            let g = |v: &Value, i: usize| v.get(i).and_then(Value::as_i64).unwrap_or(0) as i32;
+            let mut shots: Vec<Shot> = list
+                .iter()
+                .map(|v| Shot {
+                    kind: g(v, 0),
+                    delay: g(v, 1),
+                    age: g(v, 2),
+                    frame: g(v, 3),
+                    r: g(v, 4),
+                    widget_x: g(v, 5),
+                    widget_y: g(v, 6),
                 })
-            } else {
-                None
-            };
-        for _ in 0..skip.unwrap_or(0) {
-            board.rng.next_u31();
+                .collect();
+            let at = prev.tick;
+            for _ in at..board.tick {
+                shots.retain_mut(Shot::update);
+            }
+            board.shots = shots;
+        }
+        // On a deviation tick the original's effect-shot ctor may draw a
+        // stale start delay (`alien-sylvester.md#deviations`) for some of
+        // the tick's sparks. Re-syncing after the tick fixes the RNG but not
+        // what the shifted draws decided inside it, so find which sparks
+        // drew: the plan whose result lands on the capture's RNG position
+        // and reproduces its fish, food and shots.
+        if resync.contains_key(&next) && !dirty.contains(&next) {
+            board.artifacts = artifact_plan(&board, step_inputs, t, next);
+        }
+        // An alien with several fish in its eat box takes the first in
+        // object-address order in the original (a deviation we don't
+        // reproduce): if the capture lost a different fish, pick that one.
+        if !dirty.contains(&next) && !board.aliens.is_empty() {
+            board.artifacts.eat_choice = eat_choice(&board, step_inputs, t, next);
         }
         board.step(step_inputs);
+        board.artifacts = Default::default();
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's
         // RNG already includes that click's draws.

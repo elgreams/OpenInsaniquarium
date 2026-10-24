@@ -36,6 +36,10 @@ EGG_BTN = (BTN_X[6] + 29, 33)
 WEAPON_BTN = (BTN_X[5] + 29, 33)
 # Buy weapon upgrades (up to N) once revealed and affordable (`--weapon N`).
 MAX_WEAPON = int(sys.argv[sys.argv.index("--weapon") + 1]) if "--weapon" in sys.argv else 0
+# Keep at least N live guppies, buying replacements (`--keep N`).
+KEEP_GUPPIES = int(sys.argv[sys.argv.index("--keep") + 1]) if "--keep" in sys.argv else 0
+# Buy food quantity upgrades (up to N) once revealed (`--quantity N`).
+MAX_QUANTITY = int(sys.argv[sys.argv.index("--quantity") + 1]) if "--quantity" in sys.argv else 0
 RESUME = (312, 258)
 # Egg price by level (shop-bar.md): 1-1 150, 1-2 500.
 EGG_PRICE = int(sys.argv[sys.argv.index("--egg") + 1]) if "--egg" in sys.argv else 150
@@ -100,6 +104,7 @@ def main():
     bought_quality = False
     bought_carnivore = False
     bought_weapon = 0
+    bought_quantity = 0
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -128,22 +133,30 @@ def main():
                             str(oy + min(max(ay + 80, 45), 470)),
                             "click", "--repeat", "4", "--delay", "70", "1"])
             continue
-        elif st["revealed"][2] and not bought_quality and st["money"] >= 220:
-            click(win, *QUALITY_BTN)
-            bought_quality = True
+        elif (BUY_CARNIVORE and not bought_carnivore and st["revealed"][4]
+              and st["money"] >= 1100 and len(st["guppies"]) >= MIN_GUPPIES_FOR_CARNIVORE):
+            # First: on 1-3+ the carnivore reveals the weapon and egg buttons.
+            click(win, *CARNIVORE_BTN)
+            bought_carnivore = True
+        elif (KEEP_GUPPIES and st["rev_guppy"] and len(st["guppies"]) < KEEP_GUPPIES
+              and st["money"] >= 120):
+            # Replace guppies lost to aliens.
+            click(win, *GUPPY_BTN)
         elif st["revealed"][10] and bought_weapon < MAX_WEAPON and st["money"] >= 1100:
             click(win, *WEAPON_BTN)
             bought_weapon += 1
+        elif st["revealed"][2] and not bought_quality and st["money"] >= 220:
+            click(win, *QUALITY_BTN)
+            bought_quality = True
+        elif st["revealed"][3] and bought_quantity < MAX_QUANTITY and st["money"] >= 400:
+            click(win, *QUANTITY_BTN)
+            bought_quantity += 1
         elif st["rev_egg"] and st["money"] >= EGG_PRICE:
             click(win, *EGG_BTN)
         elif (st["rev_guppy"] and bought_guppies < MAX_GUPPIES and st["money"] >= 120
               and (not st["rev_egg"] or MAX_GUPPIES > 1)):
             click(win, *GUPPY_BTN)
             bought_guppies += 1
-        elif (BUY_CARNIVORE and not bought_carnivore and st["revealed"][4]
-              and st["money"] >= 1100 and len(st["guppies"]) >= MIN_GUPPIES_FOR_CARNIVORE):
-            click(win, *CARNIVORE_BTN)
-            bought_carnivore = True
         elif (FEED_CARNIVORE and st["oscars"] and st["money"] >= 300
               and min(o[2] for o in st["oscars"]) < 700):
             # A hungry carnivore: drop a fresh (small) guppy in for it.
@@ -151,7 +164,8 @@ def main():
         elif any(c[2] == 0 for c in st["coins"]):
             c = max((c for c in st["coins"] if c[2] == 0), key=lambda c: c[1])
             click(win, c[0] + 36, min(c[1] + 36, 440))
-        elif st["guppies"] and st["foods"] == 0 and now - last_feed > 1.2 and st["money"] >= 5:
+        elif (st["guppies"] and st["foods"] <= bought_quantity and now - last_feed > 0.8
+              and st["money"] >= 5):
             g = min(st["guppies"], key=lambda g: g[2])
             if g[2] < 450:
                 x = min(max(g[0] + 40, 40), 580)

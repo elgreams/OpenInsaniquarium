@@ -663,6 +663,14 @@ fn tank_1_4_from_start() {
     replay_tank_1("tank1-4_full_01", 4);
 }
 
+/// Tank 1-4 won (`tank1-4_full_02`): a carnivore bought to reveal the egg
+/// piece, weapon upgrades to laser 4, food quantity 2, six Balrog waves
+/// (Itchy, shots and the carnivore lost to one), three egg pieces.
+#[test]
+fn tank_1_4_won() {
+    replay_tank_1("tank1-4_full_02", 4);
+}
+
 fn captured(name: &str) -> bool {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"))
@@ -673,12 +681,17 @@ fn replay_1_3(name: &str) -> usize {
     replay_tank_1(name, 3)
 }
 
+static BIG_REPLAY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Replay a whole tank-1 level `level` from its first board tick; returns
 /// the number of ticks with a carnivore up.
 fn replay_tank_1(name: &str, level: i32) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
+    // Whole-level replays hold several copies of a capture (several GB for
+    // the long ones): run them one at a time.
+    let _one_at_a_time = BIG_REPLAY.lock().unwrap_or_else(|e| e.into_inner());
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"));
     let Ok(f) = File::open(&path) else { return 0 };
@@ -696,33 +709,35 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
         .unwrap()
         .tick;
     let raw = window(&full, from, to);
+    // The RNG at every debris tick, then the full capture can go: long
+    // captures are several GB once parsed.
+    let debris = debris_ticks(&harness::replay::by_board_clock(&raw));
+    let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
+    let originals: Vec<u32> = debris.iter().filter_map(|&ct| tick_of(ct)).collect();
+    let resync_orig = deviation_resyncs(&full, &originals);
+    let rng0: Vec<_> = ["app", "global"]
+        .iter()
+        .map(|s| (s.to_string(), rebase_rng(&full, s, from).unwrap()))
+        .collect();
+    drop(full);
+    let resync: std::collections::BTreeMap<u32, _> = debris
+        .into_iter()
+        .filter_map(|ct| Some((ct, resync_orig.get(&tick_of(ct)?)?.clone())))
+        .collect();
+    drop(resync_orig);
     let mut t = harness::replay::by_board_clock(&raw);
-    for stream in ["app", "global"] {
-        t.header
-            .rng
-            .insert(stream.into(), rebase_rng(&full, stream, from).unwrap());
-    }
+    drop(raw);
+    t.header.rng.extend(rng0);
     let mut inferred = inferred_clicks(&t);
     inferred.dirty.extend(harness::replay::after_gaps(&t));
     let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();
+    drop(t);
     board.shop = {
         let mut sh = insaniquarium_sim::shop::Shop::adventure(1, level);
         sh.revealed = board.shop.revealed;
         sh
     };
-    let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
-    let resync: std::collections::BTreeMap<u32, _> = debris_ticks(&t)
-        .into_iter()
-        .filter_map(|ct| {
-            Some((
-                ct,
-                deviation_resyncs(&full, &[tick_of(ct)?])
-                    .into_values()
-                    .next()?,
-            ))
-        })
-        .collect();
     let mut actual = harness::replay::replay_resync_dirty(
         board,
         &expected,

@@ -148,6 +148,8 @@ pub struct World<'a> {
     pub eaten: &'a mut Vec<usize>,
     /// Effect shots (the gore burst).
     pub shots: &'a mut Vec<crate::alien::Shot>,
+    /// Replay-only artifact draws (`Board::artifacts`).
+    pub artifacts: &'a mut crate::alien::ArtifactPlan,
 }
 
 impl World<'_> {
@@ -579,7 +581,7 @@ impl Fish {
         for _ in 0..n {
             let y = w.rng.next_range(20) as i32 + 15 + vy;
             let x = w.rng.next_range(20) as i32 + 15 + vx;
-            crate::alien::add_effect_shot(w.shots, w.rng, x, y, 1);
+            crate::alien::add_effect_shot_with(w.shots, w.rng, x, y, 1, w.artifacts);
         }
         if was_hungry && !self.looks_hungry() {
             self.start_fade(false);

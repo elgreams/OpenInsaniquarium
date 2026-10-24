@@ -75,6 +75,9 @@ impl Rules {
 #[derive(Debug, Clone)]
 pub struct Board {
     pub rules: Rules,
+    /// Replay-only: which of this tick's effect shots draw the original's
+    /// stale start delay (`alien::ArtifactPlan`). Empty in play.
+    pub artifacts: crate::alien::ArtifactPlan,
     /// `board+0x3f0`
     pub money: i32,
     /// `board+0x4ac`: price of one food drop.
@@ -179,6 +182,7 @@ impl Board {
     pub fn new(rng: MtRand, global_rng: MtRand) -> Self {
         Self {
             rules: Rules::default(),
+            artifacts: Default::default(),
             money: 0,
             food_price: 5,
             max_food: 1,
@@ -509,7 +513,14 @@ impl Board {
 
     /// `EffectShot` (`0x005436f0`, see `alien::add_effect_shot`).
     fn add_effect_shot(&mut self, x: i32, y: i32, kind: i32) {
-        crate::alien::add_effect_shot(&mut self.shots, &mut self.rng, x, y, kind);
+        crate::alien::add_effect_shot_with(
+            &mut self.shots,
+            &mut self.rng,
+            x,
+            y,
+            kind,
+            &mut self.artifacts,
+        );
     }
 
     /// `Alien` death (`0x004f9c70`), kind 1.
@@ -773,6 +784,14 @@ impl Board {
 
     /// One logic tick (28 ms) with this tick's inputs.
     pub fn step(&mut self, inputs: &[Input]) {
+        self.apply_inputs(inputs);
+        self.update();
+    }
+
+    /// The input half of [`Self::step`]: clears this step's sounds and
+    /// music request, then applies `inputs`. [`Self::update`] is the rest.
+    pub fn apply_inputs(&mut self, inputs: &[Input]) {
+        self.artifacts.made = 0;
         self.sounds.clear();
         self.music = None;
         for i in inputs {
@@ -793,7 +812,6 @@ impl Board {
                 }
             }
         }
-        self.update();
     }
 
     /// Value of collected coins still flying to the counter
@@ -837,6 +855,7 @@ impl Board {
             Slot::FoodQuality => self.buy_food_quality(price),
             Slot::FoodQuantity => self.buy_food_quantity(price),
             Slot::Carnivore => self.buy_carnivore(price),
+            Slot::Weapon => self.buy_weapon(price),
             // TODO(spec): other slots (not on tank 1-1).
             _ => return ClickResult::Ignored,
         };
@@ -882,6 +901,23 @@ impl Board {
         self.play(0x122, Sound::Grow);
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r).into());
+        true
+    }
+
+    /// Slot 10: laser +1, cap 12 (`shop-bar.md#per-slot-behaviour`). No
+    /// RNG. At 12 the original also shows "Hold down mouse button for Rapid
+    /// Fire!" (static; not reached in a capture yet).
+    fn buy_weapon(&mut self, price: i32) -> bool {
+        if self.laser >= 12 || !self.try_spend(price) {
+            return false;
+        }
+        self.laser += 1;
+        if self.laser == 12 {
+            self.show_message("Hold down mouse button for Rapid Fire!", false, -1);
+        }
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy.into());
+        }
         true
     }
 
@@ -1163,6 +1199,7 @@ impl Board {
             guppies: &[],
             eaten: &mut Vec::new(),
             shots: &mut self.shots,
+            artifacts: &mut self.artifacts,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
@@ -1204,7 +1241,10 @@ impl Board {
         while i < self.aliens.len() {
             let mut out = AlienOut::default();
             let prey: Vec<&Fish> = self.guppies.iter().chain(&self.carnivores).collect();
-            self.aliens[i].update(&prey, &mut self.rng, &mut out);
+            // Replay-only: the original's address-order tie break
+            // (`ArtifactPlan::eat_choice`); `None` in play.
+            let prefer = self.artifacts.eat_choice;
+            self.aliens[i].update_preferring(&prey, prefer, &mut self.rng, &mut out);
             if let Some(g) = out.ate {
                 let victim = if g < self.guppies.len() {
                     self.guppies.remove(g)

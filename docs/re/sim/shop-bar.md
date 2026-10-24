@@ -123,7 +123,7 @@ Triggers on tank 1-1 come from `Fish::OnStageUp` @ `0x004f1840`. It is called fr
 
 So on 1-1, the guppy button appears when the first guppy reaches medium, and the egg button appears when the first guppy reaches large. **No reveal path uses RNG.**
 
-`traced` for the 1-1 and 1-2 triggers (stage-up reveals and messages are compared). The tank 1 level 3+ reveal list is `static`.
+`traced` for the 1-1 and 1-2 triggers (stage-up reveals and messages are compared), and for 1-3/1-4: slots 2, 3, 4 at the first large guppy, then 10 and 11 only when a carnivore is bought (`tank_1_3_from_start`, `tank_1_4_won`).
 
 ## Input path
 
@@ -183,7 +183,7 @@ The RNG order shown is within the purchase call. Sound ids: `SOUND_BUY` = 0x111,
 - **7 guppycruncher:** TrySpend → `0x00545430` → `SOUND_GROW` → `PlaySplash` → reveal 11 (level 1) or reveal 8 (level ≠ 1).
 - **8 beetlemuncher:** TrySpend → `++(+0x4a4)` → `0x00545080` → reveal 10, 11 → `SOUND_GROW` → `PlaySplash`.
 - **9 ultravore:** TrySpend → `0x00544e60` → reveal 10, 11 → `SOUND_GROW` → `SOUND_SPLASHBIG`. No `PlaySplash` here.
-- **10 weapon:** only if `+0x3e4 < 12` and TrySpend succeeds. `+= 1`, then Refresh (at 12: "Hold down mouse button for Rapid Fire!", then the button goes to "MAX"), then `SOUND_BUY`.
+- **10 weapon:** only if `+0x3e4 < 12` and TrySpend succeeds. `+= 1`, then Refresh (at 12: "Hold down mouse button for Rapid Fire!", then the button goes to "MAX"), then `SOUND_BUY`. `traced` for laser 2→4 (`tank1_1.rs` `tank_1_4_won`: two upgrades, price 1000, laser compared through the alien damage); the 12 cap and its message are `static`.
 - **11 egg piece:** `BuyEggPiece`, below. It does its own GetSlotButton check and TrySpend.
 
 TODO: RNG inside the spawn functions for slots 1, 4, 6–9 (not reachable on 1-1).
