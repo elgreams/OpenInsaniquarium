@@ -33,6 +33,9 @@ MIN_GUPPIES_FOR_CARNIVORE = (int(sys.argv[sys.argv.index("--carnivore-min") + 1]
 # its food) whenever affordable (`--feed-carnivore`).
 FEED_CARNIVORE = "--feed-carnivore" in sys.argv
 EGG_BTN = (BTN_X[6] + 29, 33)
+WEAPON_BTN = (BTN_X[5] + 29, 33)
+# Buy weapon upgrades (up to N) once revealed and affordable (`--weapon N`).
+MAX_WEAPON = int(sys.argv[sys.argv.index("--weapon") + 1]) if "--weapon" in sys.argv else 0
 RESUME = (312, 258)
 # Egg price by level (shop-bar.md): 1-1 150, 1-2 500.
 EGG_PRICE = int(sys.argv[sys.argv.index("--egg") + 1]) if "--egg" in sys.argv else 150
@@ -96,6 +99,7 @@ def main():
     bought_guppies = 0
     bought_quality = False
     bought_carnivore = False
+    bought_weapon = 0
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -116,13 +120,20 @@ def main():
             click(win, *RESUME)
         elif st["aliens"]:
             # Shoot the alien: click its centre (160x160 widget).
+            # A burst of quick clicks (one hit lands per 10-tick cooldown;
+            # alien-sylvester.md#hits), then re-read its position.
             ax, ay = st["aliens"][0]
-            click(win, min(max(ax + 80, 10), 630), min(max(ay + 80, 45), 470))
-            time.sleep(0.05)
+            w, ox, oy = win
+            subprocess.run(["xdotool", "mousemove", str(ox + min(max(ax + 80, 10), 630)),
+                            str(oy + min(max(ay + 80, 45), 470)),
+                            "click", "--repeat", "4", "--delay", "70", "1"])
             continue
         elif st["revealed"][2] and not bought_quality and st["money"] >= 220:
             click(win, *QUALITY_BTN)
             bought_quality = True
+        elif st["revealed"][10] and bought_weapon < MAX_WEAPON and st["money"] >= 1100:
+            click(win, *WEAPON_BTN)
+            bought_weapon += 1
         elif st["rev_egg"] and st["money"] >= EGG_PRICE:
             click(win, *EGG_BTN)
         elif (st["rev_guppy"] and bought_guppies < MAX_GUPPIES and st["money"] >= 120

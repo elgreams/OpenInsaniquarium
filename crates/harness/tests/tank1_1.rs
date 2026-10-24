@@ -600,6 +600,14 @@ fn tank_1_3_carnivore_eats() {
     assert!(replay_1_3("tank1-3_eat_01") > 1000 || !captured("tank1-3_eat_01"));
 }
 
+/// Tank 1-4 (`tank1-4_full_01`): Stinky, Niko and Itchy, kind-3 alien
+/// waves; the tank is lost to the third wave. Ignored until Itchy is built.
+#[test]
+#[ignore = "tank 1-4 not implemented yet (Itchy)"]
+fn tank_1_4_from_start() {
+    replay_tank_1("tank1-4_full_01", 4);
+}
+
 fn captured(name: &str) -> bool {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"))
@@ -607,6 +615,12 @@ fn captured(name: &str) -> bool {
 }
 
 fn replay_1_3(name: &str) -> usize {
+    replay_tank_1(name, 3)
+}
+
+/// Replay a whole tank-1 level `level` from its first board tick; returns
+/// the number of ticks with a carnivore up.
+fn replay_tank_1(name: &str, level: i32) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
@@ -638,7 +652,7 @@ fn replay_1_3(name: &str) -> usize {
     let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();
     board.shop = {
-        let mut sh = insaniquarium_sim::shop::Shop::adventure(1, 3);
+        let mut sh = insaniquarium_sim::shop::Shop::adventure(1, level);
         sh.revealed = board.shop.revealed;
         sh
     };

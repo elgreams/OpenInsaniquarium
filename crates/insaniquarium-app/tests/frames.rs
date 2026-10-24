@@ -193,6 +193,13 @@ fn hatch_screen_frames_match_original() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// The hatch screen after 1-3: Itchy.
+#[test]
+fn hatch_screen_itchy_frames_match_original() {
+    let failures = check("hatch_itchy_01");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// The first seconds of tank 1-2: two guppies, Stinky, the backdrop.
 #[test]
 fn tank_1_2_start_frames_match_original() {
