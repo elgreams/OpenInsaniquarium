@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot, Warp};
 use insaniquarium_sim::board::Input;
-use insaniquarium_sim::fish::DeadFish;
+use insaniquarium_sim::fish::{DeadFish, FishKind};
 use insaniquarium_sim::message::Message;
 use insaniquarium_sim::pet::Pet;
 use insaniquarium_sim::shop::Slot;
@@ -36,6 +36,12 @@ fn rd_f64(b: &[u8], off: usize) -> f64 {
 /// A guppy from its raw object bytes (offsets: docs/re/objects/fish-guppy.md).
 pub fn fish_from_raw(b: &[u8]) -> Fish {
     Fish {
+        kind: if rd_i32(b, 0x8c) == 5 {
+            FishKind::Carnivore
+        } else {
+            FishKind::Guppy
+        },
+        eaten: false,
         x: rd_f64(b, 0x158),
         y: rd_f64(b, 0x160),
         vx: rd_f64(b, 0x168),
@@ -300,6 +306,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| coin_from_raw(b))
         .collect();
+    board.carnivores = raw_list(first, "oscar")
+        .iter()
+        .map(|b| fish_from_raw(b))
+        .collect();
     board.pearls = raw_list(first, "coin_c")
         .iter()
         .map(|b| coin_from_raw(b))
@@ -559,6 +569,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
         Value::Array(board.coins.iter().map(coin_json).collect()),
     );
     state.insert(
+        "carnivores".into(),
+        Value::Array(board.carnivores.iter().map(fish_json).collect()),
+    );
+    state.insert(
         "pearls".into(),
         Value::Array(board.pearls.iter().map(coin_json).collect()),
     );
@@ -640,6 +654,12 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .collect();
             s.state.insert("coins".into(), Value::Array(coins));
             if raw_present(&s) {
+                let carnivores = raw_list(&s, "oscar")
+                    .iter()
+                    .map(|b| fish_json(&fish_from_raw(b)))
+                    .collect();
+                s.state
+                    .insert("carnivores".into(), Value::Array(carnivores));
                 let pearls = raw_list(&s, "coin_c")
                     .iter()
                     .map(|b| coin_json(&coin_from_raw(b)))
@@ -1226,6 +1246,17 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .entry(s.tick)
                 .or_default()
                 .push(Input::SetPaused(true));
+        }
+        // A carnivore appearing (raw list `oscar`) with money down: bought.
+        let n_oscar = |snap: Option<&Snapshot>| snap.map(|x| raw_list(x, "oscar").len());
+        if let (Some(a), Some(b)) = (n_oscar(prev_snap), n_oscar(Some(s)))
+            && b > a
+            && money_of(Some(s)) < money_of(prev_snap)
+        {
+            out.inputs
+                .entry(s.tick)
+                .or_default()
+                .push(Input::Buy(Slot::Carnivore));
         }
         // Food upgrades: the board's food level / quantity step up.
         let field = |s: Option<&Snapshot>, k: &str| {

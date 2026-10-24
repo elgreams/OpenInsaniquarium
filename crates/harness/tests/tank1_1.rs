@@ -585,12 +585,10 @@ fn hatch_screen_after_1_1_matches() {
     assert!(torn < hatch.len() / 50, "few torn reads");
 }
 
-/// Tank 1-3 from its first tick (`tank1-3_full_01`): Stinky and Niko, kind-2
-/// aliens, a carnivore, food upgrades. Ignored until 1-3 is implemented;
-/// run with `--ignored` to see the first divergence. Niko, pearls and the
-/// first two alien waves already match.
+/// The whole of tank 1-3 (`tank1-3_full_01`), level start to the last egg
+/// piece: Stinky and Niko (pearls), four kind-2 alien waves, a carnivore
+/// bought, starving and dying, food upgrades and three egg pieces.
 #[test]
-#[ignore = "tank 1-3 not finished: diverges at the carnivore purchase (tick 9059)"]
 fn tank_1_3_from_start() {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
@@ -653,6 +651,26 @@ fn tank_1_3_from_start() {
         inferred.dirty.len(),
         resync.len()
     );
+    // The comparison must cover the new objects, not pass vacuously.
+    let carn_ticks = expected
+        .snapshots
+        .iter()
+        .filter(|s| {
+            s.state["carnivores"]
+                .as_array()
+                .is_some_and(|a| !a.is_empty())
+        })
+        .count();
+    let pearl_ticks = expected
+        .snapshots
+        .iter()
+        .filter(|s| s.state["pearls"].as_array().is_some_and(|a| !a.is_empty()))
+        .count();
+    eprintln!(
+        "1-3: {} snapshots compared; carnivore on {carn_ticks}, pearl on {pearl_ticks}",
+        expected.snapshots.len()
+    );
+    assert!(carn_ticks > 300 && pearl_ticks > 100);
     if let Some(d) = diff(&expected, &actual) {
         panic!("{d}");
     }

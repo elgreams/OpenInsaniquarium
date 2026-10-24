@@ -111,6 +111,9 @@ pub struct Board {
     pub message: Message,
     /// `board+0xa0`: guppies in insertion order.
     pub guppies: Vec<Fish>,
+    /// `board+0xa4`: carnivores (`Sexy::Oscar`), updated right after the
+    /// guppies (carnivore.md).
+    pub carnivores: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
     pub foods: Vec<Food>,
     /// `board+0xa8`: coins in insertion order.
@@ -193,6 +196,7 @@ impl Board {
             hints: [false; HINTS],
             message: Message::default(),
             guppies: Vec::new(),
+            carnivores: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
             pearls: Vec::new(),
@@ -487,27 +491,9 @@ impl Board {
         ClickResult::Ignored
     }
 
-    /// `EffectShot` (`0x005436f0`): only while fewer than 20 shots.
-    ///
-    /// Deviation (implementation artifact): the original's Shot constructor
-    /// reads its kind field before setting it, and draws an extra `% 3` start
-    /// delay when the recycled heap block happened to hold kind 1 or 3+.
-    /// The intent is no delay (the field is set right after), so we never
-    /// draw it (`alien-sylvester.md#deviations`).
+    /// `EffectShot` (`0x005436f0`, see `alien::add_effect_shot`).
     fn add_effect_shot(&mut self, x: i32, y: i32, kind: i32) {
-        if self.shots.len() >= 20 {
-            return;
-        }
-        let r = self.rng.next_range(200) as i32 + 50;
-        self.shots.push(Shot {
-            kind,
-            delay: 0,
-            age: 0,
-            frame: 0,
-            r,
-            widget_x: x,
-            widget_y: y,
-        });
+        crate::alien::add_effect_shot(&mut self.shots, &mut self.rng, x, y, kind);
     }
 
     /// `Alien` death (`0x004f9c70`), kind 1.
@@ -824,6 +810,7 @@ impl Board {
             Slot::EggPiece => self.buy_egg_piece(price),
             Slot::FoodQuality => self.buy_food_quality(price),
             Slot::FoodQuantity => self.buy_food_quantity(price),
+            Slot::Carnivore => self.buy_carnivore(price),
             // TODO(spec): other slots (not on tank 1-1).
             _ => return ClickResult::Ignored,
         };
@@ -851,6 +838,21 @@ impl Board {
         self.arrow_buy_fish = false;
         // Purchase sounds: a throttled `SOUND_GROW` (`0x0054941c`), then a
         // splash variant picked with one unthrottled draw (`0x00538360`).
+        self.play(0x122, Sound::Grow);
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r).into());
+        true
+    }
+
+    /// Slot 4 (`0x00549380` case 4): spend, `BuyCarnivore`, reveal 10 and
+    /// 11 (tank 1), `SOUND_GROW`, then the splash draw.
+    fn buy_carnivore(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        self.add_carnivore();
+        self.shop.reveal(Slot::Weapon, true);
+        self.shop.reveal(Slot::EggPiece, true);
         self.play(0x122, Sound::Grow);
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r).into());
@@ -993,6 +995,35 @@ impl Board {
         }
     }
 
+    /// Carnivore remove (slot 87 @ `0x004f2d30`): the 1-3 hint chain
+    /// (carnivore.md#carnivore-remove), for starving and being eaten alike.
+    fn carnivore_died(&mut self) {
+        if (self.tank, self.level) != (1, 3) {
+            return;
+        }
+        if self.hints[0x1c] {
+            self.show_message("Try feeding small guppies to your carnivores!", false, 0x1d);
+        }
+        if self.hints[0x1b] {
+            self.show_message("Hint: Carnivores won't eat fish food!", false, 0x1c);
+        }
+        self.show_message("Warning! Your carnivore has died!", false, 0x1b);
+    }
+
+    /// `Board::BuyCarnivore` (`0x00544c00`, carnivore.md#spawn): 12 draws.
+    pub fn add_carnivore(&mut self) {
+        let x = self.rng.next_range(520) as i32 + 20;
+        let y = self.rng.next_range(265) as i32 + 105;
+        let mut f = Fish::new_carnivore(x, y, &mut self.rng);
+        f.vy = f64::from(self.rng.next_range(5) + 23);
+        f.y = 40.0;
+        f.widget_y = 40;
+        f.vy_damp_timer = self.rng.next_range(10) as i32 + 45;
+        self.carnivores.push(f);
+        // Shadow ctor draw.
+        self.rng.next_range(5);
+    }
+
     /// One pet's update and what it asks the board to do.
     fn update_pet(&mut self, i: usize) {
         let mut out = PetOut::default();
@@ -1103,9 +1134,29 @@ impl Board {
             hints: &mut self.hints,
             tutorial: self.tutorial,
             dead_fish: &mut new_dead,
+            guppies: &[],
+            eaten: &mut Vec::new(),
+            shots: &mut self.shots,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
+        }
+        // Carnivores (`+0xa4`) right after the guppies. They read the guppy
+        // list for prey; a guppy eaten here is gone for the next carnivore.
+        let mut eaten = Vec::new();
+        world.guppies = &self.guppies;
+        world.eaten = &mut eaten;
+        let mut carnivore_died = 0;
+        for f in &mut self.carnivores {
+            f.update(env, &mut world);
+            if f.dead {
+                carnivore_died += 1;
+            }
+        }
+        for i in eaten {
+            // Fish slot 87 (`true`): removed, no corpse; `board+0x488 += 1`.
+            self.guppies[i].dead = true;
+            self.guppies[i].eaten = true;
         }
         for s in stage_ups {
             self.on_stage_up(s);
@@ -1118,13 +1169,24 @@ impl Board {
             self.dead_fish.push(d);
         }
         self.guppies.retain(|f| !f.dead);
+        self.carnivores.retain(|f| !f.dead);
+        for _ in 0..carnivore_died {
+            self.carnivore_died();
+        }
         // Aliens (`+0xb8`, pass 1).
         let mut i = 0;
         while i < self.aliens.len() {
             let mut out = AlienOut::default();
-            self.aliens[i].update(&self.guppies, &mut self.rng, &mut out);
+            let prey: Vec<&Fish> = self.guppies.iter().chain(&self.carnivores).collect();
+            self.aliens[i].update(&prey, &mut self.rng, &mut out);
             if let Some(g) = out.ate {
-                let victim = self.guppies.remove(g);
+                let victim = if g < self.guppies.len() {
+                    self.guppies.remove(g)
+                } else {
+                    let c = self.carnivores.remove(g - self.guppies.len());
+                    self.carnivore_died();
+                    c
+                };
                 // Eat sound (`0x00538560`): one draw when not throttled.
                 if self.sample_ready(0x113, 3) {
                     let chomp = if self.rng.next_range(3) == 0 {
@@ -1185,7 +1247,7 @@ impl Board {
         // board are banked first in the original via `0x0053c2d0`; that only
         // matters once coin values on-screen are tracked separately.)
         // TODO(spec): other fish kinds and pets count as fish (`0x005392a0`).
-        if self.guppies.is_empty() && self.dialog.is_none() {
+        if self.guppies.is_empty() && self.carnivores.is_empty() && self.dialog.is_none() {
             self.paused = true;
             self.dialog = Some(if self.tutorial {
                 Dialog::LastFishDied

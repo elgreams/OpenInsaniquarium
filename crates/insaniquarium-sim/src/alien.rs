@@ -52,7 +52,8 @@ pub struct Alien {
 /// What an alien tick asks the board to do.
 #[derive(Debug, Default)]
 pub struct AlienOut {
-    /// Index of the guppy eaten this tick.
+    /// Index of the fish eaten this tick, in the prey list passed to
+    /// `update` (guppies, then carnivores).
     pub ate: Option<usize>,
     pub died: bool,
 }
@@ -93,7 +94,9 @@ impl Alien {
     }
 
     /// `Alien::Update` (`0x004fd560`), kind 1.
-    pub fn update(&mut self, guppies: &[Fish], rng: &mut MtRand, out: &mut AlienOut) {
+    /// `prey`: every fish the alien can eat (`alien-sylvester.md#31`):
+    /// guppies, then carnivores.
+    pub fn update(&mut self, guppies: &[&Fish], rng: &mut MtRand, out: &mut AlienOut) {
         let mut lunge = 0.0;
         if self.warp != 0 {
             if self.warp <= 10 {
@@ -114,7 +117,7 @@ impl Alien {
         };
         match target {
             Some(t) => {
-                self.steer(&guppies[t]);
+                self.steer(guppies[t]);
                 if self.eat_delay < 1 {
                     out.ate = self.eat_test(guppies);
                 }
@@ -156,7 +159,7 @@ impl Alien {
     }
 
     /// `0x004e8b60`: nearest guppy by widget centre.
-    fn nearest(&self, guppies: &[Fish]) -> Option<usize> {
+    fn nearest(&self, guppies: &[&Fish]) -> Option<usize> {
         let (cx, cy) = self.centre();
         let mut best = 100_000_000;
         let mut found = None;
@@ -192,7 +195,7 @@ impl Alien {
     }
 
     /// `0x004e8f70`: first guppy inside the 45×65 half-extent box.
-    fn eat_test(&self, guppies: &[Fish]) -> Option<usize> {
+    fn eat_test(&self, guppies: &[&Fish]) -> Option<usize> {
         let (cx, cy) = self.centre();
         guppies.iter().position(|g| {
             let dx = cx - (g.widget_x + 40);
@@ -496,4 +499,27 @@ impl Warp {
     pub fn frame(&self) -> i32 {
         17 - self.counter / 2
     }
+}
+
+/// `EffectShot` (`0x005436f0`): only while fewer than 20 shots; one draw.
+///
+/// Deviation (implementation artifact): the original's Shot constructor
+/// reads its kind field before setting it, and draws an extra `% 3` start
+/// delay when the recycled heap block happened to hold kind 1 or 3+.
+/// The intent is no delay (the field is set right after), so we never
+/// draw it (`alien-sylvester.md#deviations`).
+pub fn add_effect_shot(shots: &mut Vec<Shot>, rng: &mut MtRand, x: i32, y: i32, kind: i32) {
+    if shots.len() >= 20 {
+        return;
+    }
+    let r = rng.next_range(200) as i32 + 50;
+    shots.push(Shot {
+        kind,
+        delay: 0,
+        age: 0,
+        frame: 0,
+        r,
+        widget_x: x,
+        widget_y: y,
+    });
 }

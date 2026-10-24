@@ -1,4 +1,6 @@
-//! Guppy (`Sexy::Fish`, type 0). Spec: `docs/re/objects/fish-guppy.md`.
+//! Guppy (`Sexy::Fish`, type 0) and carnivore (`Sexy::Oscar`, type 5, a
+//! `Fish` with some slots replaced). Specs: `docs/re/objects/fish-guppy.md`,
+//! `docs/re/objects/carnivore.md`.
 //!
 //! Field names follow the spec; raw offsets of the original are noted where
 //! they aid cross-referencing captures.
@@ -12,8 +14,19 @@ use crate::sound::{Played, Sound};
 
 /// Guppy state. All positions/velocities are `f64` (x87 doubles in the
 /// original); timers and bounds are `i32`.
+/// Which `Fish` subclass this is (`+0x8c`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FishKind {
+    #[default]
+    Guppy,
+    /// `Sexy::Oscar` (type 5): eats small guppies, drops diamonds.
+    Carnivore,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fish {
+    /// `+0x8c`
+    pub kind: FishKind,
     /// `+0x158`, `+0x160`
     pub x: f64,
     pub y: f64,
@@ -53,6 +66,8 @@ pub struct Fish {
     pub link_11c: i32,
     /// Set when the fish dies this tick; the board removes it.
     pub dead: bool,
+    /// Eaten (by a carnivore) this tick: removed without a corpse.
+    pub eaten: bool,
     /// `+0x1ac`: swim mode 0..=9, or 123 (startled).
     pub mode: i32,
     /// `+0x1b0`: ticks in current mode.
@@ -124,6 +139,12 @@ pub struct World<'a> {
     pub tutorial: bool,
     /// Corpses of guppies that died this tick (`Board::AddDeadFish`).
     pub dead_fish: &'a mut Vec<DeadFish>,
+    /// The guppy list, for carnivores' prey (read-only while they update).
+    pub guppies: &'a [Fish],
+    /// Guppies eaten this tick (indices into `guppies`).
+    pub eaten: &'a mut Vec<usize>,
+    /// Effect shots (the gore burst).
+    pub shots: &'a mut Vec<crate::alien::Shot>,
 }
 
 impl World<'_> {
@@ -152,6 +173,7 @@ impl Fish {
     /// `Fish::Init` (`0x004de370`): 6 app-RNG draws, in this order.
     pub fn new(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish {
+            kind: FishKind::Guppy,
             x: f64::from(x),
             y: f64::from(y),
             vx: 0.0,
@@ -173,6 +195,7 @@ impl Fish {
             state_ac: -1,
             link_11c: -1,
             dead: false,
+            eaten: false,
             mode: 0,
             mode_timer: 40,
             reroll_timer: 0,
@@ -207,6 +230,24 @@ impl Fish {
         f
     }
 
+    /// `Oscar::Oscar` (`0x004efda0`): `Fish::Init` (6 draws), then
+    /// `Oscar::Init` (`0x004d84c0`): stage 5, bounds 105..360, no clicks,
+    /// and one more draw for hunger (carnivore.md#construction).
+    pub fn new_carnivore(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new(x, y, rng);
+        f.kind = FishKind::Carnivore;
+        f.stage = 5;
+        f.ceil_y = 105;
+        f.floor_y = 360;
+        f.announces = false;
+        f.hunger = rng.next_range(200) as i32 + 600;
+        f
+    }
+
+    pub fn is_carnivore(&self) -> bool {
+        self.kind == FishKind::Carnivore
+    }
+
     /// `Fish::Update` (`0x004f6970`).
     ///
     /// TODO(spec): the cursor-follow branch, coin drop and alien-present
@@ -219,7 +260,12 @@ impl Fish {
         if self.dead {
             return;
         }
-        if !self.update_hunger(env, w) {
+        let chasing = if self.is_carnivore() {
+            self.update_hunger_carnivore(env, w)
+        } else {
+            self.update_hunger(env, w)
+        };
+        if !chasing {
             self.swim_modes(w.rng, w.global);
         }
         // Mode reroll, then the coin drop (slot 81) when there are no aliens.
@@ -232,7 +278,11 @@ impl Fish {
             }
         }
         if !env.has_aliens {
-            self.update_coin(w);
+            if self.is_carnivore() {
+                self.drop_diamond(w);
+            } else {
+                self.update_coin(w);
+            }
         }
         let rng = &mut *w.rng;
         self.damping_timers();
@@ -347,6 +397,206 @@ impl Fish {
             let text = "Click on coins for extra money!";
             message::show_chain(w.message, w.hints, text, true, [5, 0x19, 0x1a]);
         }
+    }
+
+    /// Carnivore hunger (slot 82 @ `0x004e1550`, carnivore.md): no hungry
+    /// messages or grace, dies the tick hunger reaches 0, hunts below 500.
+    fn update_hunger_carnivore(&mut self, env: FishEnv, w: &mut World<'_>) -> bool {
+        if self.fade > 0 {
+            if self.fade_to_hungry {
+                self.fade += 1;
+                if self.fade > 5 {
+                    self.fade = 0;
+                }
+            } else {
+                self.fade -= 1;
+            }
+        }
+        if !env.has_aliens {
+            if self.link_11c == -1 {
+                self.hunger -= 1;
+            }
+            if self.hunger == self.hungry_at + 4 {
+                self.start_fade(true);
+            } else if self.hunger < -1000 {
+                self.hunger = -1000;
+            }
+        }
+        if self.state_ac < 0 && self.hunger <= 0 {
+            self.die(w);
+            return false;
+        }
+        if self.hunger < 500 {
+            return self.chase_prey(w);
+        }
+        false
+    }
+
+    /// Prey chase (slot 84 @ `0x004d85d0`): find the nearest small guppy,
+    /// steer every 3rd tick, then the bite check.
+    fn chase_prey(&mut self, w: &mut World<'_>) -> bool {
+        let prey = self.find_prey(w.guppies);
+        let fx = (self.x + 40.0) as i32;
+        let fy = (self.y + 50.0) as i32;
+        if self.mode_timer >= 3 {
+            let Some(pi) = prey else { return false };
+            self.mode_timer = 0;
+            let g = &w.guppies[pi];
+            self.steer_to_prey(fx, fy, g.widget_x + 40, g.widget_y + 40);
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        let Some(_) = prey else { return false };
+        self.bite_check(w);
+        true
+    }
+
+    /// Find prey (slot 85 @ `0x004eb080`): the first nearest small guppy.
+    fn find_prey(&mut self, guppies: &[Fish]) -> Option<usize> {
+        let mut best = 100_000_000;
+        let mut found = None;
+        for (i, g) in guppies.iter().enumerate() {
+            let dx = (f64::from(g.widget_x + 40) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(g.widget_y + 40) - (self.y + 40.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best && g.stage == 0 && g.state_ac < 0 && !g.dead {
+                best = d;
+                found = Some(i);
+            }
+        }
+        if best < 10_000 {
+            self.timer_f8 = 100;
+        }
+        found
+    }
+
+    fn steer_to_prey(&mut self, fx: i32, fy: i32, tx: i32, ty: i32) {
+        let hungry = self.hunger <= 300;
+        let (fine, cap) = if hungry { (0.05, 5.0) } else { (0.1, 4.0) };
+        let (dec, inc) = if fx > tx + 8 {
+            (Some(1.5), None)
+        } else if fx < tx - 8 {
+            (None, Some(1.5))
+        } else if fx > tx + 4 {
+            (Some(0.2), None)
+        } else if fx < tx - 4 {
+            (None, Some(0.2))
+        } else if fx > tx {
+            (Some(fine), None)
+        } else if fx < tx {
+            (None, Some(fine))
+        } else {
+            (None, None)
+        };
+        if let Some(d) = dec
+            && -cap < self.vx
+        {
+            self.vx -= d;
+        }
+        if let Some(i) = inc
+            && cap > self.vx
+        {
+            self.vx += i;
+        }
+        let (fd, fu, nd, nu) = if hungry {
+            (1.3, 1.5, 0.5, 0.7)
+        } else {
+            (0.8, 1.3, 0.3, 0.5)
+        };
+        if fy > ty + 6 {
+            if -3.0 < self.vy {
+                self.vy -= fd;
+            }
+        } else if fy < ty - 6 {
+            if 4.0 > self.vy {
+                self.vy += fu;
+            }
+        } else if fy > ty {
+            if -3.0 < self.vy {
+                self.vy -= nd;
+            }
+        } else if fy < ty && 4.0 > self.vy {
+            self.vy += nu;
+        }
+    }
+
+    /// Bite check (slot 86 @ `0x004eb230`): eat the first small guppy whose
+    /// box the mouth is in; otherwise open the mouth when one is near.
+    fn bite_check(&mut self, w: &mut World<'_>) {
+        let cx = self.x + 40.0;
+        let cy = self.y + 45.0;
+        for (i, g) in w.guppies.iter().enumerate() {
+            if g.dead {
+                continue;
+            }
+            let (gx, gy) = (f64::from(g.widget_x), f64::from(g.widget_y));
+            let small = g.stage == 0;
+            if small && gx + 10.0 < cx && cx < gx + 70.0 && gy + 22.0 < cy && cy < gy + 58.0 {
+                if g.state_ac < 0 {
+                    w.eaten.push(i);
+                    self.eat_guppy(w, i);
+                    if self.eat_timer == 0 {
+                        self.eat_timer = 8;
+                    }
+                    return;
+                }
+                continue;
+            }
+            if self.eat_timer == 0
+                && small
+                && g.state_ac < 0
+                && gx - 7.0 < cx
+                && cx < gx + 87.0
+                && gy + 10.0 < cy
+                && cy < gy + 70.0
+            {
+                self.eat_timer = 20;
+            }
+        }
+    }
+
+    /// Eat (slot 77 @ `0x004f2b00`, carnivore.md#eat): chomp (1 draw when
+    /// off cooldown), hunger +900 capped at 1300, then the gore burst
+    /// (1 draw for the count, 2 per piece plus the effect shot's draw).
+    fn eat_guppy(&mut self, w: &mut World<'_>, victim: usize) {
+        if w.sample_ready(0x113, 3) {
+            let chomp = if w.rng.next_range(3) == 0 {
+                Sound::Chomp2
+            } else {
+                Sound::Chomp
+            };
+            w.sounds.push(chomp.into());
+        }
+        let was_hungry = self.looks_hungry();
+        self.timer_f8 = 0;
+        self.hunger = (self.hunger + 900).min(1300);
+        let (vx, vy) = (w.guppies[victim].widget_x, w.guppies[victim].widget_y);
+        let n = w.rng.next_range(3) + 2;
+        for _ in 0..n {
+            let y = w.rng.next_range(20) as i32 + 15 + vy;
+            let x = w.rng.next_range(20) as i32 + 15 + vx;
+            crate::alien::add_effect_shot(w.shots, w.rng, x, y, 1);
+        }
+        if was_hungry && !self.looks_hungry() {
+            self.start_fade(false);
+        }
+    }
+
+    /// Diamond drop (slot 81 @ `0x004d8560`): every `coin_interval` ticks.
+    fn drop_diamond(&mut self, w: &mut World<'_>) {
+        self.coin_timer += 1;
+        if self.coin_timer < self.coin_interval {
+            return;
+        }
+        self.coin_timer = 0;
+        let mut c = Coin::new(
+            self.widget_x + 5,
+            self.widget_y + 10,
+            crate::coin::kind::DIAMOND,
+        );
+        c.vy = -1.0;
+        w.coins.push(c);
     }
 
     /// `0x004d6920`: start the hungry (true) or fed (false) colour fade.

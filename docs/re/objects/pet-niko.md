@@ -1,8 +1,8 @@
 # Niko the oyster (`Sexy::OtherTypePet`, pet id 1)
 
-Niko sits still in the tank and makes a pearl every ~41 s; the player clicks the pearl for $250. Same class as Stinky (`pet-stinky.md`), so only the id-1 differences are listed here.
+Niko sits still in the tank and makes a pearl every ~69 s (the first after 34.5 s); the player clicks the pearl for $250. Same class as Stinky (`pet-stinky.md`), so only the id-1 differences are listed here.
 
-Confidence: `traced` for Niko's fields and RNG, and for the pearl, on tank 1-3 up to tick 9059 (`tank1_1.rs` `tank_1_3_from_start` compares `pets` and `pearls` every tick against `tank1-3_full_01`; the replay is ignored for now because it then diverges at the carnivore purchase). Two full pearl cycles match. Drawing is `static`.
+Confidence: `traced` for Niko's fields and RNG, and for the pearl, over the whole of tank 1-3 (`tank1_1.rs` `tank_1_3_from_start` compares `pets` and `pearls` every tick against `tank1-3_full_01`: eight pearl cycles). Drawing is `static`.
 
 ## Construction
 
