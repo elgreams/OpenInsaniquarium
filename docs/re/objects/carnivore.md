@@ -1,6 +1,6 @@
 # Carnivore (`Sexy::Oscar`, type `0x05`)
 
-Status: the purchase, the per-tick update without prey, the diamond drop, starvation and the 1-3 death message are `traced`: `tank1_1.rs` `tank_1_3_from_start` compares every carnivore field each tick against `tank1-3_full_01` (bought at tick 9064 with hunger 606, a diamond after 340 ticks, starved at hunger 0, "Warning! Your carnivore has died!"). **Eating was not exercised** (no small guppy was left by then): the prey chase, bite check and eat remain `static`.
+Status: `traced`. `tank1_1.rs` compares every carnivore field and the app RNG each tick against two captures: `tank_1_3_from_start` (`tank1-3_full_01`: bought, a diamond, starved, the 1-3 death message) and `tank_1_3_carnivore_eats` (`tank1-3_eat_01`: a carnivore kept fed with fresh small guppies through six meals: hunt, bite, eat to hunger 1300, chomp and gore draws, diamonds, alien waves). Sections not exercised by either are marked `static`.
 
 Class `Sexy::Oscar`, vtable `0x0059843c`, board list `+0xa4`, object size `0x230` (same as `Fish`). An Oscar **is a `Fish`**: it uses `Fish::Update` (slot 22 @ `0x004f6970`, `fish-guppy.md#fishupdate-order-per-tick`) and `Fish::Draw` (slot 26 @ `0x004e4a90`) unchanged, and replaces a few virtual slots. It eats small guppies instead of food, drops diamonds, and dies as soon as its hunger runs out.
 
@@ -130,7 +130,7 @@ After the loop: if `best < 10000` (within 100 px), call `0x004d6b00(150)`. It do
 
 Return `prey`. **No RNG.**
 
-`static`.
+`traced` (`tank_1_3_carnivore_eats`).
 
 ### Prey chase (slot 84 @ `0x004d85d0`)
 
@@ -169,7 +169,7 @@ Return `prey`. **No RNG.**
 
 `mode_timer` is incremented once per tick by `Fish::Update` step 4, so steering happens on every 3rd tick while chasing (the same rhythm as a guppy's food chase). The carnivore aims its point (x + 40, y + 50) at the guppy's centre. **No RNG.**
 
-`static`.
+`traced` (`tank_1_3_carnivore_eats`).
 
 ### Bite check (slot 86 @ `0x004eb230`)
 
@@ -186,7 +186,7 @@ So **at most one guppy is eaten per carnivore per tick**, and it is the first on
 
 **Removing the guppy** (Fish slot 87 @ `0x004df0b0`, `true`): detach a missile at `+0x98` if any; remove it from the widget manager, the app's object registry and its board list (`0x00541d90`); delete its shadow; `board+0x488 += 1`. **No `DeadFish`, no sound, no RNG.** This is the same path as an alien eating a guppy (`alien-sylvester.md#32-steering-and-eating-0x004ed460--0x004e8f70`). Because guppies update before carnivores, the eaten guppy has already had its update this tick.
 
-`static`.
+`traced` (`tank_1_3_carnivore_eats`: six eats; the eaten guppy disappears with no corpse).
 
 ### Eat (slot 77 @ `0x004f2b00`, argument = the victim)
 
@@ -202,7 +202,7 @@ Nothing else changes: **no growth** (`+0x1a4` untouched), **no coin-timer change
 
 Draws per eat (normal game, `app+0x882` set): `[chomp]` + 1 + n × (2 + effect-shot ctor draws), with n ∈ 2..4. That is 6–15 draws, plus the heap extras.
 
-`static`.
+`traced` for steps 1, 4 and 5 (chomp and gore draws, hunger +900 capped at 1300). Steps 6–7 are `static`.
 
 ### Diamond drop (slot 81 @ `0x004d8560`)
 
@@ -251,7 +251,7 @@ Sylvester's prey filter (`alien-sylvester.md#31-nearest-prey-0x004e8b60`) accept
 
 Carnivores also count as "fish" for the empty-tank check (`0x005392a0` looks at `+0xa0`, `+0xa4`, `+0xd0`, …, `fish-guppy.md#death-and-the-empty-tank`) and for "alien has prey".
 
-`static`.
+`static` (no carnivore was eaten by an alien in either capture).
 
 ## Food and clicks
 

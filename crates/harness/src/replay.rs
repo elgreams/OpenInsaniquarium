@@ -1098,9 +1098,16 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .map(|b| coin_from_raw(b))
             .collect();
         for c in coins.iter().filter(|c| c.collected) {
-            let was_free = prev_coins
-                .iter()
-                .any(|p| !p.collected && p.kind == c.kind && p.age + 1 == c.age);
+            // The same coin, still free a tick ago: same kind and age, and
+            // where it was collected (coins dropped together share kind and
+            // age, so the position tells them apart).
+            let was_free = prev_coins.iter().any(|p| {
+                !p.collected
+                    && p.kind == c.kind
+                    && p.age + 1 == c.age
+                    && (p.widget_x - c.from_x).abs() <= 2
+                    && (p.widget_y - c.from_y).abs() <= 2
+            });
             if was_free {
                 // Collection records trunc(x), trunc(y); if the coin still
                 // sits there it hasn't glided yet, i.e. the click came after
@@ -1121,9 +1128,16 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .map(|b| coin_from_raw(b))
             .collect();
         for c in pearls.iter().filter(|c| c.collected) {
-            let was_free = prev_pearls
-                .iter()
-                .any(|p| !p.collected && p.kind == c.kind && p.age + 1 == c.age);
+            // The same coin, still free a tick ago: same kind and age, and
+            // where it was collected (coins dropped together share kind and
+            // age, so the position tells them apart).
+            let was_free = prev_pearls.iter().any(|p| {
+                !p.collected
+                    && p.kind == c.kind
+                    && p.age + 1 == c.age
+                    && (p.widget_x - c.from_x).abs() <= 2
+                    && (p.widget_y - c.from_y).abs() <= 2
+            });
             if was_free {
                 let mid = c.x as i32 == c.from_x && c.y as i32 == c.from_y;
                 let click = Input::Click {
@@ -1146,10 +1160,16 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .and_then(Value::as_array)
             .map_or(guppies, Vec::len);
         if guppies > prev_guppies && money_of(Some(s)) < money_of(prev_snap) {
-            out.inputs
-                .entry(s.tick)
-                .or_default()
-                .push(Input::Buy(Slot::Guppy));
+            // Still at its spawn y (30.0): bought after this tick's update
+            // (mid-frame), so it applies before the next tick.
+            let unmoved = s
+                .state
+                .get("guppies")
+                .and_then(Value::as_array)
+                .and_then(|g| g.last())
+                .and_then(|g| g.get("raw")?.as_str().and_then(hex_bytes))
+                .is_some_and(|raw| fish_from_raw(&raw).y == 30.0);
+            push(s.tick, unmoved, Input::Buy(Slot::Guppy), &mut out);
         } else if guppies > prev_guppies && prev_guppies == 0 {
             // A free guppy into an empty tank: the "last fish died" dialog
             // was dismissed (mercy guppy).
@@ -1384,7 +1404,11 @@ pub fn without_debris_shots(decoded: &Trace, capture: &Trace) -> Trace {
             .map(|b| shot_from_raw(b))
             .collect();
         for x in &shots {
-            if x.kind != 0 && x.delay > 0 {
+            // Delayed: still waiting (delay > 0), or the delay already ran
+            // out and left its frame behind its age (frame −1 on the tick
+            // the wait ends; ours never lags).
+            let lags = x.frame != if x.kind == 0 { x.age } else { x.age / 2 } - 1;
+            if x.kind != 0 && (x.delay > 0 || lags) {
                 delayed.insert((x.kind, x.widget_x, x.widget_y, x.r));
             }
         }

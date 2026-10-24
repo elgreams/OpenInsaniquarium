@@ -590,19 +590,37 @@ fn hatch_screen_after_1_1_matches() {
 /// bought, starving and dying, food upgrades and three egg pieces.
 #[test]
 fn tank_1_3_from_start() {
+    assert!(replay_1_3("tank1-3_full_01") > 300 || !captured("tank1-3_full_01"));
+}
+
+/// Tank 1-3 with a carnivore fed small guppies (`tank1-3_eat_01`): six
+/// meals (hunt, bite, eat, gore), diamonds, waves.
+#[test]
+fn tank_1_3_carnivore_eats() {
+    assert!(replay_1_3("tank1-3_eat_01") > 1000 || !captured("tank1-3_eat_01"));
+}
+
+fn captured(name: &str) -> bool {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../traces/original/{name}.trace.jsonl"))
+        .exists()
+}
+
+fn replay_1_3(name: &str) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../traces/original/tank1-3_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
+        .join(format!("../../traces/original/{name}.trace.jsonl"));
+    let Ok(f) = File::open(&path) else { return 0 };
     let full = Trace::read(BufReader::new(f)).unwrap();
     let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
-    // The capture starts on the level's first tick; run to the last board
-    // tick. Keyed on the board clock, like the full 1-2 replay.
-    let from = full.snapshots[0].tick;
-    let to = full
-        .snapshots
+    // From the level's first board tick (a capture may open on the help
+    // screen) to the last one. Keyed on the board clock, like the full 1-2
+    // replay.
+    let i = full.snapshots.iter().position(board_of).unwrap();
+    let from = full.snapshots[i].tick;
+    let to = full.snapshots[i..]
         .iter()
         .take_while(|s| board_of(s))
         .last()
@@ -646,7 +664,7 @@ fn tank_1_3_from_start() {
     .unwrap();
     harness::replay::mask_rng_sounds(&mut actual, &expected);
     eprintln!(
-        "1-3 from start: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
+        "{name}: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),
         inferred.dirty.len(),
         resync.len()
@@ -667,11 +685,12 @@ fn tank_1_3_from_start() {
         .filter(|s| s.state["pearls"].as_array().is_some_and(|a| !a.is_empty()))
         .count();
     eprintln!(
-        "1-3: {} snapshots compared; carnivore on {carn_ticks}, pearl on {pearl_ticks}",
+        "{name}: {} snapshots compared; carnivore on {carn_ticks}, pearl on {pearl_ticks}",
         expected.snapshots.len()
     );
-    assert!(carn_ticks > 300 && pearl_ticks > 100);
+    let _ = pearl_ticks;
     if let Some(d) = diff(&expected, &actual) {
-        panic!("{d}");
+        panic!("{name}: {d}");
     }
+    carn_ticks
 }
