@@ -111,11 +111,22 @@ impl Pet {
 
     /// `OtherTypePet::OtherTypePet` for Niko (pet-niko.md#construction):
     /// like Stinky, but y isn't forced and the divisor is the default 2.0.
-    pub fn niko(x: i32, y: i32, rng: &mut MtRand) -> Self {
-        let mut p = Pet::stinky(x, y, rng);
+    /// He sits at a fixed spot per tank backdrop, whatever was drawn
+    /// (`0x004d89f0`, pet-niko.md#construction).
+    pub fn niko(x: i32, y: i32, backdrop: i32, rng: &mut MtRand) -> Self {
+        let _ = (x, y);
+        let (nx, ny) = match backdrop {
+            1 => (95, 253),
+            2 => (175, 163),
+            3 => (65, 156),
+            4 => (145, 260),
+            5 => (67, 185),
+            _ => (160, 176),
+        };
+        let mut p = Pet::stinky(nx, ny, rng);
         p.id = NIKO;
-        p.y = f64::from(y);
-        p.widget_y = y;
+        p.y = f64::from(ny);
+        p.widget_y = ny;
         p.divisor = 2.0;
         p
     }
@@ -166,7 +177,9 @@ impl Pet {
         self.reroll_timer += 1;
         if self.reroll_timer > 20
             || (self.x <= 10.0 && self.target_vx <= 0.0)
-            || (self.x >= 540.0 && self.target_vx > 0.0)
+            // `540 ≤ x` and `0 ≤ tvx`: both are the x87 `<` / `==` pair
+            // (`0x004f3297`), so equality counts.
+            || (self.x >= 540.0 && self.target_vx >= 0.0)
         {
             self.reroll_timer = 0;
             if rng.next_range(10) == 0 {

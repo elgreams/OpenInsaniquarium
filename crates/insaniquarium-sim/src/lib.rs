@@ -8,6 +8,7 @@ pub mod fish;
 pub mod food;
 pub mod game;
 pub mod hatch;
+pub mod itchy;
 pub mod message;
 pub mod music;
 pub mod pet;

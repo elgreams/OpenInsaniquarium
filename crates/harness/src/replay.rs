@@ -36,10 +36,10 @@ fn rd_f64(b: &[u8], off: usize) -> f64 {
 /// A guppy from its raw object bytes (offsets: docs/re/objects/fish-guppy.md).
 pub fn fish_from_raw(b: &[u8]) -> Fish {
     Fish {
-        kind: if rd_i32(b, 0x8c) == 5 {
-            FishKind::Carnivore
-        } else {
-            FishKind::Guppy
+        kind: match rd_i32(b, 0x8c) {
+            5 => FishKind::Carnivore,
+            0x15 => FishKind::Itchy,
+            _ => FishKind::Guppy,
         },
         eaten: false,
         x: rd_f64(b, 0x158),
@@ -318,6 +318,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| pet_from_raw(b))
         .collect();
+    board.fish_pets = raw_list(first, "pet_fish")
+        .iter()
+        .map(|b| fish_from_raw(b))
+        .collect();
     board.aliens = raw_list(first, "alien")
         .iter()
         .map(|b| alien_from_raw(b))
@@ -592,6 +596,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
         Value::Array(board.pets.iter().map(pet_json).collect()),
     );
     state.insert(
+        "fish_pets".into(),
+        Value::Array(board.fish_pets.iter().map(fish_json).collect()),
+    );
+    state.insert(
         "aliens".into(),
         Value::Array(board.aliens.iter().map(alien_json).collect()),
     );
@@ -676,6 +684,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
                     .map(|b| coin_json(&coin_from_raw(b)))
                     .collect();
                 s.state.insert("pearls".into(), Value::Array(pearls));
+                let fish_pets = raw_list(&s, "pet_fish")
+                    .iter()
+                    .map(|b| fish_json(&fish_from_raw(b)))
+                    .collect();
+                s.state.insert("fish_pets".into(), Value::Array(fish_pets));
             }
             let pets = raw_list(&s, "pet_other")
                 .iter()
@@ -1043,6 +1056,32 @@ impl Inferred {
         Trace {
             header: expected.header.clone(),
             snapshots,
+        }
+    }
+}
+
+impl Inferred {
+    /// The sim side of [`Inferred::clean`]'s sound carry: sounds the sim
+    /// played on a dirty tick (which isn't compared) count on the next one,
+    /// as the capture's do. Without this, a sound the sim starts on a dirty
+    /// tick for an unrelated reason (a guppy eating) goes missing.
+    pub fn carry_dirty_sounds(&self, actual: &mut Trace) {
+        let mut carry: Vec<Value> = Vec::new();
+        for s in &mut actual.snapshots {
+            if self.dirty.contains(&s.tick) {
+                if let Some(Value::Array(v)) = s.state.get("sounds") {
+                    carry.extend(v.iter().cloned());
+                }
+                continue;
+            }
+            if !carry.is_empty()
+                && let Some(Value::Array(v)) = s.state.get_mut("sounds")
+            {
+                v.append(&mut carry);
+                v.sort_by_key(|x| x.as_i64());
+                v.dedup();
+            }
+            carry.clear();
         }
     }
 }
@@ -1491,6 +1530,18 @@ pub fn replay_resync(
     replay_resync_dirty(board, t, inputs, resync, &[])
 }
 
+/// The capture's app-RNG position at `tick`.
+fn mti_at(t: &Trace, tick: u32) -> Option<usize> {
+    t.snapshots
+        .iter()
+        .find(|s| s.tick == tick)?
+        .state
+        .get("rng_mti")?
+        .get("app")?
+        .as_u64()
+        .map(|m| m as usize)
+}
+
 /// [`replay_resync`], skipping re-syncs on `dirty` (mid-frame) ticks.
 pub fn replay_resync_dirty(
     mut board: Board,
@@ -1508,7 +1559,31 @@ pub fn replay_resync_dirty(
             "replay ran past the capture (tick not advancing?)"
         );
         let next = board.tick + 1;
-        board.step(inputs.get(&next).map_or(&[][..], Vec::as_slice));
+        let step_inputs = inputs.get(&next).map_or(&[][..], Vec::as_slice);
+        // On a deviation tick with a click, the original may have drawn the
+        // stale start delay (`alien-sylvester.md#deviations`) while handling
+        // the click, before the rest of the tick. Re-syncing after the tick
+        // fixes the RNG but not what the shifted draws decided inside it, so
+        // discard that many draws first: the count whose result lands on the
+        // capture's RNG position.
+        let skip =
+            if resync.contains_key(&next) && !dirty.contains(&next) && !step_inputs.is_empty() {
+                let want = mti_at(t, next);
+                (0..3).find(|&k| {
+                    let mut b = board.clone();
+                    for _ in 0..k {
+                        b.rng.next_u31();
+                    }
+                    b.step(step_inputs);
+                    want == Some(b.rng.state().1)
+                })
+            } else {
+                None
+            };
+        for _ in 0..skip.unwrap_or(0) {
+            board.rng.next_u31();
+        }
+        board.step(step_inputs);
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's
         // RNG already includes that click's draws.

@@ -8,11 +8,11 @@ Confidence: `traced` for Niko's fields and RNG, and for the pearl, over the whol
 
 `Board::AddPet(1, -1, -1, 0, 0)`: the same 2 position draws and 2 ctor draws as Stinky (`pet-stinky.md#construction`). **No shadow, so no shadow draw**: `0x00544800` gives `OtherTypePet` id 5 a type-0 shadow and every id other than 1 a type-1 shadow, and skips id 1 (`confirmed`: `tank1-3_full_01` starts with 3 shadows for 2 guppies and Stinky; the draw count itself is `static`, since that capture begins after the level was populated). Differences from pet 0:
 
-- **y is not forced** to the floor: Niko stays at the drawn y. The draws are named `x = r % 265 + 105`, `y = r % 520 + 20`, so x lands in 105..369 and y in 20..539; y is clamped into range on the first update (below).
+- **A fixed spot per backdrop**, whatever was drawn: the ctor calls `0x004d89f0(backdrop)`, which, for pet 1 without the drop-in flag, sets x, y from a table by the board's backdrop `+0x3e8` (set by `SetupShop` per tank: tank 1 → 1, 2 → 2, 3 → 4, 4 → 5, 5 → 6). Backdrop 1: **(95, 253)**; 2: (175, 163); 3: (65, 156); 4: (145, 260); 5: (67, 185); other: (160, 176). The two position draws are still made. (An earlier reading had him at the drawn y, clamped; the 1-3 replays restored his position from the capture, which hid it.)
 - Divisor `+0x188` = **2.0** (the default).
 - `+0x1b4` (for Niko a **pearl timer**, not a shell counter) starts at 0.
 
-`traced` (`tank1-3_full_01`, first tick: Niko at (95, 253) after the clamp, divisor 2.0).
+`traced` for backdrop 1 (`tank1_1.rs` `level_1_4_start_with_itchy` builds the level from the pre-populate RNG: Niko at (95, 253) with draws that would have put him elsewhere; also every 1-3 capture). Other backdrops are `static`.
 
 ## Update order
 

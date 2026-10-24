@@ -55,6 +55,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_STINKY",
     "IMAGE_ZZZ",
     "IMAGE_SYLV",
+    "IMAGE_BALROG",
     "IMAGE_WARPHOLE",
     "IMAGE_WARPGLOW",
     "IMAGE_LASERS",
@@ -725,7 +726,7 @@ fn shadow_cels(b: &Board, cels: &mut Vec<Cel>) {
         c.size = Some((80 + 2 * dx, 40 + 2 * dy));
         cels.push(c);
     };
-    for f in b.guppies.iter().chain(&b.carnivores) {
+    for f in b.guppies.iter().chain(&b.carnivores).chain(&b.fish_pets) {
         moving(f.widget_x, f.widget_y, false);
     }
     for a in &b.aliens {
@@ -742,6 +743,19 @@ fn shadow_cels(b: &Board, cels: &mut Vec<Cel>) {
                 .tint(TINT),
         );
     }
+}
+
+/// Itchy (`0x004df710`, pet-itchy.md#drawing): rows 0/1 swim/turn, 2/3 the
+/// same while an alien is in.
+fn itchy_cel(f: &Fish, alarmed: bool, z: f32) -> Cel {
+    let turning = f.turn_timer != 0;
+    let row = i32::from(turning) + if alarmed { 2 } else { 0 };
+    let mirror = match f.turn_timer {
+        t if t > 0 => true,
+        t if t < 0 => false,
+        _ => f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0),
+    };
+    Cel::new("IMAGE_ITCHY", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
 }
 
 /// Niko (`0x004e2bd0`, pet-niko.md#drawing): the cel follows the pearl
@@ -802,14 +816,24 @@ fn pet_cels(p: &Pet, z: f32, cels: &mut Vec<Cel>) {
     );
 }
 
-/// Sylvester (alien-sylvester.md#71-alien).
+/// An alien kind's sprite sheet (`Alien::DrawSprite` @ `0x004dae20`,
+/// `DeadAlien` draw @ `0x004dddb0`): kinds 1–2 Sylvester, 3 Balrog.
+/// TODO(spec): the other kinds' sheets.
+fn alien_sheet(kind: i32) -> &'static str {
+    match kind {
+        3 => "IMAGE_BALROG",
+        _ => "IMAGE_SYLV",
+    }
+}
+
+/// Sylvester and Balrog (alien-sylvester.md#71-alien).
 fn alien_cels(a: &Alien, z: f32, cels: &mut Vec<Cel>) {
     let (row, mirror) = if a.turn != 0 {
         (1, a.turn > 0)
     } else {
         (0, a.vx >= 0.0)
     };
-    let base = Cel::new("IMAGE_SYLV", a.cel, row, a.widget_x, a.widget_y, z).mirror(mirror);
+    let base = Cel::new(alien_sheet(a.kind), a.cel, row, a.widget_x, a.widget_y, z).mirror(mirror);
     if a.warp > 0 {
         if a.warp > 9 {
             return;
@@ -910,7 +934,7 @@ fn shot_cels(s: &Shot, laser: i32, z: f32, cels: &mut Vec<Cel>) {
 
 /// Sinking corpse (alien-sylvester.md#74-dead-alien).
 fn dead_alien_cels(d: &DeadAlien, z: f32, cels: &mut Vec<Cel>) {
-    let c = Cel::new("IMAGE_SYLV", d.cel, 0, d.widget_x, d.widget_y, z)
+    let c = Cel::new(alien_sheet(d.kind), d.cel, 0, d.widget_x, d.widget_y, z)
         .mirror(d.facing_right)
         .alpha((d.fade * 255.0) as i32);
     cels.push(c.clone());
@@ -1189,6 +1213,10 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
     }
     for (i, p) in b.pets.iter().enumerate() {
         pet_cels(p, 2.7 + i as f32 * 0.001, &mut cels);
+    }
+    // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#drawing).
+    for (i, f) in b.fish_pets.iter().enumerate() {
+        cels.push(itchy_cel(f, !b.aliens.is_empty(), 2.75 + i as f32 * 0.001));
     }
     for (i, s) in b.shots.iter().enumerate() {
         shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);

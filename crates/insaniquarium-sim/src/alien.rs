@@ -61,8 +61,11 @@ pub struct AlienOut {
 impl Alien {
     /// `Alien::Alien` (`0x004ecfa0`), kind 1: 2 app draws.
     pub fn new(x: i32, y: i32, kind: i32, rng: &mut MtRand) -> Self {
+        // `Alien::Alien` (`0x004ecfa0`): kind 2 (1-3) and 3 (1-4) differ
+        // from Sylvester only in speed and health.
         let (divisor, health) = match kind {
             2 => (1.6, 60.0),
+            3 => (1.2, 130.0),
             _ => (2.0, 50.0),
         };
         let right = rng.next_u31() & 1 != 0;

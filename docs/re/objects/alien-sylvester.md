@@ -46,7 +46,9 @@ Level start (`0x00541a20`) sets `+0x2c0 = 3000`, `+0x2bc = 2` and `+0x3e4 = 2` (
 
 No RNG on tank 1. Some later levels draw one here, e.g. 2-5: `kind = 4 | (rand() & 1)`.
 
-`traced` for 1-1 and 1-2 (kind and countdown restored and replayed). The rows for 1-3 to 1-5 and the other tanks are `static`; they come from the jump table at `0x00541888` (re-read 2026-10-23: 1-3 → kind 2, countdown 3000).
+`traced` for 1-1 to 1-4 (kind and countdown restored and replayed: `full_tank_1_2_replays`, `tank_1_3_from_start`, `tank_1_4_from_start`). The 1-5 row and the other tanks are `static`; they come from the jump table at `0x00541888`.
+
+Kinds 2 and 3 run the same code as kind 1; the ctor (`0x004ecfa0`) only sets other speed and health: **kind 2: divisor 1.6, 60 HP; kind 3: divisor 1.2, 130 HP**. Death (`0x004f9c70`) is the same for kinds 1–3 (kinds 4 and 0x14 have their own debris). `traced` for kind 3 (`tank_1_4_from_start`: three waves, health compared every tick).
 
 ### Per-tick countdown
 
@@ -382,6 +384,7 @@ Drawing: `static` unless a subsection says otherwise. Only frames without aliens
 ### 7.1 Alien (`Alien` slot 26 @ `0x004db210` → `Alien::DrawSprite` @ `0x004dae20`), kind 1
 
 - Mirror (art faces left): `vx ≥ 0` → mirrored.
+- Sheet by kind: kinds 1 and 2 **`IMAGE_SYLV`**, kind 3 **`IMAGE_BALROG`** (same 10×2 layout); the dead alien picks the same sheet (`0x004dddb0`, image ids 0xbd/0xbe). Kind 3 is `traced` by frame (`frames.rs` `tank_1_4_alien_frames_match_original`).
 - Sheet `IMAGE_SYLV` (160×160 cels, 10×2). Column = cel `+0x1c0`. Row:
   - 1 while turning (`+0x1b4 ≠ 0`); then mirror = `turn > 0` instead.
   - 0 otherwise.
@@ -528,4 +531,3 @@ Implementation artifacts we deliberately don't reproduce (CLAUDE.md, "Bugs"):
 - Meaning of GameObject `+0xac`/`+0x120` (prey filter), board `+0x2c4`, `+0x340`, `app+0x882`.
 - Whether `Coin` kind 4 from this path uses the "rising" behaviour (ctor arg −1.0).
 - Confirm the 10-tick hit cooldown dynamically (it limits damage to 1 hit per 280 ms).
-- Kind 2 (1-3) presumably differs only in divisor and health; check.

@@ -114,6 +114,8 @@ pub struct Board {
     /// `board+0xa4`: carnivores (`Sexy::Oscar`), updated right after the
     /// guppies (carnivore.md).
     pub carnivores: Vec<Fish>,
+    /// `+0xb4`: fish-shaped pets (`FishTypePet`); Itchy only for now.
+    pub fish_pets: Vec<Fish>,
     /// `board+0xac`: food in insertion order.
     pub foods: Vec<Food>,
     /// `board+0xa8`: coins in insertion order.
@@ -197,6 +199,7 @@ impl Board {
             message: Message::default(),
             guppies: Vec::new(),
             carnivores: Vec::new(),
+            fish_pets: Vec::new(),
             foods: Vec::new(),
             coins: Vec::new(),
             pearls: Vec::new(),
@@ -333,8 +336,21 @@ impl Board {
         } else if id == NIKO {
             // Niko gets no shadow (`0x00544800` skips pet id 1), so no draw:
             // `tank1-3_full_01` starts with 3 shadows for 2 guppies + Stinky.
-            self.pets.push(Pet::niko(a, _b, &mut self.rng));
+            // The backdrop `+0x3e8` SetupShop picks per tank (`0x00541200`).
+            let backdrop = match self.tank {
+                3 => 4,
+                4 => 5,
+                5 => 6,
+                t => t,
+            };
+            self.pets.push(Pet::niko(a, _b, backdrop, &mut self.rng));
+        } else if id == crate::itchy::ITCHY {
+            // `FishTypePet` (pet-itchy.md#construction): `Fish::Init`'s 6
+            // draws, then a type-0 shadow (one draw).
+            self.fish_pets.push(Fish::new_itchy(a, _b, &mut self.rng));
+            self.rng.next_range(5);
         } else {
+            // TODO(spec): other pets.
             self.rng.next_range(5);
         }
     }
@@ -555,7 +571,12 @@ impl Board {
 
     /// `DeadAlien::Update` (`0x004f6050`): debris bursts every 7 ticks.
     fn update_dead_aliens(&mut self) {
-        let mut i = 0;
+        self.update_dead_aliens_from(0);
+    }
+
+    /// [`Self::update_dead_aliens`] for the corpses from index `start` on.
+    fn update_dead_aliens_from(&mut self, start: usize) {
+        let mut i = start;
         while i < self.dead_aliens.len() {
             let d = &mut self.dead_aliens[i];
             if d.life < 1 {
@@ -700,7 +721,12 @@ impl Board {
 
     /// `0x00538230(id, 3, 1.0)`: play a throttled sample (no RNG).
     fn play(&mut self, id: usize, sound: Sound) {
-        if self.sample_ready(id, 3) {
+        self.play_throttled(id, 3, sound);
+    }
+
+    /// `0x00538230(id, gap, 1.0)`.
+    fn play_throttled(&mut self, id: usize, gap: i32, sound: Sound) {
+        if self.sample_ready(id, gap) {
             self.sounds.push(sound.into());
         }
     }
@@ -1206,7 +1232,12 @@ impl Board {
                 }
             }
             if out.died {
+                // A corpse made during the object pass joins the end of the
+                // update list and updates this tick (`tank1-4_full_01`: life
+                // 124 on the kill tick when Itchy's stab finished the alien).
+                let n = self.dead_aliens.len();
                 self.kill_alien(i);
+                self.update_dead_aliens_from(n);
                 continue;
             }
             i += 1;
@@ -1215,6 +1246,14 @@ impl Board {
         for i in 0..self.pets.len() {
             if self.pets[i].id != NIKO {
                 self.update_pet(i);
+            }
+        }
+        // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#update-order).
+        for i in 0..self.fish_pets.len() {
+            if let Some(a) = self.fish_pets[i].update_itchy(&self.aliens, &mut self.rng) {
+                crate::itchy::stab(&mut self.aliens[a]);
+                // `0x00538340(11)`: PUNCH, throttled to one per 11 ticks.
+                self.play_throttled(0x130, 11, Sound::Punch);
             }
         }
         self.shots.retain_mut(Shot::update);

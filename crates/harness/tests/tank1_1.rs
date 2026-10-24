@@ -240,6 +240,62 @@ fn level_1_2_start_with_stinky() {
     assert_eq!(e["rng_mti"]["app"], actual.state["rng_mti"]["app"]);
 }
 
+/// Tank 1-4 start with Stinky, Niko and Itchy: the pets in id order, then
+/// the guppies (pet-itchy.md#construction).
+#[test]
+fn level_1_4_start_with_itchy() {
+    use harness::replay::rebase_rng;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank1-4_full_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| s.state["board"].is_object())
+        .unwrap();
+    let before = full.snapshots[i - 1].tick;
+    let rng = |stream: &str| match rebase_rng(&full, stream, before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    // Started from the menu's Adventure button: the menu screen's own last
+    // update draws a few app values in the same frame, before the Board
+    // ctor (not modelled; level-start.md#from-the-menu). Skip to the Board
+    // ctor, found by its three light-band draws (the first tick's lights).
+    let lights = &full.snapshots[i].state["board"]["lights"];
+    let b = (0..16)
+        .find_map(|skip| {
+            let mut app = rng("app");
+            for _ in 0..skip {
+                app.next_u31();
+            }
+            let mut b = insaniquarium_sim::Board::start_level(app, rng("global"), 1, 4, &[0, 1, 2]);
+            b.tick = before;
+            b.update();
+            let got: Vec<f64> = b.light_x.iter().map(|&x| f64::from(x)).collect();
+            let want: Vec<f64> = lights
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .collect();
+            got.iter()
+                .zip(&want)
+                .all(|(g, w)| (g - w).abs() < 1e-3)
+                .then_some(b)
+        })
+        .expect("the Board ctor's light draws");
+    let expected = decode_capture(&harness::replay::window(&full, b.tick, b.tick));
+    let actual = harness::replay::snapshot(&b);
+    let e = &expected.snapshots[0].state;
+    assert_eq!(e["pets"], actual.state["pets"], "Stinky and Niko");
+    assert_eq!(e["fish_pets"], actual.state["fish_pets"], "Itchy");
+    assert_eq!(e["fish"], actual.state["fish"], "starting guppies");
+    assert_eq!(e["rng_mti"]["app"], actual.state["rng_mti"]["app"]);
+}
+
 /// Tank 1-2 with Stinky, from level start until the alien warning (the
 /// wave countdown is checked separately once Sylvester is modelled).
 #[test]
@@ -600,10 +656,9 @@ fn tank_1_3_carnivore_eats() {
     assert!(replay_1_3("tank1-3_eat_01") > 1000 || !captured("tank1-3_eat_01"));
 }
 
-/// Tank 1-4 (`tank1-4_full_01`): Stinky, Niko and Itchy, kind-3 alien
-/// waves; the tank is lost to the third wave. Ignored until Itchy is built.
+/// Tank 1-4 (`tank1-4_full_01`): Stinky, Niko and Itchy, three kind-3
+/// alien waves (Itchy stabs them 52 times); the tank is lost to the third.
 #[test]
-#[ignore = "tank 1-4 not implemented yet (Itchy)"]
 fn tank_1_4_from_start() {
     replay_tank_1("tank1-4_full_01", 4);
 }
@@ -677,6 +732,7 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
     )
     .unwrap();
     harness::replay::mask_rng_sounds(&mut actual, &expected);
+    inferred.carry_dirty_sounds(&mut actual);
     eprintln!(
         "{name}: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),
@@ -703,7 +759,58 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
         expected.snapshots.len()
     );
     let _ = pearl_ticks;
+    // Report the first RNG divergence too: the alphabetical first field to
+    // differ is often a symptom of it.
+    let rng_only = |t: &Trace| Trace {
+        header: t.header.clone(),
+        snapshots: t
+            .snapshots
+            .iter()
+            .map(|s| harness::trace::Snapshot {
+                tick: s.tick,
+                state: s
+                    .state
+                    .iter()
+                    .filter(|(k, _)| *k == "rng_mti")
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            })
+            .collect(),
+    };
+    if let Some(d) = diff(&rng_only(&expected), &rng_only(&actual)) {
+        eprintln!("{name}: first RNG divergence: {d}");
+        if std::env::var_os("REPLAY_DUMP").is_some() {
+            for t in d.tick - 2..=d.tick {
+                let e = expected.snapshots.iter().find(|s| s.tick == t);
+                let a = actual.snapshots.iter().find(|s| s.tick == t);
+                eprintln!(
+                    "--- {t}\nexpected {}\nactual   {}",
+                    serde_json::to_string(&e.map(|s| &s.state)).unwrap(),
+                    serde_json::to_string(&a.map(|s| &s.state)).unwrap()
+                );
+            }
+        }
+    }
     if let Some(d) = diff(&expected, &actual) {
+        if std::env::var_os("REPLAY_DUMP_FIRST").is_some() {
+            for t in d.tick - 2..=d.tick + 1 {
+                eprintln!(
+                    "inputs {t}: {:?} dirty {} resync {}",
+                    inferred.inputs.get(&t),
+                    inferred.dirty.contains(&t),
+                    resync.contains_key(&t)
+                );
+            }
+            for t in d.tick - 2..=d.tick {
+                let e = expected.snapshots.iter().find(|s| s.tick == t);
+                let a = actual.snapshots.iter().find(|s| s.tick == t);
+                eprintln!(
+                    "--- {t}\nexpected {}\nactual   {}",
+                    serde_json::to_string(&e.map(|s| &s.state)).unwrap(),
+                    serde_json::to_string(&a.map(|s| &s.state)).unwrap()
+                );
+            }
+        }
         panic!("{name}: {d}");
     }
     carn_ticks

@@ -36,6 +36,7 @@ pub enum Sound {
     NikoOpen,
     NikoClose,
     Pearl,
+    Punch,
 }
 
 impl Sound {
@@ -74,6 +75,7 @@ impl Sound {
             Sound::NikoOpen => 0x129,
             Sound::NikoClose => 0x12a,
             Sound::Pearl => 0x12b,
+            Sound::Punch => 0x130,
         }
     }
 
@@ -125,6 +127,7 @@ impl Sound {
             Sound::NikoOpen => "SOUND_NIKOOPEN",
             Sound::NikoClose => "SOUND_NIKOCLOSE",
             Sound::Pearl => "SOUND_PEARL",
+            Sound::Punch => "SOUND_PUNCH",
         }
     }
 

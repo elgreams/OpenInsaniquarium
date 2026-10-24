@@ -21,6 +21,9 @@ pub enum FishKind {
     Guppy,
     /// `Sexy::Oscar` (type 5): eats small guppies, drops diamonds.
     Carnivore,
+    /// `Sexy::FishTypePet` (type 0x15) id 2, Itchy: attacks aliens
+    /// (`pet-itchy.md`).
+    Itchy,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -778,7 +781,7 @@ impl Fish {
 
     /// `Fish::PreUpdate`: countdowns. (Its emote-bubble branch needs
     /// `+0x114` > 0, which tank 1-1 guppies never set.)
-    fn pre_update(&mut self) {
+    pub(crate) fn pre_update(&mut self) {
         for t in [&mut self.timer_108, &mut self.timer_10c, &mut self.timer_f8] {
             if *t != 0 {
                 *t -= 1;
@@ -787,7 +790,7 @@ impl Fish {
     }
 
     /// Animation/turn update (vtable slot 89). Spec: fish-guppy.md#drawing.
-    fn animate(&mut self) {
+    pub(crate) fn animate(&mut self) {
         if self.facing > 0.0 && self.vx < 0.0 {
             self.turn_timer = 20;
         } else if self.facing < 0.0 && self.vx > 0.0 {
@@ -825,7 +828,7 @@ impl Fish {
         }
     }
 
-    fn swim_modes(&mut self, rng: &mut MtRand, global: &mut MtRand) {
+    pub(crate) fn swim_modes(&mut self, rng: &mut MtRand, global: &mut MtRand) {
         match self.mode {
             123 => {
                 self.anim_frame = self.vx.abs() as i32;
@@ -941,7 +944,7 @@ impl Fish {
         }
     }
 
-    fn damping_timers(&mut self) {
+    pub(crate) fn damping_timers(&mut self) {
         if self.vy_damp_timer != 0 {
             self.vy *= 0.9;
             self.vy_damp_timer -= 1;
@@ -957,7 +960,7 @@ impl Fish {
     }
 
     /// Exact-equality buckets on vx (reproduced deliberately).
-    fn drift_by_vx_bucket(&mut self) {
+    pub(crate) fn drift_by_vx_bucket(&mut self) {
         #[allow(clippy::float_cmp)]
         {
             if self.vx == 0.0 {
@@ -1016,7 +1019,7 @@ impl Fish {
         }
     }
 
-    fn edge_steer(&mut self) {
+    pub(crate) fn edge_steer(&mut self) {
         if f64::from(self.max_x - 5) < self.x && self.vx > 0.1 {
             self.vx -= 0.1;
         }
