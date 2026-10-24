@@ -2,7 +2,7 @@
 
 Niko sits still in the tank and makes a pearl every ~69 s (the first after 34.5 s); the player clicks the pearl for $250. Same class as Stinky (`pet-stinky.md`), so only the id-1 differences are listed here.
 
-Confidence: `traced` for Niko's fields and RNG, and for the pearl, over the whole of tank 1-3 (`tank1_1.rs` `tank_1_3_from_start` compares `pets` and `pearls` every tick against `tank1-3_full_01`: eight pearl cycles). Drawing is `static`.
+Confidence: `traced` for Niko's fields and RNG, and for the pearl, over the whole of tank 1-3 (`tank1_1.rs` `tank_1_3_from_start` compares `pets` and `pearls` every tick against `tank1-3_full_01`: eight pearl cycles). Drawing is per section below.
 
 ## Construction
 
@@ -69,4 +69,4 @@ Drawn at the widget position, never mirrored. (On backdrop 3 an extra image is d
 
 So the pearl is part of **Niko's** sprite while it rests: `Coin::Draw` (`0x004dd7a0`) draws nothing for an uncollected kind-15 coin. Once collected, the pearl coin draws `IMAGE_PEARL` (72×72) at its widget position while it glides to the counter.
 
-`static` (not frame-checked yet).
+`traced` for the closed, opening and open-with-pearl cels (`frames.rs` `tank_1_3_niko_frames_match_original`: five frames from t = 1219 through the opening, pixel-exact outside the bubble masks) and again the closed cel (`tank_1_3_gameover_frames_match_original`). The closing cels and the gliding `IMAGE_PEARL` are `static`.

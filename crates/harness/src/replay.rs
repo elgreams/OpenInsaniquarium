@@ -373,6 +373,17 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .and_then(|b| b.get("revealed"))
         .and_then(Value::as_str)
         .and_then(hex_bytes);
+    // The shop layout and prices come from the level.
+    let level_of = |k: &str| {
+        first
+            .state
+            .get("board")
+            .and_then(|b| b.get(k))
+            .and_then(Value::as_i64)
+    };
+    if let (Some(t), Some(l)) = (level_of("tank"), level_of("level")) {
+        board.shop = insaniquarium_sim::shop::Shop::adventure(t as i32, l as i32);
+    }
     if let Some(r) = shop_raw {
         for (i, &v) in r.iter().take(12).enumerate() {
             if v != 0 {

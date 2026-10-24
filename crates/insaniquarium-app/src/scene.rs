@@ -81,6 +81,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_SMALLDIE",
     "IMAGE_PEARL",
     "IMAGE_SCL_OSCAR",
+    "IMAGE_LASERUPGRADES",
 ];
 
 /// A sheet cels are cut from: the image, one cel's size and the grid
@@ -623,6 +624,15 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     (b.level_ticks / 2) % 10,
                     0,
                     bx + 8,
+                    by + 3,
+                    11.1,
+                )),
+                // Weapon: the next laser (col = laser − 2), MAX at 12.
+                Slot::Weapon if b.laser < 12 => cels.push(Cel::new(
+                    "IMAGE_LASERUPGRADES",
+                    b.laser - 2,
+                    0,
+                    bx + 7,
                     by + 3,
                     11.1,
                 )),
