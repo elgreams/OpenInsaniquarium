@@ -108,6 +108,8 @@ fn ignore_regions(name: &str) -> Vec<(u32, u32, u32, u32)> {
         // The shop's animated icons are 1–2 ticks off: the frame is read
         // a moment after the state.
         "tank13_gameover_01" => vec![(0, 0, 500, 70)],
+        // The system cursor, left over the tank (the screenshot includes it).
+        "tank13_carnivore_01" => vec![(420, 155, 20, 30)],
         _ => Vec::new(),
     }
 }
@@ -209,6 +211,14 @@ fn tank_1_2_idle_frames_match_original() {
 #[test]
 fn tank_1_3_niko_frames_match_original() {
     let failures = check("tank13_niko_01");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Tank 1-3 with a carnivore swimming among grown guppies, food upgraded,
+/// the laser upgrade and the egg slot in the shop.
+#[test]
+fn tank_1_3_carnivore_frames_match_original() {
+    let failures = check("tank13_carnivore_01");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

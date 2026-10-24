@@ -253,7 +253,7 @@ Icons are set by `MenuButtonWidget::SetIcon` @ `0x00530410` from `RefreshSlotBut
 3. The secondary text in `FONT_CONTINUUMBOLD12OUTLINE`, colour (110,250,110), centred, baseline `ascent + 9`.
 
 Then, in every state:
-4. The price text in `FONT_TINY`, centred, baseline `ascent + 45`.
+4. The price text in `FONT_TINY`, centred, baseline `ascent + 45`. Centring is integer: x = `(58 − width) / 2` truncated, so odd-width texts sit half a pixel left (`confirmed` by `tank13_carnivore_01`: "$100" and "$2000" and the "2" were 1 px off with rounding).
 5. If the countdown is 1..6: `IMAGE_HATCHANIMATION` cel `(6 − c) / 2`.
 6. `IMAGE_MENUBUTTONREFLECTION` at (0, 0). During pop-in it is clipped to y ≥ 40.
 

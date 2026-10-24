@@ -26,6 +26,9 @@ CARNIVORE_BTN = (BTN_X[3] + 29, 33)
 # carnivore once rich (`--guppies N`, `--carnivore`).
 MAX_GUPPIES = int(sys.argv[sys.argv.index("--guppies") + 1]) if "--guppies" in sys.argv else 1
 BUY_CARNIVORE = "--carnivore" in sys.argv
+# Guppies needed before the carnivore is bought (`--carnivore-min N`).
+MIN_GUPPIES_FOR_CARNIVORE = (int(sys.argv[sys.argv.index("--carnivore-min") + 1])
+                             if "--carnivore-min" in sys.argv else 4)
 # Feed the carnivore: once one is up, keep buying guppies (small ones are
 # its food) whenever affordable (`--feed-carnivore`).
 FEED_CARNIVORE = "--feed-carnivore" in sys.argv
@@ -127,7 +130,7 @@ def main():
             click(win, *GUPPY_BTN)
             bought_guppies += 1
         elif (BUY_CARNIVORE and not bought_carnivore and st["revealed"][4]
-              and st["money"] >= 1100 and len(st["guppies"]) >= 4):
+              and st["money"] >= 1100 and len(st["guppies"]) >= MIN_GUPPIES_FOR_CARNIVORE):
             click(win, *CARNIVORE_BTN)
             bought_carnivore = True
         elif (FEED_CARNIVORE and st["oscars"] and st["money"] >= 300

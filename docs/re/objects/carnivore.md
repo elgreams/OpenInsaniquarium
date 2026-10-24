@@ -277,7 +277,7 @@ Carnivores also count as "fish" for the empty-tank check (`0x005392a0` looks at 
 
 **Slot 70 @ `0x004ea730`**: increments the int its argument points to. It is called by the object-census visitor `0x004d7210` for objects with byte `+0xf4` set and `+0xf0 == 0`. That visitor runs via `0x0053a3c0`, over the master set, from the button handler `0x005492b0`, which compares the census with `0x005397a0` and respawns kinds through `0x00547530`. So a carnivore counts in census slot 0. Not part of the tank update; the purpose of that button path is unclear. (Guppies' slot 70 is a no-op.)
 
-`static`.
+`traced` for the plain swim cels, row 4, in front of the guppies (`frames.rs` `tank_1_3_carnivore_frames_match_original`: eight frames of `tank13_carnivore_01`, pixel-exact). Turning, eating, the fade, the hungry marker, Zombie Mode, the Virtual Tank layers and slots 79/70 are `static`.
 
 ## RNG summary
 

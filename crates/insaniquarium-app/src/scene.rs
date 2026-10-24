@@ -421,7 +421,7 @@ impl Fonts {
         // bitmap has a 4 px pad on each side.
         if let Some((_, img)) = &self.money {
             let x = 615.0 + 4.0 - img.width as f32;
-            text(img, x, 40.0 - 4.0, 11.6, [180, 255, 90]);
+            text(img, x, 40.0 - 4.0, hud_z(0.6), [180, 255, 90]);
         }
         // Button prices: FONT_TINY centred on the 58-wide button, baseline
         // ascent + 45 (shop-bar.md#button-art); shown once the pop-in ends.
@@ -431,8 +431,14 @@ impl Fonts {
                 continue;
             };
             if let Some(img) = self.labels.get(&price_text(b, slot)) {
-                let x = BUTTON_X[pos] as f32 + (58.0 - img.width as f32) / 2.0;
-                text(img, x, BUTTON_Y as f32 + 45.0 - 4.0, 11.25, [110, 250, 110]);
+                let x = (BUTTON_X[pos] + (58 - img.width as i32) / 2) as f32;
+                text(
+                    img,
+                    x,
+                    BUTTON_Y as f32 + 45.0 - 4.0,
+                    hud_z(0.25),
+                    [110, 250, 110],
+                );
             }
         }
         // Food quantity number: centred, baseline ascent + 9, (110, 250, 110),
@@ -442,11 +448,11 @@ impl Fonts {
             (quantity_text(b), b.shop.position[qi], b.shop.pop[qi] < 7)
             && let Some(img) = self.labels.get(&t)
         {
-            let x = BUTTON_X[pos] as f32 + (58.0 - img.width as f32) / 2.0;
+            let x = (BUTTON_X[pos] + (58 - img.width as i32) / 2) as f32;
             // Baseline at ascent + 9 puts the line's top 9 px below the button
             // top; the bitmap has a 4 px pad.
             let y = (BUTTON_Y + 9) as f32 - 4.0;
-            text(img, x, y, 11.15, [110, 250, 110]);
+            text(img, x, y, hud_z(0.15), [110, 250, 110]);
         }
         // Help-arrow captions (JungleFever10outline, (110, 250, 110)) at their
         // baselines; the bitmap's top is ascent above the baseline.
@@ -454,7 +460,7 @@ impl Fonts {
             for (t, x, y) in lines {
                 if let Some(img) = self.labels.get(t) {
                     let (x, y) = (x as f32 - 4.0, (y - 11) as f32 - 4.0);
-                    text(img, x, y, 11.55, [110, 250, 110]);
+                    text(img, x, y, hud_z(0.55), [110, 250, 110]);
                 }
             }
         }
@@ -472,7 +478,7 @@ impl Fonts {
                 img,
                 15.0 - 4.0,
                 (470 - f.ascent()) as f32 - 4.0,
-                11.5,
+                hud_z(0.5),
                 colour,
             );
         }
@@ -597,7 +603,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                 (true, false) => "IMAGE_MENUBTNO",
                 _ => "IMAGE_MENUBTNU",
             };
-            cels.push(Cel::new(art, 0, 0, bx, by, 11.0));
+            cels.push(Cel::new(art, 0, 0, bx, by, hud_z(0.0)));
             match slot {
                 Slot::Guppy => cels.push(Cel::new(
                     "IMAGE_SMALLSWIM",
@@ -605,7 +611,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     0,
                     bx - 12,
                     by - 18,
-                    11.1,
+                    hud_z(0.1),
                 )),
                 // Food quality: the next pellet's row (`0x00540724`); at the
                 // cap the button reads MAX and has no icon.
@@ -615,7 +621,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     b.food_level + 1,
                     bx + 9,
                     by + 3,
-                    11.1,
+                    hud_z(0.1),
                 )),
                 // Carnivore: `IMAGE_SCL_OSCAR` (10 cels, framedelay 2),
                 // animated (shop-bar.md#button-art).
@@ -625,7 +631,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     0,
                     bx + 8,
                     by + 3,
-                    11.1,
+                    hud_z(0.1),
                 )),
                 // Weapon: the next laser (col = laser − 2), MAX at 12.
                 Slot::Weapon if b.laser < 12 => cels.push(Cel::new(
@@ -634,7 +640,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     0,
                     bx + 7,
                     by + 3,
-                    11.1,
+                    hud_z(0.1),
                 )),
                 Slot::EggPiece if (1..=3).contains(&b.egg_count) => cels.push(Cel::new(
                     "IMAGE_EGGPIECES",
@@ -642,7 +648,7 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                     0,
                     bx + 7,
                     by + 3,
-                    11.1,
+                    hud_z(0.1),
                 )),
                 _ => {}
             }
@@ -654,16 +660,23 @@ fn shop_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool, cels: &mut Vec<C
                 0,
                 bx,
                 by,
-                11.2,
+                hud_z(0.2),
             ));
         }
-        cels.push(Cel::new("IMAGE_MENUBUTTONREFLECTION", 0, 0, bx, by, 11.3));
+        cels.push(Cel::new(
+            "IMAGE_MENUBUTTONREFLECTION",
+            0,
+            0,
+            bx,
+            by,
+            hud_z(0.3),
+        ));
     }
     if b.money_flash > 0 && b.money_flash % 20 < 10 {
-        cels.push(Cel::new("IMAGE_MONEYFLASH", 0, 0, 545, 39, 11.4));
+        cels.push(Cel::new("IMAGE_MONEYFLASH", 0, 0, 545, 39, hud_z(0.4)));
     }
     for (x, _) in arrows(b) {
-        cels.push(Cel::new("IMAGE_HELPARROW", 0, 0, x, 70, 11.5));
+        cels.push(Cel::new("IMAGE_HELPARROW", 0, 0, x, 70, hud_z(0.5)));
     }
 }
 
@@ -1043,6 +1056,17 @@ fn render_message([outline, plain]: &[ImageFont; 2], text: &str, warning: bool) 
     out
 }
 
+/// Depth of the Board's own drawing and its HUD widgets (bar, shop
+/// buttons, money label, tank label). The Board widget and those widgets
+/// sit behind every game object: `RebuildZOrder` brings each object to the
+/// front of the widget list (board.md#boardrebuildzorder-0x0053aa40-order-back--front),
+/// so a coin gliding to the counter passes over the bar. `offset` in
+/// −0.1..0.6 orders the HUD's own parts; the backdrop is below 0.04 and
+/// shadows start at 0.5.
+fn hud_z(offset: f32) -> f32 {
+    0.1 + offset * 0.5
+}
+
 /// `NewDialog` places board dialogs at (143, 142).
 const DIALOG_POS: (f32, f32) = (143.0, 142.0);
 
@@ -1202,7 +1226,7 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             ));
         }
     }
-    cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, 10.0));
+    cels.push(Cel::new("IMAGE_MENUBAR", 0, 0, 0, 0, hud_z(-0.1)));
     shop_cels(b, cursor, down, &mut cels);
     cels
 }

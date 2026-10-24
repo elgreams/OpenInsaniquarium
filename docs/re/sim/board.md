@@ -111,6 +111,8 @@ board+0x110         (single widget; also slot 17)
 board+0x118 …       (single widgets, HUD overlays)
 ```
 
+**Drawing follows the same list.** The Board widget itself (backdrop, `IMAGE_MENUBAR`, the tank label; `Board::Draw`) and the shop buttons and money label are widgets that `RebuildZOrder` never brings forward, so they sit behind every game object. A collected coin gliding to the counter is drawn **over** the menu bar. `confirmed` by `tank13_carnivore_01` frame 1, a gold coin at y 39 over the bar's lower edge; the frame test `tank_1_3_carnivore_frames_match_original` has it under test. The overlays `+0xfc`/`+0x100` are `BoardOverlay` widgets that call back into the Board (`0x00540470`): mode 0 draws pet/alien extras (`0x0053bd90`), mode 1 the screensaver's shell banner (`0x005400f0`). `static`.
+
 Per-element filter in most loops: an object is brought to front unless `obj+0xfc != 0 && obj+0x100 == 0`. This looks like a "hidden / pending removal" check. TODO.
 
 **Determinism:** within each vector, order is insertion order (`std::vector` push_back). Objects of one type always update before the next type in the sequence above, and **this is the RNG call order**. Our sim must keep the same per-type vectors (or an equivalent ordering) and walk them in this sequence.
