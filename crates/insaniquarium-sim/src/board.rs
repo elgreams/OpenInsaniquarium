@@ -72,12 +72,28 @@ impl Rules {
     pub const CLASSIC: Rules = Rules { classic: true };
 }
 
+/// Which sample Prego's births play (`0x005382c0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PregoSound {
+    /// `SOUND_BABY` (0x108): the default.
+    #[default]
+    Baby,
+    /// `SOUND_FART` (0x120): profile bit 1, "Original Prego Sound".
+    Fart,
+    /// `SOUND_FART2` (0x121): profile bit 6, "Ultra Prego Sound".
+    Fart2,
+}
+
 #[derive(Debug, Clone)]
 pub struct Board {
     pub rules: Rules,
     /// Replay-only: which of this tick's effect shots draw the original's
     /// stale start delay (`alien::ArtifactPlan`). Empty in play.
     pub artifacts: crate::alien::ArtifactPlan,
+    /// Profile flags `+0x84` bits 1 and 6 (cheat toggles "Original Prego
+    /// Sound" and "Ultra Prego Sound"): Prego's birth sound
+    /// (`0x005382c0`, pet-prego.md#update). Off by default.
+    pub prego_sound: PregoSound,
     /// `board+0x3f0`
     pub money: i32,
     /// `board+0x4ac`: price of one food drop.
@@ -183,6 +199,7 @@ impl Board {
         Self {
             rules: Rules::default(),
             artifacts: Default::default(),
+            prego_sound: PregoSound::Baby,
             money: 0,
             food_price: 5,
             max_food: 1,
@@ -352,6 +369,9 @@ impl Board {
             // `FishTypePet` (pet-itchy.md#construction): `Fish::Init`'s 6
             // draws, then a type-0 shadow (one draw).
             self.fish_pets.push(Fish::new_itchy(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::PREGO {
+            self.fish_pets.push(Fish::new_prego(a, _b, &mut self.rng));
             self.rng.next_range(5);
         } else {
             // TODO(spec): other pets.
@@ -669,8 +689,13 @@ impl Board {
             }
             275 => {
                 // The warning line (board.md#the-alien-warning-line).
-                // TODO(spec): the other kinds' texts (tanks 2–5).
-                message::show_warning(&mut self.message, "ENEMY APPROACHING");
+                // TODO(spec): kinds 4–8 and 0x15 (tanks 2–5), and 4-4's
+                // "FOURTEEN ALIEN SIGNATURES".
+                let text = match self.wave_kind {
+                    9..=12 => "MULTIPLE ALIEN SIGNATURES DETECTED",
+                    _ => "ENEMY APPROACHING",
+                };
+                message::show_warning(&mut self.message, text);
                 self.music = Some(Music::Alien);
                 self.play(0x106, Sound::Awooga);
                 self.wave_a = (
@@ -687,14 +712,23 @@ impl Board {
             1 => self.music = Some(Music::AlienFight),
             c if c <= 0 => {
                 self.wave_2c4 = 35;
-                let a = Alien::new(self.wave_a.0, self.wave_a.1, self.wave_kind, &mut self.rng);
-                self.warps.push(Warp::for_alien(&a));
-                self.aliens.push(a);
-                // Its shadow.
-                self.rng.next_range(5);
+                // `AddAlien` (`0x00545620`): wave kind 9 is two aliens,
+                // Sylvester at A then Balrog at B, each added in full.
+                // TODO(spec): wave kinds 8 (Bilaterus) and 10..12.
+                let spawns: &[(i32, (i32, i32))] = match self.wave_kind {
+                    9 => &[(1, self.wave_a), (3, self.wave_b)],
+                    k => &[(k, self.wave_a)],
+                };
+                for &(kind, (x, y)) in spawns {
+                    let a = Alien::new(x, y, kind, &mut self.rng);
+                    self.warps.push(Warp::for_alien(&a));
+                    self.aliens.push(a);
+                    // Its shadow.
+                    self.rng.next_range(5);
+                    // Arrival roar (kinds 1–3), played directly.
+                    self.sounds.push(Sound::Roar.into());
+                }
                 self.has_aliens = true;
-                // Arrival roar (kinds 1–3), played directly.
-                self.sounds.push(Sound::Roar.into());
                 if self.tank == 1 && self.level == 5 {
                     self.wave_kind = if self.rng.next_u31() & 1 != 0 { 3 } else { 9 };
                 }
@@ -1105,6 +1139,42 @@ impl Board {
         }
     }
 
+    /// A `Fish::Update` pass over guppies made during this tick's object
+    /// pass (Prego's births), in order.
+    fn update_newborns(&mut self, born: &[usize]) {
+        let env = FishEnv {
+            paused: self.paused,
+            has_aliens: self.has_aliens,
+        };
+        let mut stage_ups = Vec::new();
+        let mut new_dead = Vec::new();
+        let mut world = World {
+            foods: &mut self.foods,
+            coins: &mut self.coins,
+            rng: &mut self.rng,
+            global: &mut self.global_rng,
+            clock: self.clock,
+            sample_last: &mut self.sample_last,
+            sounds: &mut self.sounds,
+            stage_ups: &mut stage_ups,
+            message: &mut self.message,
+            hints: &mut self.hints,
+            tutorial: self.tutorial,
+            dead_fish: &mut new_dead,
+            guppies: &[],
+            eaten: &mut Vec::new(),
+            shots: &mut self.shots,
+            artifacts: &mut self.artifacts,
+        };
+        for &i in born {
+            self.guppies[i].update(env, &mut world);
+        }
+        for s in stage_ups {
+            self.on_stage_up(s);
+        }
+        self.dead_fish.extend(new_dead);
+    }
+
     /// One logic tick (28 ms).
     pub fn update(&mut self) {
         // `tick` mirrors the app's update counter, which runs while the
@@ -1289,12 +1359,38 @@ impl Board {
             }
         }
         // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#update-order).
+        // Guppies born this tick: they join the end of the widget list and
+        // update after the pets in the same pass (`tank1-5_full_01`: a
+        // newborn's hunger is already one down on its first snapshot).
+        let mut born = Vec::new();
         for i in 0..self.fish_pets.len() {
-            if let Some(a) = self.fish_pets[i].update_itchy(&self.aliens, &mut self.rng) {
+            if self.paused {
+                break;
+            }
+            let out = self.fish_pets[i].update_fish_pet(&self.aliens, &mut self.rng);
+            if let Some(a) = out.stabbed {
                 crate::itchy::stab(&mut self.aliens[a]);
                 // `0x00538340(11)`: PUNCH, throttled to one per 11 ticks.
                 self.play_throttled(0x130, 11, Sound::Punch);
             }
+            if self.fish_pets[i].is_prego() {
+                // Slot 81, id 3: the newborn (`AddGuppyAt`, pet-prego.md),
+                // then the birth sound (`0x005382c0`: BABY by default).
+                if let Some((x, y)) = out.birth {
+                    self.add_guppy_at(x, y);
+                    match self.prego_sound {
+                        PregoSound::Baby => self.play(0x108, Sound::Baby),
+                        PregoSound::Fart => self.play(0x120, Sound::Fart),
+                        PregoSound::Fart2 => self.play(0x121, Sound::Fart2),
+                    }
+                    born.push(self.guppies.len() - 1);
+                }
+                let n = self.guppies.len();
+                self.fish_pets[i].finish_prego(out.birth.is_some(), n);
+            }
+        }
+        if !born.is_empty() {
+            self.update_newborns(&born);
         }
         self.shots.retain_mut(Shot::update);
         let mut banked = 0;

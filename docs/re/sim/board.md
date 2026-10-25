@@ -309,4 +309,4 @@ At wave countdown **275** (the warning tick, `Board::Update` @ `0x005486e1`), be
 - Flash off, **timer 274** (`0x112`).
 - Colours: text **(255, 50, 50)**, outline **(100, 20, 20)**.
 
-`traced` for kind 2 (`tank1-3_full_01`: "ENEMY APPROACHING", timer 273 on the first snapshot after the warning, both waves). Kind 1 (1-2) is `static` (older 1-2 captures don't record the message line), but it is the same branch. The colours are `static`.
+`traced` for kind 2 (`tank1-3_full_01`: "ENEMY APPROACHING", timer 273 on the first snapshot after the warning, both waves) and kind 9 (`tank1-5_full_01`: "MULTIPLE ALIEN SIGNATURES DETECTED"). Kind 1 (1-2) is `static` (older 1-2 captures don't record the message line), but it is the same branch. The colours are `static`.

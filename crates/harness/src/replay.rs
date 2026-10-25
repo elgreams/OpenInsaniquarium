@@ -38,6 +38,8 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
     Fish {
         kind: match rd_i32(b, 0x8c) {
             5 => FishKind::Carnivore,
+            // FishTypePet: the pet id (`+0x234`) says which.
+            0x15 if rd_i32(b, 0x234) == 3 => FishKind::Prego,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -466,6 +468,14 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
             for (x, v) in board.light_x.iter_mut().zip(l) {
                 *x = v.as_f64().unwrap_or(0.0) as f32;
             }
+        }
+        // Prego's birth sound is a profile setting the capture doesn't
+        // record; take it from the first birth sound in the capture.
+        let played = crate::presentation::capture_sounds(t);
+        if played.values().flatten().any(|&v| v == 0x120) {
+            board.prego_sound = insaniquarium_sim::board::PregoSound::Fart;
+        } else if played.values().flatten().any(|&v| v == 0x121) {
+            board.prego_sound = insaniquarium_sim::board::PregoSound::Fart2;
         }
         if let Some(raw) = b.get("samples").and_then(Value::as_str).and_then(hex_bytes) {
             for (slot, w) in board.sample_last.iter_mut().zip(raw.as_chunks::<4>().0) {
@@ -1135,8 +1145,27 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             .iter()
             .map(|b| food_from_raw(b))
             .collect();
-        // New pellets are appended; anything past the survivors is new.
-        for f in foods.iter().skip(prev_food.min(foods.len())) {
+        // New pellets are appended. Normally anything past the survivors is
+        // new, but a pellet eaten on the tick another is dropped keeps the
+        // count: also take any pellet just made (anim 0/1) that wasn't in the
+        // previous snapshot.
+        let prev_foods: Vec<Food> = prev_snap
+            .map(|p| {
+                raw_list(p, "food")
+                    .iter()
+                    .map(|b| food_from_raw(b))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let fresh = |f: &Food| {
+            !prev_foods
+                .iter()
+                .any(|p| p.x == f.x && p.anim_speed == f.anim_speed && p.y <= f.y)
+        };
+        for (k, f) in foods.iter().enumerate() {
+            if k < prev_food.min(foods.len()) && !fresh(f) {
+                continue;
+            }
             if f.fade != 0 || f.anim > 1 {
                 continue;
             }
@@ -1639,12 +1668,17 @@ fn artifact_plan(
     inputs: &[Input],
     t: &Trace,
     tick: u32,
+    then: Option<&[Input]>,
 ) -> insaniquarium_sim::alien::ArtifactPlan {
     use insaniquarium_sim::alien::ArtifactPlan;
-    let Some(want) = mti_at(t, tick) else {
+    // A dirty (mid-frame) snapshot isn't in the cleaned trace: step the next
+    // tick too (with its inputs, which include the late click) and aim for
+    // its position and state.
+    let target_tick = if then.is_some() { tick + 1 } else { tick };
+    let Some(want) = mti_at(t, target_tick) else {
         return ArtifactPlan::default();
     };
-    let target = t.snapshots.iter().find(|s| s.tick == tick);
+    let target = t.snapshots.iter().find(|s| s.tick == target_tick);
     let fits = |b: &Board| {
         let snap = snapshot(b);
         target.is_none_or(|e| {
@@ -1655,6 +1689,16 @@ fn artifact_plan(
                     _ => true,
                 })
         })
+    };
+    let run = |plan: &ArtifactPlan| {
+        let mut b = board.clone();
+        b.artifacts = plan.clone();
+        b.step(inputs);
+        if let Some(next) = then {
+            b.artifacts = ArtifactPlan::default();
+            b.step(next);
+        }
+        b
     };
     // How many effect shots this tick makes (without artifacts).
     let n = {
@@ -1671,9 +1715,7 @@ fn artifact_plan(
             delay_draws: (0..n).map(|i| m & (1 << i) != 0).collect(),
             ..ArtifactPlan::default()
         };
-        let mut b = board.clone();
-        b.artifacts = plan.clone();
-        b.step(inputs);
+        let b = run(&plan);
         if b.rng.state().1 == want {
             if fits(&b) {
                 return plan;
@@ -1753,8 +1795,13 @@ pub fn replay_resync_dirty(
         // what the shifted draws decided inside it, so find which sparks
         // drew: the plan whose result lands on the capture's RNG position
         // and reproduces its fish, food and shots.
-        if resync.contains_key(&next) && !dirty.contains(&next) {
-            board.artifacts = artifact_plan(&board, step_inputs, t, next);
+        if resync.contains_key(&next) {
+            // On a dirty (mid-frame) tick the capture's RNG includes a click
+            // the replay applies next tick: aim for the position without it.
+            let then = dirty
+                .contains(&next)
+                .then(|| inputs.get(&(next + 1)).map_or(&[][..], Vec::as_slice));
+            board.artifacts = artifact_plan(&board, step_inputs, t, next, then);
         }
         // An alien with several fish in its eat box takes the first in
         // object-address order in the original (a deviation we don't

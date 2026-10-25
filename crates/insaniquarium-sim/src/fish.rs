@@ -24,6 +24,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` (type 0x15) id 2, Itchy: attacks aliens
     /// (`pet-itchy.md`).
     Itchy,
+    /// `Sexy::FishTypePet` id 3, Prego: gives birth to guppies
+    /// (`pet-prego.md`).
+    Prego,
 }
 
 #[derive(Debug, Clone, PartialEq)]

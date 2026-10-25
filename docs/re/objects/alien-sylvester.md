@@ -30,7 +30,7 @@ Confidence: per section below. Kind 1 on tank 1-2 is `traced`; anything about ot
 | `+0x488` | int | fish lost counter (+1 per fish eaten, `0x004df0b0`) |
 | `+0x110` | ptr | boss alien (kind `0x15`). While set, the countdown is paused |
 
-`traced` for the fields the replays restore and compare (countdown, lockout, spawn A, waves: `tank1_1.rs` `sylvester_wave_matches`, `full_tank_1_2_replays`). `+0x2c4`'s purpose and B (kinds 9–12) are `static`.
+`traced` for the fields the replays restore and compare (countdown, lockout, spawn A, waves: `tank1_1.rs` `sylvester_wave_matches`, `full_tank_1_2_replays`; spawn B by `tank_1_5_won`). `+0x2c4`'s purpose is `static`.
 
 ### Level setup
 
@@ -72,7 +72,9 @@ This runs after the ambient-bubble draw (`rand(1000)`, `sim/board.md`) and after
 
 **Timeline on 1-2 (static):** the countdown starts at 1750. The warning comes on the 1475th counted tick and the spawn on the 1750th (≈ 49 s). The next wave is counted from 3000 again, but **only once the alien is gone**: a warning 2725 ticks after the kill and a spawn 3000 ticks after it. Paused ticks don't count.
 
-`traced` for steps 1–3 and 5 on 1-2 (countdown, warning draws, spawn: `full_tank_1_2_replays`). Step 4 (Sneeze of Power) and the kind re-roll for 1-5 are `static`.
+`traced` for steps 1–3 and 5 on 1-2 (countdown, warning draws, spawn: `full_tank_1_2_replays`), and for the 1-5 re-roll (`tank_1_5_won`). Step 4 (Sneeze of Power) is `static`.
+
+**Wave kind 9** (1-5) spawns two aliens through `AddAlien` (`0x00545620`), each added in full (ctor draws, warp, shadow draw, roar): **Sylvester (kind 1) at A, then Balrog (kind 3) at B**. Kinds 10–12 pair 7+3, 5+6 and 3+8 the same way (`static`). `traced` for kind 9 (`tank_1_5_won`).
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`, kind 1 path)
 

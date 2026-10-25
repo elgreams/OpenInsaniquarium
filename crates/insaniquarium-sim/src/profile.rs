@@ -42,8 +42,19 @@ impl Default for Profile {
 impl Profile {
     /// Owned pets `PopulateLevel` adds when the player owns at most 3
     /// (no pet screen): ids 0..=18 in id order.
+    ///
+    /// With more than 3 owned, the original shows the pet screen to choose
+    /// 3 (`level-start.md`, step 3). TODO(spec): the pet screen. Until then
+    /// this stands in with Stinky, Niko and the newest pet.
     pub fn level_pets(&self) -> Vec<i32> {
-        (0..19).filter(|&id| self.pets[id as usize]).collect()
+        let owned: Vec<i32> = (0..19).filter(|&id| self.pets[id as usize]).collect();
+        if owned.len() <= 3 {
+            return owned;
+        }
+        let mut chosen: Vec<i32> = owned.iter().copied().filter(|&id| id < 2).collect();
+        chosen.extend(owned.iter().rev().take(3 - chosen.len()).rev());
+        chosen.sort_unstable();
+        chosen
     }
 
     /// Number of owned pets (`+0x18`).

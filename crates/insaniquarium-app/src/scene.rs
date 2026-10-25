@@ -758,6 +758,29 @@ fn itchy_cel(f: &Fish, alarmed: bool, z: f32) -> Cel {
     Cel::new("IMAGE_ITCHY", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
 }
 
+/// Prego (`0x004df230`, pet-prego.md#drawing): row and cel by the birth
+/// counter (`coin_timer`) against the interval.
+fn prego_cel(f: &Fish, z: f32) -> Cel {
+    let (c, i) = (f.coin_timer, f.coin_interval);
+    let (row, col) = if f.turn_timer != 0 {
+        (2, f.cel)
+    } else if c <= i - 200 {
+        (0, f.cel)
+    } else if c < i - 190 {
+        (3, (c - i + 200) / 2)
+    } else if c <= i - 5 {
+        (1, f.cel)
+    } else {
+        (3, c - i + 10)
+    };
+    let mirror = match f.turn_timer {
+        t if t > 0 => true,
+        t if t < 0 => false,
+        _ => f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0),
+    };
+    Cel::new("IMAGE_PREGO", col, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
 /// Niko (`0x004e2bd0`, pet-niko.md#drawing): the cel follows the pearl
 /// timer; the resting pearl is part of his sprite.
 fn niko_cel(p: &Pet, z: f32) -> Cel {
@@ -1216,7 +1239,12 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
     }
     // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#drawing).
     for (i, f) in b.fish_pets.iter().enumerate() {
-        cels.push(itchy_cel(f, !b.aliens.is_empty(), 2.75 + i as f32 * 0.001));
+        let z = 2.75 + i as f32 * 0.001;
+        cels.push(if f.is_prego() {
+            prego_cel(f, z)
+        } else {
+            itchy_cel(f, !b.aliens.is_empty(), z)
+        });
     }
     for (i, s) in b.shots.iter().enumerate() {
         shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);

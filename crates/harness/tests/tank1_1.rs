@@ -671,6 +671,13 @@ fn tank_1_4_won() {
     replay_tank_1("tank1-4_full_02", 4);
 }
 
+/// Tank 1-5 won (`tank1-5_full_01`): Stinky, Niko and Prego chosen on the
+/// pet screen; Prego's births, Balrog waves and a two-alien wave (kind 9).
+#[test]
+fn tank_1_5_won() {
+    replay_tank_1("tank1-5_full_01", 5);
+}
+
 fn captured(name: &str) -> bool {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"))

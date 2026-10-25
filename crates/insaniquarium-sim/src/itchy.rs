@@ -11,6 +11,11 @@ use crate::fish::{Fish, FishKind};
 
 /// Pet id 2.
 pub const ITCHY: i32 = 2;
+/// Pet id 3 (Prego, same class; `pet-prego.md`).
+pub const PREGO: i32 = 3;
+
+/// Prego's first birth interval (`FishTypePet` ctor, id 3).
+const PREGO_INTERVAL: i32 = 930;
 
 /// Damage per stab (`0x004fb5b0`, kinds other than 4 and 5).
 const STAB: f64 = 1.0;
@@ -27,6 +32,33 @@ impl Fish {
 
     pub fn is_itchy(&self) -> bool {
         self.kind == FishKind::Itchy
+    }
+
+    /// `AddPet(3)`'s fish part: as Itchy, then the id-3 ctor branch (no
+    /// RNG): the birth interval replaces the coin interval, floor 360. The
+    /// birth counter is the coin timer (`+0x220`, 0).
+    pub fn new_prego(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Prego;
+        f.coin_interval = PREGO_INTERVAL;
+        f.floor_y = 360;
+        f
+    }
+
+    pub fn is_prego(&self) -> bool {
+        self.kind == FishKind::Prego
+    }
+
+    /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
+    /// board must apply.
+    pub fn update_fish_pet(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        match self.kind {
+            FishKind::Prego => self.update_prego(aliens, rng),
+            _ => PetFishOut {
+                stabbed: self.update_itchy(aliens, rng),
+                birth: None,
+            },
+        }
     }
 
     /// `FishTypePet::Update` (`0x004f7ad0`), id 2, normal game. Returns the
@@ -49,29 +81,88 @@ impl Fish {
         }
         self.damping_timers();
         self.drift_by_vx_bucket();
-        // Explicit compares, in the original's order; no bubbles.
-        #[allow(clippy::manual_clamp)]
-        {
-            if f64::from(self.max_x) < self.x {
-                self.x = f64::from(self.max_x);
-            }
-            if self.x < f64::from(self.min_x) {
-                self.x = f64::from(self.min_x);
-            }
-            if f64::from(self.floor_y) < self.y {
-                self.y = f64::from(self.floor_y);
-            }
-            if self.y < f64::from(self.ceil_y) {
-                self.y = f64::from(self.ceil_y);
-            }
-        }
+        self.clamp_pet();
         self.edge_steer();
         self.animate();
+        self.integrate();
+        stabbed
+    }
+
+    /// `FishTypePet::Update` for id 3 (pet-prego.md#update): Itchy's
+    /// movement without the chase, plus the birth timer (slot 81) while no
+    /// alien is in. The board adds the newborn (`AddGuppyAt`, 7 draws) at
+    /// the returned spot, inside this update's draw order.
+    fn update_prego(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        if aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer >= self.coin_interval {
+                self.coin_timer = 0;
+                out.birth = Some((self.widget_x + 7, self.widget_y + 25));
+            }
+        }
+        out
+    }
+
+    /// The rest of Prego's update, after the board placed any newborn
+    /// (`guppies` = the guppy count including it, for the next interval).
+    pub fn finish_prego(&mut self, born: bool, guppies: usize) {
+        if born {
+            self.coin_interval = if guppies > 10 {
+                2000
+            } else if guppies > 5 {
+                PREGO_INTERVAL + 300
+            } else {
+                PREGO_INTERVAL
+            };
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        // Slot 89, id 3: in the last 219 ticks before a birth she doesn't
+        // turn; a reversal stops her instead.
+        if self.coin_timer > self.coin_interval - 220
+            && ((self.facing > 0.0 && self.vx < 0.0) || (self.facing < 0.0 && self.vx > 0.0))
+        {
+            self.vx = 0.0;
+        }
+        self.animate();
+        self.integrate();
+    }
+
+    /// Explicit compares, in the original's order; no bubbles.
+    #[allow(clippy::manual_clamp)]
+    fn clamp_pet(&mut self) {
+        if f64::from(self.max_x) < self.x {
+            self.x = f64::from(self.max_x);
+        }
+        if self.x < f64::from(self.min_x) {
+            self.x = f64::from(self.min_x);
+        }
+        if f64::from(self.floor_y) < self.y {
+            self.y = f64::from(self.floor_y);
+        }
+        if self.y < f64::from(self.ceil_y) {
+            self.y = f64::from(self.ceil_y);
+        }
+    }
+
+    fn integrate(&mut self) {
         self.x += self.vx / self.divisor;
         self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
-        stabbed
     }
 
     /// The guppy's swim modes without the startle mode or the `+0x208`
@@ -138,6 +229,15 @@ impl Fish {
         }
         found
     }
+}
+
+/// What a fish-shaped pet's update asks the board to do.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PetFishOut {
+    /// Itchy stabbed this alien (index).
+    pub stabbed: Option<usize>,
+    /// Prego gives birth: `AddGuppyAt` here, then `finish_prego`.
+    pub birth: Option<(i32, i32)>,
 }
 
 /// `0x004fb5b0` for Itchy: the alien loses [`STAB`] health.
