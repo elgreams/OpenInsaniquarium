@@ -199,8 +199,6 @@ fn parse_events(b: &[u8]) -> Result<Vec<TimedEvent>, DemoError> {
     // or when what's left can't hold a whole event (a stream can end
     // exactly on the last event's last bit, or inside the padding).
     while b.len() * 8 - bits.bit >= 6 {
-        let t = tick;
-        let trunc = move || DemoError::BitstreamTruncated(t);
         let mark = bits.bit;
         // A header cut off by the end of the stream is padding.
         let (Some(dt), Some(short)) = (bits.read(4), bits.read(1)) else {
