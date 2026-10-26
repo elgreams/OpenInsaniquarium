@@ -48,7 +48,7 @@ Same skeleton as Stinky's update (`pet-stinky.md#update-0x004f2e80-pet-0-normal-
 
 1. Return if there is no board or it is paused. `PreUpdate` (`0x004f22c0`).
 2. The drop-in sink (`vy += 0.1` while y < 380) is for ids 0, 1, 7, 14 only. **Not Clyde.**
-3. Virtual Tank only (`app+0x87c == 5`): the sleepy-flag helper `0x004d6b70` on `+0x1b0`. It clears the flag while he was fed less than 6480 ticks ago; otherwise, while the flag is clear, it sets it when **`Sexy::Rand() % 60 == 0`** (the global `Sexy::Rand`, not the app MTRand). Never runs in Adventure.
+3. Virtual Tank only (`app+0x87c == 5`): the sleepy-flag helper `0x004d6b70` on `+0x1b0`. Unless `thunk_FUN_00479fc0` says otherwise, it clears the flag while a counter difference on the object at `[this+0x10]` (`+0x28 − +0xf0`) is below 6480 (presumably ticks since last fed; `guess`); otherwise, while the flag is clear, it sets it when **`Sexy::Rand() % 60 == 0`** (the global `Sexy::Rand`, not the app MTRand). Never runs in Adventure.
 4. **Coin chase or wander.**
    - The chase gate `0x004efe80` (id 5): if the coin list `+0xa8` is non-empty **and** the slow flag `+0x1b0` is clear, run the chase `0x004ebc80` (see [Coin chasing](#coin-chasing)) and report "chasing", whatever the chase found. **There is no alien check for id 5** (Stinky's gate refuses while an alien or Bilaterus is present). Otherwise report "not chasing".
    - On **tank 5** the gate is never called: Clyde only wanders there and never collects.
