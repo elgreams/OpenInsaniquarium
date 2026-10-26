@@ -114,6 +114,19 @@ impl Alien {
         rng: &mut MtRand,
         out: &mut AlienOut,
     ) {
+        self.update_masked(guppies, &[], prefer, rng, out);
+    }
+
+    /// [`Self::update_preferring`] with some fish protected (`hidden[i]`:
+    /// Wadsworth's shelter, `0x00500ff0`): never targeted or eaten.
+    pub fn update_masked(
+        &mut self,
+        guppies: &[&Fish],
+        hidden: &[bool],
+        prefer: Option<usize>,
+        rng: &mut MtRand,
+        out: &mut AlienOut,
+    ) {
         let mut lunge = 0.0;
         if self.warp != 0 {
             if self.warp <= 10 {
@@ -130,13 +143,13 @@ impl Alien {
         let target = if guppies.is_empty() {
             None
         } else {
-            self.nearest(guppies, prefer)
+            self.nearest(guppies, hidden, prefer)
         };
         match target {
             Some(t) => {
                 self.steer(guppies[t]);
                 if self.eat_delay < 1 {
-                    out.ate = self.eat_test(guppies, prefer);
+                    out.ate = self.eat_test(guppies, hidden, prefer);
                 }
             }
             None => self.wander(rng),
@@ -176,7 +189,7 @@ impl Alien {
     }
 
     /// `0x004e8b60`: nearest guppy by widget centre.
-    fn nearest(&self, guppies: &[&Fish], prefer: Option<usize>) -> Option<usize> {
+    fn nearest(&self, guppies: &[&Fish], hidden: &[bool], prefer: Option<usize>) -> Option<usize> {
         let (cx, cy) = self.centre();
         let mut best = 100_000_000;
         let mut found = None;
@@ -185,6 +198,9 @@ impl Alien {
             .into_iter()
             .chain((0..guppies.len()).filter(|&i| Some(i) != prefer));
         for i in order {
+            if hidden.get(i) == Some(&true) {
+                continue;
+            }
             let g = guppies[i];
             let dx = cx - (g.widget_x + 40);
             let dy = cy - (g.widget_y + 40);
@@ -217,16 +233,17 @@ impl Alien {
     }
 
     /// `0x004e8f70`: first guppy inside the 45×65 half-extent box.
-    fn eat_test(&self, guppies: &[&Fish], prefer: Option<usize>) -> Option<usize> {
+    fn eat_test(&self, guppies: &[&Fish], hidden: &[bool], prefer: Option<usize>) -> Option<usize> {
         let (cx, cy) = self.centre();
+        let open = |i: usize| hidden.get(i) != Some(&true);
         let inside = |g: &Fish| {
             let dx = cx - (g.widget_x + 40);
             let dy = cy - (g.widget_y + 40);
             dx.abs() < 45 && dy.abs() < 65
         };
         prefer
-            .filter(|&p| p < guppies.len() && inside(guppies[p]))
-            .or_else(|| guppies.iter().position(|g| inside(g)))
+            .filter(|&p| p < guppies.len() && open(p) && inside(guppies[p]))
+            .or_else(|| (0..guppies.len()).find(|&i| open(i) && inside(guppies[i])))
     }
 
     /// §3.3 wander.

@@ -10,7 +10,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-8 differenc
 - Animation (slot 89) @ `0x004dfc50` (blink draw at `0x004e000c`); draw body `0x004f8610` → `0x004df670`
 - The note effect: a kind-16 `Coin` (`0x00544430` → `Coin::Coin` `0x004eead0`, update `0x004f5050` at `0x004f51e6`, draw `0x004dd7a0`)
 
-Confidence: `static` throughout. Nothing here is under a replay test yet.
+Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, 7 songs) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
 
 **Correction to the brief this was written from:** the Adventure interval is **1400**, not 2700. The ctor stores `4320` in the Virtual Tank (`app+0x87c == 5`) and `4320 − 2920 = 1400` otherwise.
 
@@ -26,13 +26,13 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 
 Divisor and bounds are the guppy's (`Fish::Init` draw; floor 370).
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Construction
 
 `Board::AddPet(8, -1, -1)` (`0x00544a90`): the same **9 app draws** as Itchy (2 position, 6 `Fish::Init`, 1 shadow). The id-8 ctor branch only sets the interval `+0x224` (1400, or 4320 in the Virtual Tank), with no RNG. Blink flag `+0x244` = 1.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Update (`0x004f7ad0`), id 8
 
@@ -44,7 +44,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are the same as Itchy's.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## The song (slot 81, `0x004e5900`, id 8)
 
@@ -61,7 +61,7 @@ So the first song starts on Meryl's 1300th calm update (36.4 s after she arrives
 
 The flag is a single global, not per Meryl. With two Meryls (not possible in Adventure: one pet per id), whichever finishes first would clear it.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Effect on guppies (`Fish::UpdateCoin` @ `0x004f1400`)
 
@@ -79,7 +79,7 @@ At `0x004f1425`: after `coin_timer (+0x220) += 1`, the interval passed to the dr
 - after a drop the timer is 0, so it drops again 35 ticks later: at T + 36 and T + 71 for a guppy that dropped at T + 1. **Usually 3 coins per medium/large guppy per song**, fewer for a guppy whose timer was low at the start;
 - when the song ends the timer keeps counting toward the guppy's own interval from where it is (< 35). So the next normal coin comes a full interval later.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Other writers of the flag
 
@@ -87,7 +87,7 @@ At `0x004f1425`: after `coin_timer (+0x220) += 1`, the interval passed to the dr
 - `0x004d6250`, called from the FishTypePet destructor and from slot 74 (removal), clears it when the removed pet is id 8. Meryl leaving mid-song ends the song.
 - The board's save/load routine `0x00546240` serialises the flag (`0x00546847`) and, after loading, clears it if the board's Meryl count `board+0x164` (pet counter `+0x144 + 4·8`) is 0.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## The note (`Coin` kind 16)
 
@@ -113,7 +113,7 @@ Turning is Itchy's. When not turning, id 8 takes the default branch (Itchy's): c
 
 At swim speed 1 the cel stays 0 for two ticks (cycles 0 and 1); at speed 2 for one. So she makes **one or two app draws per swim cycle** whenever the flag is clear, **inside her update, after the re-roll and the song** and before integration. This is a per-tick RNG cost a replay must reproduce. The flag starts at 1, so her first cel-0 tick clears it without drawing.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Drawing (`0x004df670`)
 

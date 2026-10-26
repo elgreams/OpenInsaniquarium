@@ -40,6 +40,7 @@ pub enum Sound {
     Baby,
     Fart,
     Fart2,
+    Sing,
 }
 
 impl Sound {
@@ -82,6 +83,7 @@ impl Sound {
             Sound::Baby => 0x108,
             Sound::Fart => 0x120,
             Sound::Fart2 => 0x121,
+            Sound::Sing => 0x137,
         }
     }
 
@@ -137,6 +139,7 @@ impl Sound {
             Sound::Baby => "SOUND_BABY",
             Sound::Fart => "SOUND_FART",
             Sound::Fart2 => "SOUND_FART2",
+            Sound::Sing => "SOUND_SING",
         }
     }
 

@@ -65,6 +65,15 @@ impl Food {
         }
     }
 
+    /// Zorf's pellet (`AddFood(x, y, motion, 0, 0, −1)`, pet-zorf.md):
+    /// level 1, thrown sideways (motion 1 left, 2 right). One app draw.
+    pub fn new_thrown(x: i32, y: i32, motion: i32, rng: &mut MtRand) -> Self {
+        let mut f = Food::new_pellet(x, y, 1, rng);
+        f.motion = motion;
+        f.vx = if motion == 1 { -3.0 } else { 3.0 };
+        f
+    }
+
     /// Can a guppy eat this (`0x004d5f20`, pellet case)?
     pub fn edible(&self) -> bool {
         !self.carried && self.delay == 0 && self.kind == 0
@@ -87,8 +96,28 @@ impl Food {
                 FoodStep::Keep
             };
         }
-        // TODO(spec): carried, dropped-from-above and drifting variants.
+        // TODO(spec): carried and dropped-from-above variants.
         self.y += 1.5;
+        // Thrown food (motion 1/2): rises then sinks, glides sideways.
+        if self.motion != 0 {
+            if self.vy < 0.0 {
+                self.vy += 0.05;
+                self.y += self.vy;
+            }
+            if (self.motion == 2 && self.vx > 0.0) || (self.motion == 1 && self.vx < 0.0) {
+                self.vx += if self.motion == 2 { -0.05 } else { 0.05 };
+                self.x += self.vx;
+            }
+            #[allow(clippy::manual_clamp)]
+            {
+                if self.x > 550.0 {
+                    self.x = 550.0;
+                }
+                if self.x < 20.0 {
+                    self.x = 20.0;
+                }
+            }
+        }
         if self.y > FLOOR_Y || (self.level == 3 && self.y > 400.0) {
             // TODO(spec): level-3 food explodes (RNG); potions vanish.
             if self.kind == 2 {

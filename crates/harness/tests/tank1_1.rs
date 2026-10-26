@@ -702,6 +702,16 @@ fn zoo_a_clyde_vert_rufus() {
     }
 }
 
+/// Pet zoo B (`zoo_b_01`): 1-2 with Zorf, Meryl and Wadsworth, three
+/// waves, inputs from the demo (`pet-zorf.md`, `pet-meryl.md`,
+/// `pet-wadsworth.md`).
+#[test]
+fn zoo_b_zorf_meryl_wadsworth() {
+    if captured("zoo_b_01") {
+        replay_level("zoo_b_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are

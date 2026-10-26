@@ -9,7 +9,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-4 differenc
 - Animation (slot 89) @ `0x004dfc50`; draw body `0x004f8610` → `0x004df980`
 - Food made through `Board::AddFood` @ `0x00543280` → `Food::Food` @ `0x004ef840`
 
-Confidence: `static` throughout. Nothing here is under a replay test yet. The capture `demo_test_01` (2-1 with Stinky, Prego and Zorf; `framework/demo-recording.md`) shows Zorf's pellets and can be used to trace this spec.
+Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, 51 pellets) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
 
 ## Fields used by id 4
 
@@ -23,7 +23,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 | `+0x180` | f64 | divisor, **3.0** (a guppy's is 1.6–2.0) |
 | `+0x190` | int | floor, **270** (a guppy's is 370) |
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Construction
 
@@ -35,7 +35,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 
 The feed counter `+0x220` starts at 0. The Virtual Tank doesn't change any of this for id 4.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Update (`0x004f7ad0`), id 4
 
@@ -49,7 +49,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are the same as Itchy's. Zorf updates in the `+0xb4` slot, after the lower pet ids (Itchy, Prego).
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Feeding (slot 81, `0x004e5900`, id 4)
 
@@ -68,7 +68,7 @@ Timing: the counter restarts at −10, so the next check is **75 ticks** after a
 
 **Sound:** none. `AddFood` plays `SOUND_DROPFOOD` only for motion-0 food.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Zorf's pellet
 
@@ -90,7 +90,7 @@ What `AddFood` (`0x00543280`) and `Food::Food` (`0x004ef840`) make of Zorf's arg
 
 The 0.05 steps are doubles; the last step can leave a tiny non-zero vx/vy (0.05 isn't exact), which only matters for which tick the sign test fails. Compare against a capture.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Animation (`0x004dfc50`), id 4
 
@@ -99,7 +99,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` or `turn/2 + 9`). When not tur
 - The swim cycle `+0x1b8` advances by **1 every tick** (the speed bucket is ignored), wraps to 0 above 19, and cel `+0x1c0` = cycle / 2.
 - If the feed counter is exactly **−1** (the 9th tick after a drop), the cycle is then set to 10, so the swim resumes at cel 5 after the spit.
 
-No RNG. `static`.
+No RNG. `traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Drawing (`0x004df980`)
 

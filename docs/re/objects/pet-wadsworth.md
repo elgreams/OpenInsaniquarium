@@ -11,7 +11,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-9 differenc
 - Readers: `Fish::Update` @ `0x004f6970` (`0x004f69a2`), `Fish::Draw` @ `0x004e4a90`, the prey filter `0x00500ff0`, the alien-missile hit `0x004fc070` (`0x004fc8b6`)
 - Draw body `0x004f8610` case 9 → `0x004e4e40`
 
-Confidence: `static` throughout. No capture with Wadsworth exists yet.
+Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, three waves, 270 sheltering ticks) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
 
 ## Fields used by id 9
 
@@ -24,13 +24,13 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 | `+0x224` | int | mouth-open length on shelter start: **120** |
 | `+0x250` | byte | **sheltering** flag (Ghidra `FishTypePet_data.offset_0x24`) |
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Construction
 
 `Board::AddPet(9, -1, -1)` (`0x00544a90`): the same **9 app draws** as Itchy, in order: 2 position (`% 265 + 105`, `% 520 + 20`), 6 `Fish::Init` (facing, divisor, hunger, growth, mode, coin interval; the divisor draw is consumed and then overwritten), 1 shadow (`% 5`, type 0: every FishTypePet except ids 16 and 20). The id-9 ctor branch sets `+0x224 = 120` and divisor `+0x180 = 4.0` (`0x00596588`), with no RNG. `+0x250 = 0`. `+0x229` (the "can be sheltered" byte, `Fish::Init` sets it to 1) is cleared by the FishTypePet ctor for every pet, so pets are never sheltered or hidden.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Update (`0x004f7ad0`), id 9
 
@@ -42,7 +42,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 RNG: the re-roll draws only (app MTRand). The release bubbles use the global stream (below).
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## The gate (slot 82, `0x004e9790`), id 9
 
@@ -57,7 +57,7 @@ Each call, in order:
 
 So the count is 1 from his first update with an alien in the tank until his first update after the last alien, Bilaterus and missile are gone. Since the `+0xb4` pets update after the guppies and aliens (`board.md`), guppies and aliens see the new count from the next tick, and the published position lags his real one by one tick.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Effects on guppies
 
@@ -74,13 +74,13 @@ Right after `PreUpdate`, if `0x005e89d0 ≠ 0`, the fish's `+0x229` byte is set 
 
 So a sheltered guppy jumps up to 5 px per tick toward him, regardless of its own speed, and doesn't chase food. (Hunger doesn't drop while aliens are present anyway; the shelter only adds the tick after the last alien leaves and before his next update, when the count is still set.)
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ### `Fish::Draw` (`0x004e4a90`)
 
 If `0x005e89d0 ≠ 0`, `wx − 8 < x < wx + 8`, `wy − 8 < y < wy + 8` (strict, doubles against the published ints), `+0x229` set and stage < 2: the fish **is not drawn**, and its shadow's scale (`shadow+0x168`) is set to 0, hiding the shadow too. Otherwise the shadow scale is set back to 1.0 and the fish draws normally. So guppies vanish once they are within 8 px of his position, and reappear as they drift out.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Effects on aliens
 
@@ -91,7 +91,7 @@ The shared prey filter **`0x00500ff0`** returns "protected" for an object of typ
 
 The protection depends only on the global count, **not** on the guppy's distance to Wadsworth. Aliens then pick from what's left (large guppies, carnivores and other fish, or pets while a boss is present); with nothing left they have no prey.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Count bookkeeping
 
@@ -99,7 +99,7 @@ The protection depends only on the global count, **not** on the guppy's distance
 - `0x004d6250` (FishTypePet destructor and slot 74, removal): if the removed pet is id 9 and sheltering, `count −= 1` (floored at 0). Selling or losing him mid-wave releases the guppies.
 - Save/load `0x00546240` serialises `0x005e89d0`, `d4`, `d8`; after loading it zeroes the count if it is negative, or positive with no alien and no Bilaterus.
 
-`static`.
+`traced` (`zoo_b_zorf_meryl_wadsworth`).
 
 ## Drawing (`0x004e4e40`)
 

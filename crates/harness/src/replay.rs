@@ -41,6 +41,9 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             // FishTypePet: the pet id (`+0x234`) says which.
             0x15 if rd_i32(b, 0x234) == 3 => FishKind::Prego,
             0x15 if rd_i32(b, 0x234) == 6 => FishKind::Vert,
+            0x15 if rd_i32(b, 0x234) == 4 => FishKind::Zorf,
+            0x15 if rd_i32(b, 0x234) == 8 => FishKind::Meryl,
+            0x15 if rd_i32(b, 0x234) == 9 => FishKind::Wadsworth,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -85,6 +88,12 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         misc_timer: rd_i32(b, 0x210),
         coin_timer: rd_i32(b, 0x220),
         coin_interval: rd_i32(b, 0x224),
+        // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
+        blink: rd_i32(b, 0x8c) == 0x15
+            && match rd_i32(b, 0x234) {
+                9 => b.get(0x250).is_some_and(|&v| v != 0),
+                _ => b.get(0x244).is_some_and(|&v| v != 0),
+            },
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -500,7 +509,7 @@ fn fish_json(f: &Fish) -> Value {
         "timers": [f.timer_108, f.timer_10c, f.timer_f8, f.fade, f.vy_damp_timer,
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
-        "widget": [f.widget_x, f.widget_y],
+        "widget": [f.widget_x, f.widget_y], "blink": f.blink,
     })
 }
 
@@ -557,8 +566,8 @@ fn coin_json(c: &Coin) -> Value {
 
 fn food_json(f: &Food) -> Value {
     json!({
-        "x": f.x, "y": f.y, "anim": [f.anim, f.anim_speed], "fade": f.fade,
-        "level": f.level, "delay": f.delay, "widget": [f.widget_x, f.widget_y],
+        "x": f.x, "y": f.y, "vx": f.vx, "vy": f.vy, "anim": [f.anim, f.anim_speed], "fade": f.fade,
+        "level": f.level, "motion": f.motion, "delay": f.delay, "widget": [f.widget_x, f.widget_y],
     })
 }
 
@@ -1040,9 +1049,26 @@ impl Inferred {
         let mut carry: Vec<Value> = Vec::new();
         let mut snapshots = Vec::new();
         let mut prev_tick: Option<u32> = None;
+        let mut skip_sounds = 0;
         for s in &expected.snapshots {
             let gap = prev_tick.is_some_and(|p| s.tick > p + 1);
             prev_tick = Some(s.tick);
+            // A long gap (a stalled capture) can hold sounds the snapshot
+            // after it can't place (only the sample table's last stamp is
+            // read): don't compare sounds on the two snapshots after it.
+            if gap && prev_gap_len(&expected.snapshots, s.tick) > 3 {
+                skip_sounds = 2;
+            }
+            if skip_sounds > 0 {
+                skip_sounds -= 1;
+                if !self.dirty.contains(&s.tick) {
+                    let mut s = s.clone();
+                    s.state.remove("sounds");
+                    carry.clear();
+                    snapshots.push(s);
+                }
+                continue;
+            }
             if gap
                 && let Some(Value::Array(v)) = s.state.get("sounds")
                 && !v.is_empty()
@@ -1079,6 +1105,16 @@ impl Inferred {
             header: expected.header.clone(),
             snapshots,
         }
+    }
+}
+
+/// Ticks missing before the snapshot at `tick` (0 if it follows its
+/// predecessor directly).
+fn prev_gap_len(snapshots: &[Snapshot], tick: u32) -> u32 {
+    let i = snapshots.partition_point(|s| s.tick < tick);
+    match i.checked_sub(1).map(|j| snapshots[j].tick) {
+        Some(p) => tick - p - 1,
+        None => 0,
     }
 }
 

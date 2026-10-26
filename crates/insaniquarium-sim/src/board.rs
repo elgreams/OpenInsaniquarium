@@ -131,6 +131,9 @@ pub struct Board {
     /// Board updates since the dialog opened: its button ignores clicks
     /// until [`DIALOG_BUTTON_DELAY`] (dialog.md#button-delay).
     pub dialog_age: i32,
+    /// Paused by focus loss or the menu ("Game Paused", dialog 18): board
+    /// clicks are swallowed until it's resumed.
+    pub focus_paused: bool,
     /// One-time hint bytes `+0x4b0..` (message.rs): each hint dialog or
     /// one-time message is shown once per level.
     pub hints: [bool; HINTS],
@@ -150,6 +153,14 @@ pub struct Board {
     /// `board+0xec`: pearls (coin kind 15). Last in z-order, so in front of
     /// everything and updated after the other coins (pet-niko.md#the-pearl).
     pub pearls: Vec<Coin>,
+    /// Meryl's rising music notes (`Coin` kind 16, list `+0xe8`).
+    pub notes: Vec<Coin>,
+    /// Meryl's song flag (global `0x005e89cc`): guppies drop coins every
+    /// 35 ticks while it is set (pet-meryl.md).
+    pub song: bool,
+    /// Wadsworth's shelter (globals `0x005e89d0..d8`): his widget position
+    /// as of his last update, while sheltering (pet-wadsworth.md).
+    pub shelter: Option<(i32, i32)>,
     /// `board+0xb0`: `OtherTypePet` pets (Stinky) in insertion order.
     pub pets: Vec<Pet>,
     /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
@@ -225,6 +236,7 @@ impl Board {
             arrow_food_quality: false,
             dialog: None,
             dialog_age: 0,
+            focus_paused: false,
             hints: [false; HINTS],
             message: Message::default(),
             guppies: Vec::new(),
@@ -233,6 +245,9 @@ impl Board {
             foods: Vec::new(),
             coins: Vec::new(),
             pearls: Vec::new(),
+            notes: Vec::new(),
+            song: false,
+            shelter: None,
             pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
@@ -392,6 +407,16 @@ impl Board {
             self.rng.next_range(5);
         } else if id == crate::itchy::VERT {
             self.fish_pets.push(Fish::new_vert(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::ZORF {
+            self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::WADSWORTH {
+            self.fish_pets
+                .push(Fish::new_wadsworth(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::MERYL {
+            self.fish_pets.push(Fish::new_meryl(a, _b, &mut self.rng));
             self.rng.next_range(5);
         } else {
             // TODO(spec): other pets.
@@ -850,10 +875,18 @@ impl Board {
         self.music = None;
         for i in inputs {
             match *i {
-                Input::Click { x, y } if self.dialog.is_none() => {
+                // The focus-loss pause is the "Game Paused" dialog (id 18,
+                // `zoo_b_01`): clicks go to it, not the board.
+                Input::Click { x, y } if self.dialog.is_none() && !self.focus_paused => {
                     self.click(x, y);
                 }
                 Input::Click { .. } => {}
+                // The "Game Paused" dialog's button resumes the board (the
+                // button rect isn't checked yet, as for board dialogs).
+                Input::DismissDialog if self.focus_paused && self.dialog.is_none() => {
+                    self.paused = false;
+                    self.focus_paused = false;
+                }
                 Input::DismissDialog => self.dismiss_dialog(),
                 Input::Buy(slot) if self.dialog.is_none() => {
                     self.purchase(slot);
@@ -862,6 +895,7 @@ impl Board {
                 Input::SetPaused(p) => {
                     if self.dialog.is_none() {
                         self.paused = p;
+                        self.focus_paused = p;
                     }
                 }
             }
@@ -1199,6 +1233,8 @@ impl Board {
             eaten: &mut Vec::new(),
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
+            song: self.song,
+            shelter: self.shelter,
         };
         for &i in born {
             self.guppies[i].update(env, &mut world);
@@ -1294,6 +1330,17 @@ impl Board {
         }
         // Dead fish come right after shadows (cosmetic, no RNG).
         self.dead_fish.retain_mut(DeadFish::update);
+        // Meryl's notes (`+0xe8`, `Coin::Update` kind 16): rise 1 px a
+        // tick; gone after 100 ticks or above y 50.
+        self.notes.retain_mut(|n| {
+            n.floor_time += 1;
+            if n.floor_time > 100 || n.y < 50.0 {
+                return false;
+            }
+            n.y -= 1.0;
+            n.widget_y = n.y as i32;
+            true
+        });
         self.update_dead_aliens();
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
@@ -1321,6 +1368,8 @@ impl Board {
             eaten: &mut Vec::new(),
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
+            song: self.song,
+            shelter: self.shelter,
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
@@ -1361,11 +1410,15 @@ impl Board {
         let mut i = 0;
         while i < self.aliens.len() {
             let mut out = AlienOut::default();
+            // Wadsworth's shelter hides small and medium guppies from every
+            // alien (`0x00500ff0`). Indices stay those of the full list.
+            let sheltered = |f: &Fish| self.shelter.is_some() && !f.is_carnivore() && f.stage < 2;
             let prey: Vec<&Fish> = self.guppies.iter().chain(&self.carnivores).collect();
+            let prey_mask: Vec<bool> = prey.iter().map(|f| sheltered(f)).collect();
             // Replay-only: the original's address-order tie break
             // (`ArtifactPlan::eat_choice`); `None` in play.
             let prefer = self.artifacts.eat_choice;
-            self.aliens[i].update_preferring(&prey, prefer, &mut self.rng, &mut out);
+            self.aliens[i].update_masked(&prey, &prey_mask, prefer, &mut self.rng, &mut out);
             if let Some(g) = out.ate {
                 let victim = if g < self.guppies.len() {
                     self.guppies.remove(g)
@@ -1418,7 +1471,39 @@ impl Board {
             if self.paused {
                 break;
             }
-            let out = self.fish_pets[i].update_fish_pet(&self.aliens, &mut self.rng);
+            // Zorf's hungry check (`0x004e5b8e`): guppies, then breeders
+            // (none yet), with hunger below 300.
+            let hungry = self.guppies.iter().any(|g| g.hunger < 300);
+            let ctx = crate::itchy::PetCtx {
+                aliens: &self.aliens,
+                hungry,
+                guppies: &self.guppies,
+            };
+            // The gate publishes the position from before his move.
+            let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
+            let out = self.fish_pets[i].update_fish_pet(ctx, &mut self.rng);
+            if let Some((x, y, motion)) = out.food {
+                // Food made in the object pass updates in it (board.md).
+                let mut f = crate::food::Food::new_thrown(x, y, motion, &mut self.rng);
+                f.update();
+                self.foods.push(f);
+            }
+            match out.shelter {
+                Some(true) => self.shelter = Some((pre_wx, pre_wy)),
+                Some(false) => {
+                    // Release: two bubbles (global stream, not modelled).
+                    self.shelter = None;
+                }
+                None => {}
+            }
+            if let Some(on) = out.song {
+                self.song = on;
+                if on {
+                    let (wx, wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
+                    self.notes.push(Coin::new(wx + 15, wy - 5, 16));
+                    self.play(0x137, Sound::Sing);
+                }
+            }
             if let Some(a) = out.stabbed {
                 crate::itchy::stab(&mut self.aliens[a]);
                 // `0x00538340(11)`: PUNCH, throttled to one per 11 ticks.

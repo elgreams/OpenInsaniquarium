@@ -30,6 +30,15 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 6, Vert: drops a gold coin every 216 calm
     /// ticks (`pet-vert.md`).
     Vert,
+    /// `Sexy::FishTypePet` id 4, Zorf: spits food at hungry guppies
+    /// (`pet-zorf.md`).
+    Zorf,
+    /// `Sexy::FishTypePet` id 8, Meryl: sings; guppies drop coins faster
+    /// (`pet-meryl.md`).
+    Meryl,
+    /// `Sexy::FishTypePet` id 9, Wadsworth: shelters small and medium
+    /// guppies from aliens (`pet-wadsworth.md`).
+    Wadsworth,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,6 +125,8 @@ pub struct Fish {
     /// `+0x30`, `+0x34`: integer widget position (truncated x/y).
     pub widget_x: i32,
     pub widget_y: i32,
+    /// FishTypePet `+0x244`: Meryl's blink flag (1 from the ctor).
+    pub blink: bool,
 }
 
 /// Board facts a guppy update reads.
@@ -156,6 +167,11 @@ pub struct World<'a> {
     pub shots: &'a mut Vec<crate::alien::Shot>,
     /// Replay-only artifact draws (`Board::artifacts`).
     pub artifacts: &'a mut crate::alien::ArtifactPlan,
+    /// Meryl's song flag (global `0x005e89cc`, pet-meryl.md).
+    pub song: bool,
+    /// Wadsworth's shelter (globals `0x005e89d0..d8`): his published
+    /// widget position while the count is non-zero (pet-wadsworth.md).
+    pub shelter: Option<(i32, i32)>,
 }
 
 impl World<'_> {
@@ -226,6 +242,7 @@ impl Fish {
             misc_timer: 0,
             coin_timer: 0,
             coin_interval: 0,
+            blink: false,
             widget_x: x,
             widget_y: y,
         };
@@ -271,7 +288,18 @@ impl Fish {
         if self.dead {
             return;
         }
-        let chasing = if self.is_carnivore() {
+        // Sheltered by Wadsworth (`0x004f69a2`): small and medium guppies
+        // home on him and skip hunger and the swim modes.
+        let sheltered = match w.shelter {
+            Some((wx, wy)) if !self.is_carnivore() && self.stage < 2 => {
+                self.home_on(wx, wy);
+                true
+            }
+            _ => false,
+        };
+        let chasing = if sheltered {
+            true
+        } else if self.is_carnivore() {
             self.update_hunger_carnivore(env, w)
         } else {
             self.update_hunger(env, w)
@@ -308,6 +336,36 @@ impl Fish {
         self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
+    }
+
+    /// A sheltered guppy's step toward Wadsworth (pet-wadsworth.md#fishupdate):
+    /// ±5/±4 far, ±3 near, a 5-px dead zone; vx ±0.5, vy 0.
+    fn home_on(&mut self, wx: i32, wy: i32) {
+        if self.push_timer == 0 {
+            self.vx = if self.vx >= 0.0 { 0.5 } else { -0.5 };
+        }
+        if self.vy_damp_timer == 0 {
+            self.vy = 0.0;
+        }
+        let (wx, wy) = (f64::from(wx), f64::from(wy));
+        if self.x > wx + 50.0 {
+            self.x -= 5.0;
+        } else if self.x < wx - 50.0 {
+            self.x += 5.0;
+        } else if self.x > wx + 5.0 {
+            self.x -= 3.0;
+        } else if self.x < wx - 5.0 {
+            self.x += 3.0;
+        }
+        if self.y > wy + 50.0 {
+            self.y -= 4.0;
+        } else if self.y < wy - 50.0 {
+            self.y += 4.0;
+        } else if self.y > wy + 5.0 {
+            self.y -= 3.0;
+        } else if self.y < wy - 5.0 {
+            self.y += 3.0;
+        }
     }
 
     /// `Fish::UpdateHunger` (`0x004f15c0`). Returns true while chasing food,
@@ -394,7 +452,9 @@ impl Fish {
             return;
         }
         self.coin_timer += 1;
-        if self.coin_timer < self.coin_interval {
+        // While Meryl sings the interval is 35 (`0x004f1425`, pet-meryl.md).
+        let interval = if w.song { 35 } else { self.coin_interval };
+        if self.coin_timer < interval {
             return;
         }
         self.coin_timer = 0;

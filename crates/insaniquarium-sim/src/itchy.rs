@@ -16,8 +16,19 @@ pub const PREGO: i32 = 3;
 /// Pet id 6 (Vert, same class; `pet-vert.md`).
 pub const VERT: i32 = 6;
 
+/// Pet id 4 (Zorf, same class; `pet-zorf.md`).
+pub const ZORF: i32 = 4;
+/// Pet id 8 (Meryl, same class; `pet-meryl.md`).
+pub const MERYL: i32 = 8;
+/// Pet id 9 (Wadsworth, same class; `pet-wadsworth.md`).
+pub const WADSWORTH: i32 = 9;
+
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
+/// Zorf's feed interval.
+const ZORF_INTERVAL: i32 = 65;
+/// Meryl's song interval (normal game; the song is its last 100 ticks).
+const MERYL_INTERVAL: i32 = 1400;
 
 /// Prego's first birth interval (`FishTypePet` ctor, id 3).
 const PREGO_INTERVAL: i32 = 930;
@@ -32,6 +43,8 @@ impl Fish {
         let mut f = Fish::new(x, y, rng);
         f.kind = FishKind::Itchy;
         f.announces = false;
+        // `+0x244 = 1` for every FishTypePet (only Meryl reads it).
+        f.blink = true;
         f
     }
 
@@ -67,12 +80,47 @@ impl Fish {
         self.kind == FishKind::Vert
     }
 
+    /// `AddPet(4)`'s fish part: the id-4 ctor branch (no RNG): feed
+    /// interval 65, divisor 3.0, floor 270.
+    pub fn new_zorf(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Zorf;
+        f.coin_interval = ZORF_INTERVAL;
+        f.divisor = 3.0;
+        f.floor_y = 270;
+        f
+    }
+
+    /// `AddPet(9)`'s fish part: mouth-open length 120, divisor 4.0 (no RNG).
+    pub fn new_wadsworth(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Wadsworth;
+        f.coin_interval = 120;
+        f.divisor = 4.0;
+        // `blink` holds his sheltering flag `+0x250` (0 at start).
+        f.blink = false;
+        f
+    }
+
+    /// `AddPet(8)`'s fish part: the song interval (no RNG); the blink flag
+    /// starts set.
+    pub fn new_meryl(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Meryl;
+        f.coin_interval = MERYL_INTERVAL;
+        f
+    }
+
     /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
     /// board must apply.
-    pub fn update_fish_pet(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+    pub fn update_fish_pet(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let aliens = ctx.aliens;
         match self.kind {
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
+            FishKind::Zorf => self.update_zorf(ctx, rng),
+            FishKind::Meryl => self.update_meryl(aliens, rng),
+            FishKind::Wadsworth => self.update_wadsworth(ctx, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
                 ..Default::default()
@@ -171,6 +219,163 @@ impl Fish {
                 19 - self.swim_cycle
             };
         }
+        self.integrate();
+        out
+    }
+
+    /// The swim part every calm-swimming FishTypePet shares: PreUpdate,
+    /// the swim modes and the 21-tick re-roll.
+    fn swim_and_reroll(&mut self, rng: &mut MtRand) {
+        self.pre_update();
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+    }
+
+    /// The default swim animation without the guppy's eat-cel extras
+    /// (`0x004dfc50` default branch): turn, else the cycle at speed 1 or 2.
+    fn animate_pet(&mut self, every_tick: bool) {
+        if self.facing > 0.0 && self.vx < 0.0 {
+            self.turn_timer = 20;
+        } else if self.facing < 0.0 && self.vx > 0.0 {
+            self.turn_timer = -20;
+        }
+        if self.turn_timer != 0 {
+            self.turn_timer -= self.turn_timer.signum();
+            if self.turn_timer == 0 {
+                self.eat_timer = 0;
+            }
+        }
+        if self.turn_timer > 0 {
+            self.cel = 9 - self.turn_timer / 2;
+        } else if self.turn_timer < 0 {
+            self.cel = self.turn_timer / 2 + 9;
+        } else {
+            self.swim_cycle += if every_tick || self.anim_frame <= 1 {
+                1
+            } else {
+                2
+            };
+            if self.swim_cycle > 19 {
+                self.swim_cycle = 0;
+            }
+            self.cel = self.swim_cycle / 2;
+        }
+    }
+
+    fn update_facing(&mut self) {
+        #[allow(clippy::float_cmp)]
+        if self.vx != self.facing && self.vx != 0.0 && self.facing != 0.0 {
+            self.facing = self.vx;
+        }
+    }
+
+    /// `FishTypePet::Update` for id 4 (pet-zorf.md): calm swimming, and
+    /// while no alien is in, a level-1 pellet at a hungry tank (slot 81).
+    fn update_zorf(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.swim_and_reroll(rng);
+        if ctx.aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer >= self.coin_interval && ctx.hungry {
+                self.coin_timer = -10;
+                let motion = if self.vx < 0.0 { 1 } else { 2 };
+                out.food = Some((self.widget_x + 15, self.widget_y + 10, motion));
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        // Id 4: the cycle steps by 1 every tick; it jumps to 10 on the 9th
+        // tick after a spit.
+        self.animate_pet(true);
+        if self.turn_timer == 0 && self.coin_timer == -1 {
+            self.swim_cycle = 10;
+        }
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
+    /// `FishTypePet::Update` for id 8 (pet-meryl.md): calm swimming, the
+    /// song (slot 81) while no alien is in, and the blink draw.
+    fn update_meryl(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.swim_and_reroll(rng);
+        if aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer == self.coin_interval - 100 {
+                out.song = Some(true);
+            } else if self.coin_timer >= self.coin_interval {
+                out.song = Some(false);
+                self.coin_timer = 0;
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        self.animate_pet(false);
+        // The blink check (`0x004e000c`), on non-turning ticks at cel 0.
+        if self.turn_timer == 0 && self.cel == 0 {
+            if self.blink {
+                self.blink = false;
+            } else {
+                self.blink = rng.next_range(10) == 0;
+            }
+        }
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
+    /// `FishTypePet::Update` for id 9 (pet-wadsworth.md): calm swimming;
+    /// the gate (slot 82) runs the mouth timer and the shelter, and always
+    /// lets the swim modes run. `coin_timer` is the mouth timer, `blink` the
+    /// sheltering flag.
+    fn update_wadsworth(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        // The gate: mouth timer, then the threat test.
+        if self.coin_timer > 0 {
+            self.coin_timer -= 1;
+        } else if self.blink && ctx.guppy_outside(self) {
+            self.coin_timer = 100;
+        }
+        if ctx.aliens.is_empty() {
+            if self.blink {
+                self.blink = false;
+                self.coin_timer = 30;
+                out.shelter = Some(false);
+            }
+        } else {
+            if !self.blink {
+                self.blink = true;
+                self.coin_timer = self.coin_interval;
+            }
+            out.shelter = Some(true);
+        }
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        self.animate();
         self.integrate();
         out
     }
@@ -301,6 +506,33 @@ pub struct PetFishOut {
     pub birth: Option<(i32, i32)>,
     /// Vert drops a gold coin at this widget position.
     pub coin: Option<(i32, i32)>,
+    /// Zorf spits a pellet: `AddFood(x, y, motion)`.
+    pub food: Option<(i32, i32, i32)>,
+    /// Meryl starts (true) or ends (false) her song.
+    pub song: Option<bool>,
+    /// Wadsworth shelters (true: publish his position) or releases (false).
+    pub shelter: Option<bool>,
+}
+
+/// What a fish-shaped pet's update reads from the board.
+#[derive(Clone, Copy)]
+pub struct PetCtx<'a> {
+    pub aliens: &'a [Alien],
+    /// Some guppy (or breeder) has hunger below 300 (Zorf's check).
+    pub hungry: bool,
+    pub guppies: &'a [Fish],
+}
+
+impl PetCtx<'_> {
+    /// `0x004e7010`: some small or medium guppy is more than 10 px off
+    /// Wadsworth on **both** axes.
+    fn guppy_outside(&self, w: &Fish) -> bool {
+        self.guppies.iter().any(|g| {
+            g.stage < 2
+                && ((w.x + 40.0) - f64::from(g.widget_x + 40)).abs() > 10.0
+                && ((w.y + 40.0) - f64::from(g.widget_y + 40)).abs() > 10.0
+        })
+    }
 }
 
 /// `0x004fb5b0` for Itchy: the alien loses [`STAB`] health.
