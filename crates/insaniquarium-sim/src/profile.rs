@@ -24,6 +24,10 @@ pub struct Profile {
     pub times_beaten: i32,
     /// `+0x59`: game completed.
     pub completed: bool,
+    /// `+0x5a + id`: pets chosen on the pet screen for the next level.
+    pub chosen: [bool; PET_COUNT],
+    /// `+0xb4`: how many pets the pet screen lets you choose (3).
+    pub pet_slots: i32,
 }
 
 impl Default for Profile {
@@ -35,26 +39,30 @@ impl Default for Profile {
             shells: 0,
             times_beaten: 0,
             completed: false,
+            chosen: [false; PET_COUNT],
+            pet_slots: 3,
         }
     }
 }
 
 impl Profile {
-    /// Owned pets `PopulateLevel` adds when the player owns at most 3
-    /// (no pet screen): ids 0..=18 in id order.
-    ///
-    /// With more than 3 owned, the original shows the pet screen to choose
-    /// 3 (`level-start.md`, step 3). TODO(spec): the pet screen. Until then
-    /// this stands in with Stinky, Niko and the newest pet.
+    /// The pets `PopulateLevel` adds (`sim/level-start.md`, step 3): with
+    /// at most 3 owned, every owned pet with id 0..=18; otherwise the ones
+    /// chosen on the pet screen (ids 0..=23). In id order.
     pub fn level_pets(&self) -> Vec<i32> {
-        let owned: Vec<i32> = (0..19).filter(|&id| self.pets[id as usize]).collect();
-        if owned.len() <= 3 {
-            return owned;
+        if self.pet_count() <= 3 {
+            (0..19).filter(|&id| self.pets[id as usize]).collect()
+        } else {
+            (0..PET_COUNT as i32)
+                .filter(|&id| self.chosen[id as usize])
+                .collect()
         }
-        let mut chosen: Vec<i32> = owned.iter().copied().filter(|&id| id < 2).collect();
-        chosen.extend(owned.iter().rev().take(3 - chosen.len()).rev());
-        chosen.sort_unstable();
-        chosen
+    }
+
+    /// Does `App::NextLevel` show the pet screen (`pet-screen.md#when-it-
+    /// appears`)? TODO(spec): bonus rounds and Virtual Tank.
+    pub fn needs_pet_screen(&self) -> bool {
+        self.pet_count() > 3 && self.tank != 5
     }
 
     /// Number of owned pets (`+0x18`).

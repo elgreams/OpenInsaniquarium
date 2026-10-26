@@ -30,6 +30,7 @@ use insaniquarium_app::song::Song;
 use insaniquarium_sim::Board;
 use insaniquarium_sim::board::Input;
 use insaniquarium_sim::game::{Game, HatchInput, Screen};
+use insaniquarium_sim::pet_screen::{self, PetInput};
 use insaniquarium_sim::profile::Profile;
 use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::sound::{Played, Sound};
@@ -95,11 +96,16 @@ fn main() {
     let mut global = MtRand::new(seed);
     let app_rng = MtRand::new(global.next_u31());
     // Session-only progress (TODO(M4): profiles and saves). `--level N`
-    // starts at 1-N as if the earlier tank-1 levels were won.
+    // starts at 1-N as if the earlier tank-1 levels were won; 6 means all
+    // of tank 1 (five pets, so the pet screen comes first).
     let level: i32 = arg("--level").and_then(|s| s.parse().ok()).unwrap_or(1);
     let mut profile = Profile::default();
-    for l in 1..level.clamp(1, 5) {
+    for l in 1..level.clamp(1, 6) {
         profile.finish_level(1, l);
+    }
+    if profile.is_bonus_round() {
+        // TODO(spec): the bonus round; skip to the next tank.
+        profile.advance();
     }
     let mut game = Game::new(profile, app_rng, global);
     if args.iter().any(|a| a == "--finish") {
@@ -132,6 +138,8 @@ fn main() {
             game,
             pending: Vec::new(),
             hatch_inputs: Vec::new(),
+            pet_inputs: Vec::new(),
+            pet_hover: None,
             hatch_sound: false,
         })
         .insert_resource(Sheets(scene::sheets(&images, &manifest)))
@@ -158,6 +166,9 @@ struct Sim {
     /// message pump running between updates).
     pending: Vec<Input>,
     hatch_inputs: Vec<HatchInput>,
+    pet_inputs: Vec<PetInput>,
+    /// The pet bubble under the mouse last frame (enter/leave events).
+    pet_hover: Option<i32>,
     /// The hatch screen asked for its sound this tick.
     hatch_sound: bool,
 }
@@ -275,6 +286,15 @@ fn step(mut sim: ResMut<Sim>) {
     match sim.game.screen {
         Screen::Tank(_) => sim.game.step_tank(&inputs),
         Screen::Hatch(_) => sim.hatch_sound = sim.game.step_hatch(&hatch_inputs).sound,
+        Screen::Pets(_) => {
+            let inputs = std::mem::take(&mut sim.pet_inputs);
+            sim.game.step_pets(&inputs);
+        }
+        // TODO: the main menu; for now, straight back into Adventure.
+        Screen::Menu => {
+            let profile = sim.game.profile.clone();
+            sim.game = Game::new(profile, MtRand::new(0), MtRand::new(1));
+        }
     }
 }
 
@@ -369,6 +389,47 @@ fn mouse(
     cursor.pos = w.cursor_position().map(|p| (p.x as i32, p.y as i32));
     cursor.down = buttons.pressed(MouseButton::Left);
     let Some((x, y)) = cursor.pos else { return };
+    if let Screen::Pets(p) = &sim.game.screen {
+        // Pet screen (`pet-screen.md#input`): enter/leave as the mouse
+        // moves between bubbles, clicks act on release, the confirm
+        // dialog's Yes/No take any click on their halves.
+        let confirm = p.screen.confirm_open;
+        let under = pet_screen::bubble_at(x, y).filter(|_| !confirm);
+        let released = buttons.just_released(MouseButton::Left);
+        let inside = |(bx, by, bw, bh): (i32, i32, i32, i32)| {
+            (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y)
+        };
+        let mut inputs = Vec::new();
+        if under != sim.pet_hover {
+            if let Some(old) = sim.pet_hover {
+                inputs.push(PetInput::Leave(old));
+            }
+            if let Some(new) = under {
+                inputs.push(PetInput::Enter(new));
+            }
+            sim.pet_hover = under;
+        }
+        if released {
+            if confirm {
+                // "Select More Pets?" Yes / No, as laid out by the renderer.
+                if let Some([yes, no]) = hud.0.pets_confirm_buttons() {
+                    if inside(yes) {
+                        inputs.push(PetInput::ConfirmYes);
+                    } else if inside(no) {
+                        inputs.push(PetInput::ConfirmNo);
+                    }
+                }
+            } else if let Some(id) = under {
+                inputs.push(PetInput::Toggle(id));
+            } else if inside(pet_screen::CONTINUE) {
+                inputs.push(PetInput::Continue);
+            } else if inside(pet_screen::MENU) {
+                inputs.push(PetInput::Menu);
+            }
+        }
+        sim.pet_inputs.extend(inputs);
+        return;
+    }
     let Some(board) = sim.board() else {
         // Hatch screen: holding the button down on the screen skips the
         // egg; the Continue button acts on release (`hatch-screen.md#6`).

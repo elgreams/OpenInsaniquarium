@@ -134,6 +134,20 @@ local function presentation(app)
     parts[#parts+1] = string.format('"hatch":{"t":%d,"pet":%d,"jx":%d,"jy":%d}',
       i32(h + 0x94), i32(h + 0x98), i32(h + 0x9c), i32(h + 0xa0))
   end
+  -- Pet screen (screens/pet-screen.md): its object raw, plus the profile's
+  -- owned (+0x00) and chosen (+0x5a) pet bytes.
+  local ps = u32(app + 0x80c)
+  if ps and ps ~= 0 then
+    local prof = u32(app + 0x8b8)
+    -- Each pet button's chosen flag (button +0x130).
+    local sel = {}
+    for id = 0, 23 do
+      local b = u32(ps + 0x9c + 4 * id)
+      sel[#sel+1] = string.format("%02x", (b and b ~= 0) and (readBytes(b + 0x130, 1) or 0) or 0)
+    end
+    parts[#parts+1] = string.format('"petscreen":{"raw":"%s","owned":"%s","chosen":"%s","buttons":"%s"}',
+      hex_block(ps, 0x200), hex_block(prof, 24), hex_block(prof + 0x5a, 24), table.concat(sel))
+  end
   return "{" .. table.concat(parts, ",") .. "}"
 end
 

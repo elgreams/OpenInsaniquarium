@@ -17,6 +17,7 @@ use insaniquarium_sim::board::Dialog;
 use insaniquarium_sim::game::{Game, Screen};
 use insaniquarium_sim::hatch::Hatch;
 use insaniquarium_sim::pet::{NIKO, Pet};
+use insaniquarium_sim::pet_screen::{self, PetScreen};
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
 use insaniquarium_sim::{Board, Fish};
 use sexy_core::anim::AnimInfo;
@@ -75,6 +76,14 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_ITCHY",
     "IMAGE_PREGO",
     "IMAGE_ZORF",
+    "IMAGE_PETBUTTON",
+    "IMAGE_PETBUTTONRING",
+    "IMAGE_PETBUTTONREFLECT",
+    "IMAGE_SCL_STINKY",
+    "IMAGE_SCL_NIKO",
+    "IMAGE_SCL_ITCHY",
+    "IMAGE_SCL_PREGO",
+    "IMAGE_SCL_ZORF",
     "IMAGE_WAVE",
     "IMAGE_WAVESIDE",
     "IMAGE_TANKLIGHTING",
@@ -272,6 +281,13 @@ pub struct Fonts {
     /// the description (each a full 640×480 overlay), and the Continue
     /// button cut out as "Please Wait..." and "Click Here to Continue".
     hatch: Option<(i32, [Arc<Rgba>; 5])>,
+    /// The pet screen's static layer (background with bubble holes, title,
+    /// Continue and Menu), its panel text per pet (name, description) and
+    /// its prompt lines.
+    pets_bg: Option<Arc<Rgba>>,
+    pets_info: HashMap<i32, Arc<Rgba>>,
+    pets_prompt: HashMap<String, Arc<Rgba>>,
+    pets_confirm: Option<(Arc<Rgba>, [Rect; 2])>,
     labels: HashMap<String, Arc<Rgba>>,
 }
 
@@ -317,6 +333,10 @@ impl Fonts {
             dialog: None,
             dialog_button: None,
             hatch: None,
+            pets_bg: None,
+            pets_info: HashMap::new(),
+            pets_prompt: HashMap::new(),
+            pets_confirm: None,
             labels: HashMap::new(),
         }
     }
@@ -329,6 +349,10 @@ impl Fonts {
 
     /// Render whatever text the current screen needs and isn't cached yet.
     fn update(&mut self, game: &Game, images: &GameImages) {
+        if let Screen::Pets(p) = &game.screen {
+            self.update_pets(&p.screen, images);
+            return;
+        }
         if let Screen::Hatch(h) = &game.screen {
             let hatch = &h.hatch;
             if self.hatch.as_ref().is_none_or(|h| h.0 != hatch.pet)
@@ -500,6 +524,93 @@ impl Fonts {
         out
     }
 
+    fn update_pets(&mut self, s: &PetScreen, images: &GameImages) {
+        let Some([f17, f15, _, f10]) = &self.hatch_fonts else {
+            return;
+        };
+        let Some(tiny) = &self.tiny else { return };
+        if self.pets_confirm.is_none()
+            && let Some(df) = &self.dialog_fonts
+            && let Some((img, rects)) = render_yes_no_dialog(
+                images,
+                df,
+                "Select More Pets?",
+                "Are you sure you want to continue to the next level without selecting 3 pets?",
+            )
+        {
+            self.pets_confirm = Some((Arc::new(img), rects));
+        }
+        if self.pets_bg.is_none() {
+            self.pets_bg = render_pets_background(images, f17, f10).map(Arc::new);
+        }
+        for id in [s.shown, s.fallback] {
+            if id >= 0 && !self.pets_info.contains_key(&id) {
+                let img = render_pet_info(f15, tiny, id);
+                self.pets_info.insert(id, Arc::new(img));
+            }
+        }
+        let line1 = s.prompt().unwrap_or_default();
+        if let std::collections::hash_map::Entry::Vacant(e) = self.pets_prompt.entry(line1) {
+            let line2 = if e.key().is_empty() {
+                ""
+            } else {
+                "to take to the next level"
+            };
+            let img = render_pet_prompt(tiny, e.key(), line2);
+            e.insert(Arc::new(img));
+        }
+    }
+
+    fn pets_text(&self, s: &PetScreen) -> Vec<Text> {
+        let at = |image: &Arc<Rgba>, z: f32, alpha: u8| Text {
+            image: image.clone(),
+            x: 0.0,
+            y: 0.0,
+            z,
+            colour: [alpha; 3],
+        };
+        let mut out = Vec::new();
+        if let Some(bg) = &self.pets_bg {
+            out.push(at(bg, 5.0, 255));
+        }
+        // The panel (`pet-screen.md#layout-and-drawing`, overlay step 4):
+        // the info text cross-fades with the fade countdown.
+        let c = s.fade;
+        let a = if (1..=4).contains(&c) {
+            (c * 255 / 5) as u8
+        } else {
+            255
+        };
+        if let Some(img) = self.pets_info.get(&s.shown) {
+            out.push(at(img, 5.3, a));
+        }
+        if (1..=4).contains(&c)
+            && let Some(img) = self.pets_info.get(&s.fallback)
+        {
+            out.push(at(img, 5.31, 255 - a));
+        }
+        if let Some(img) = self.pets_prompt.get(&s.prompt().unwrap_or_default()) {
+            out.push(at(img, 5.4, 255));
+        }
+        if s.confirm_open
+            && let Some((img, _)) = &self.pets_confirm
+        {
+            out.push(Text {
+                image: img.clone(),
+                x: DIALOG_POS.0,
+                y: DIALOG_POS.1,
+                z: 30.0,
+                colour: [255; 3],
+            });
+        }
+        out
+    }
+
+    /// The pet screen's Yes and No button rects, once rendered.
+    pub fn pets_confirm_buttons(&self) -> Option<[(i32, i32, i32, i32); 2]> {
+        self.pets_confirm.as_ref().map(|c| c.1)
+    }
+
     fn hatch_text(&self, h: &Hatch) -> Vec<Text> {
         let Some((_, [title, name, desc, wait, cont])) = &self.hatch else {
             return Vec::new();
@@ -545,6 +656,11 @@ pub fn frame(
             cels: hatch_cels(&h.hatch),
             texts: fonts.hatch_text(&h.hatch),
         },
+        Screen::Pets(p) => Frame {
+            cels: pets_cels(&p.screen, cursor, mouse_down),
+            texts: fonts.pets_text(&p.screen),
+        },
+        Screen::Menu => Frame::default(),
     }
 }
 
@@ -1077,6 +1193,60 @@ fn render_dialog(
     Some((out, (px + bx, py + by, bw, bh)))
 }
 
+/// A screen rect (x, y, w, h).
+pub type Rect = (i32, i32, i32, i32);
+
+/// The pet screen's "Select More Pets?" (dialog 0x14, button mode 1: Yes
+/// and No, ids 1000/1001; `Dialog::Dialog` @ `0x00475c40`). Laid out like
+/// the board dialogs; `Dialog::Resize` (`0x00476af0`) puts the two buttons
+/// side by side: each `(content width − 8) / 2` wide, 8 px apart.
+/// Returns the image and the Yes and No rects in screen pixels.
+#[allow(clippy::type_complexity)]
+pub fn render_yes_no_dialog(
+    img: &GameImages,
+    [head, body, btn]: &[ImageFont; 3],
+    header: &str,
+    text: &str,
+) -> Option<(Rgba, [(i32, i32, i32, i32); 2])> {
+    let panel = img.get("IMAGE_DIALOG")?;
+    let button = img.get("IMAGE_DIALOGBUTTON")?;
+    let (left, top, right, bottom) = (36, 15, 36, 36);
+    let w = (head.width(header.as_bytes()) + 150).max(348);
+    let inner = w - left - right;
+    let lines = body.wrap(text, inner - 4);
+    let bh = button.height as i32;
+    let body_h = lines.len() as i32 * body.line_spacing();
+    let preferred = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom;
+    let h = preferred.max(panel.height as i32 * 2 / 3 + 10);
+    let mut out = Rgba::new_transparent(w as u32, h as u32);
+    out.draw_image_box(panel, (0, 0, w, h));
+    let hy = top - head.ascent_padding() + head.ascent();
+    let hx = left + (inner - head.width(header.as_bytes())) / 2;
+    head.draw(&mut out, header.as_bytes(), hx, hy, [255, 200, 0]);
+    let (bx0, bw0) = (left + 2, inner - 4);
+    let mut y =
+        hy - head.ascent() + head.glyph_height() + 15 + body.ascent() - body.ascent_padding();
+    for l in &lines {
+        let x = bx0 + (bw0 - body.width(l.as_bytes())) / 2;
+        body.draw(&mut out, l.as_bytes(), x, y, [255, 255, 255]);
+        y += body.line_spacing();
+    }
+    let normal = button.crop(0, 0, button.width / 3, button.height);
+    let gap = 8;
+    let bw = (inner - gap) / 2;
+    let by = h - bottom - bh;
+    let (px, py) = (DIALOG_POS.0 as i32, DIALOG_POS.1 as i32);
+    let mut rects = [(0, 0, 0, 0); 2];
+    for (k, label) in [b"YES".as_slice(), b"NO"].iter().enumerate() {
+        let bx = left + k as i32 * (bw + gap);
+        out.draw_image_box(&normal, (bx, by, bw, bh));
+        let (lx, ly) = button_label_origin(btn, label, (bx, by, bw, bh));
+        btn.draw(&mut out, label, lx, ly, [255, 255, 100]);
+        rects[k] = (px + bx, py + by, bw, bh);
+    }
+    Some((out, rects))
+}
+
 /// The message line's widget: x, y and width; the height is the outline
 /// font's height + 6 (`MessageWidget` ctor @ `0x00534490`).
 const MESSAGE_RECT: (i32, i32, i32) = (90, 445, 460);
@@ -1508,6 +1678,196 @@ fn hatch_cels(h: &Hatch) -> Vec<Cel> {
         }
     }
     cels
+}
+
+/// The pet screen's bubbles, rings and panel picture
+/// (`pet-screen.md#layout-and-drawing`). The bubbles sit under the
+/// background layer, which has holes where they are.
+fn pets_cels(s: &PetScreen, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
+    let mut cels = Vec::new();
+    let hovered = cursor.and_then(|(x, y)| pet_screen::bubble_at(x, y));
+    for id in 0..24 {
+        let (x, y, _, _) = pet_screen::bubble(id);
+        let owned = s.owned[id as usize];
+        let chosen = s.chosen[id as usize];
+        // `IMAGE_PETBUTTON` cels: 0 disabled, 1 normal, 2 pressed (and
+        // chosen: a chosen button swaps normal and pressed and has no hover
+        // cel), 3 hover.
+        let under = hovered == Some(id);
+        let cel = match (owned, chosen, under, down) {
+            (false, ..) => 0,
+            (true, true, true, true) => 1,
+            (true, true, ..) => 2,
+            (true, false, true, true) => 2,
+            (true, false, true, false) => 3,
+            (true, false, false, _) => 1,
+        };
+        cels.push(Cel::new("IMAGE_PETBUTTON", cel, 0, x, y, 1.0));
+        if owned && let Some((icon, anim)) = pet_icon(id) {
+            // Animated by the widget's update count (the screen's ticks),
+            // with the image's own animation (Niko's ping-pongs).
+            let f = anim.cel(s.ticks);
+            cels.push(Cel::new(icon, f, 0, x + 14, y + 10, 1.1));
+        }
+    }
+    // Over the background: rings, and reflections on enabled bubbles.
+    for id in 0..24 {
+        let (x, y, _, _) = pet_screen::bubble(id);
+        cels.push(Cel::new("IMAGE_PETBUTTONRING", 0, 0, x, y, 5.1));
+        if s.owned[id as usize] {
+            cels.push(Cel::new("IMAGE_PETBUTTONREFLECT", 0, 0, x, y, 5.11));
+        }
+    }
+    // The panel picture, cross-fading with the info text.
+    let c = s.fade;
+    let a = if (1..=4).contains(&c) {
+        (c * 255 / 5) as u8
+    } else {
+        255
+    };
+    let mut picture = |id: i32, alpha: u8, z: f32| {
+        let Some(sheet) = pet_sheet(id) else { return };
+        let t = s.ticks;
+        let f = match id {
+            1 | 6 => {
+                let f = t % 18;
+                if f > 9 { 18 - f } else { f }
+            }
+            5 | 10 | 11 | 14 => (t % 40) / 4,
+            _ => (t % 20) / 2,
+        };
+        let (x, y) = match id {
+            1 => (280, 85),
+            16 => (240, 90),
+            _ => (280, 90),
+        };
+        cels.push(Cel::new(sheet, f, 0, x, y, z).alpha(i32::from(alpha)));
+    };
+    picture(s.shown, a, 5.2);
+    if (1..=4).contains(&c) {
+        picture(s.fallback, 255 - a, 5.21);
+    }
+    cels
+}
+
+/// A pet's shop/pet-screen icon (`IMAGE_SCL_<PET>`, tank 1 pets for now)
+/// and its manifest animation (10 cels, framedelay 2; Niko ping-pongs).
+fn pet_icon(pet: i32) -> Option<(&'static str, &'static AnimInfo)> {
+    static LOOP: std::sync::LazyLock<AnimInfo> = std::sync::LazyLock::new(|| {
+        let anim = Anim {
+            kind: AnimType::Loop,
+            frame_delay: 2,
+            ..Anim::default()
+        };
+        AnimInfo::compute(&anim, 10)
+    });
+    static PINGPONG: std::sync::LazyLock<AnimInfo> = std::sync::LazyLock::new(|| {
+        let anim = Anim {
+            kind: AnimType::PingPong,
+            frame_delay: 2,
+            ..Anim::default()
+        };
+        AnimInfo::compute(&anim, 10)
+    });
+    Some(match pet {
+        0 => ("IMAGE_SCL_STINKY", &*LOOP),
+        1 => ("IMAGE_SCL_NIKO", &*PINGPONG),
+        2 => ("IMAGE_SCL_ITCHY", &*LOOP),
+        3 => ("IMAGE_SCL_PREGO", &*LOOP),
+        4 => ("IMAGE_SCL_ZORF", &*LOOP),
+        _ => return None,
+    })
+}
+
+/// The pet screen's static layer: `IMAGE_SCREENBACK` boxed over the screen,
+/// the title bar and Menu hole, the panel and its button frame, then a hole
+/// cut at each bubble (`IMAGE_PETBUTTONHOLE`'s shape made transparent), then
+/// the title and the two buttons.
+fn render_pets_background(img: &GameImages, f17: &ImageFont, f10: &ImageFont) -> Option<Rgba> {
+    let mut bg = Rgba::new_transparent(WIDTH, HEIGHT);
+    bg.draw_image_box(img.get("IMAGE_SCREENBACK")?, (-5, -5, 650, 490));
+    let title = img.get("IMAGE_SCREENTITLE")?;
+    bg.draw_image_box(title, (20, 0, 600, title.height as i32));
+    let hole = img.get("IMAGE_SCREENTITLEHOLE")?;
+    bg.draw_image_box(hole, (524, 3, 82, hole.height as i32));
+    let white = [255; 3];
+    let all = (0, 0, WIDTH as i32, HEIGHT as i32);
+    for (id, at) in [
+        ("IMAGE_FISHBOX", (216, 48)),
+        ("IMAGE_FISHBOXBUTTON", (221, 243)),
+    ] {
+        let i = img.get(id)?;
+        bg.blit(i, (0, 0, i.width as i32, i.height as i32), at, white, all);
+    }
+    let cut = img.get("IMAGE_PETBUTTONHOLE")?;
+    for id in 0..24 {
+        let (x, y, _, _) = pet_screen::bubble(id);
+        for j in 0..cut.height as i32 {
+            for i in 0..cut.width as i32 {
+                let (px, py) = (x + i, y + j);
+                if cut.pixels[(j as u32 * cut.width + i as u32) as usize][3] != 0
+                    && (0..WIDTH as i32).contains(&px)
+                    && (0..HEIGHT as i32).contains(&py)
+                {
+                    bg.pixels[(py as u32 * WIDTH + px as u32) as usize][3] = 0;
+                }
+            }
+        }
+    }
+    f17.draw(&mut bg, b"Choose Your Pets", 215, 25, [255, 200, 0]);
+    let b = img.get("IMAGE_MAINBUTTON")?;
+    let up = b.crop(0, 0, b.width / 3, b.height);
+    for (label, (x, y, w, _)) in [
+        ("Click Here To Continue", pet_screen::CONTINUE),
+        ("Menu", pet_screen::MENU),
+    ] {
+        let r = (x, y, w, b.height as i32);
+        bg.draw_image_box(&up, r);
+        let (lx, ly) = button_label_origin(f10, label.as_bytes(), r);
+        f10.draw(&mut bg, label.as_bytes(), lx, ly, [255, 240, 0]);
+    }
+    Some(bg)
+}
+
+/// A pet's name and description for the panel: `FONT_JUNGLEFEVER15OUTLINE`
+/// name (mixed case) centred at y 180, `FONT_TINY` lines at 200, 215, 230.
+fn render_pet_info(f15: &ImageFont, tiny: &ImageFont, id: i32) -> Rgba {
+    let centre = |f: &ImageFont, t: &str| ((650 - f.width(t.as_bytes())) >> 1) - 3;
+    let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
+    let (full, lines) = pet_text(id);
+    // "STINKY the Snail" → "Stinky" (`0x00500e80`).
+    let word = full.split(' ').next().unwrap_or("");
+    let name: String = word
+        .chars()
+        .enumerate()
+        .map(|(i, c)| if i == 0 { c } else { c.to_ascii_lowercase() })
+        .collect();
+    f15.draw(
+        &mut l,
+        name.as_bytes(),
+        centre(f15, &name),
+        180,
+        [255, 200, 0],
+    );
+    for (i, line) in lines.iter().enumerate() {
+        tiny.draw(
+            &mut l,
+            line.as_bytes(),
+            centre(tiny, line),
+            200 + 15 * i as i32,
+            [255; 3],
+        );
+    }
+    l
+}
+
+/// The prompt's two lines, `FONT_TINY`, white, centred at y 75 and 90.
+fn render_pet_prompt(tiny: &ImageFont, line1: &str, line2: &str) -> Rgba {
+    let centre = |t: &str| ((650 - tiny.width(t.as_bytes())) >> 1) - 3;
+    let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
+    tiny.draw(&mut l, line1.as_bytes(), centre(line1), 75, [255; 3]);
+    tiny.draw(&mut l, line2.as_bytes(), centre(line2), 90, [255; 3]);
+    l
 }
 
 /// A pet's full-size swim sheet (tank 1 pets for now).

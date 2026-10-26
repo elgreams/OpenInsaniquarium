@@ -19,7 +19,7 @@ In order:
 2. **Start bubble burst:** `n = (Next() & 3) + 2`, then `n + 1` bubbles via `0x00538a50`. Each bubble costs **2 app draws** (`150 + r % 22`, `400 + r % 6`; skipped if the emitter is full, ≥ 50). Same shape as the ambient burst in `Board::Update`.
 3. **Pets.** Owned flags are `profile+0x00 + id` (24 bytes; `Profile::HasPet` @ `0x00501410` reads one). The pets *chosen* on the PetScreen are `profile+0x5a + id` (see `screens/hatch-screen.md#profile-fields-touched`).
    - Owned count `profile+0x18` ≤ 3 (and not the completed-game mode 1/4 case): for `id` in `0..18`, if **owned**, `Board::AddPet(id, -1, -1, 0, 0)`. This is the tank-1 case (1-2 adds Stinky).
-   - Otherwise: for `id` in `0..23`, if **chosen** (`+0x5a + id`), add it.
+   - Otherwise: for `id` in `0..23`, if **chosen** (`+0x5a + id`), add it. The chosen bytes come from the pet screen (`screens/pet-screen.md`). `traced`: 2-1 after choosing Stinky, Prego and Zorf starts with exactly those (`pet_screen_matches_original`).
 
    `AddPet` (`0x00544a90`) with x = −1: **2 app draws**, `a = r % 265 + 105` then `b = r % 520 + 20`. It constructs the pet and registers its shadow (Shadow ctor: **1 app draw**). Pet behaviour is per pet (`objects/pet-*.md`).
 4. **Fish**, by tank:

@@ -678,6 +678,158 @@ fn tank_1_5_won() {
     replay_tank_1("tank1-5_full_01", 5);
 }
 
+/// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
+/// with nothing chosen and No, three picks, a refused 4th, an un-pick and
+/// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
+/// inferred from the screen's state; every field and the RNG (untouched)
+/// are compared each tick, and 2-1 must start with the chosen pets.
+#[test]
+fn pet_screen_matches_original() {
+    use insaniquarium_sim::pet_screen::{PetInput, PetOutcome, PetScreen};
+    use insaniquarium_sim::profile::Profile;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/petscreen_01.trace.jsonl");
+    let Ok(f) = File::open(&path) else { return };
+    let full = Trace::read(BufReader::new(f)).unwrap();
+    let hex = |s: &serde_json::Value| -> Vec<u8> {
+        let s = s.as_str().unwrap();
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
+    let i32_at = |b: &[u8], o: usize| i32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+    // (tick, shown, fallback, count, fade, ticks, dialog open, chosen bytes)
+    #[allow(clippy::type_complexity)]
+    let states: Vec<(u32, i32, i32, i32, i32, i32, bool, Vec<u8>)> = full
+        .snapshots
+        .iter()
+        .filter_map(|s| {
+            let p = s.state.get("pres")?;
+            let ps = p.get("petscreen")?;
+            let raw = hex(&ps["raw"]);
+            let dialog = p["dialogs"].as_array().is_some_and(|d| !d.is_empty());
+            Some((
+                s.tick,
+                i32_at(&raw, 0x128),
+                i32_at(&raw, 0x12c),
+                i32_at(&raw, 0x124),
+                i32_at(&raw, 0x134),
+                i32_at(&raw, 0x120),
+                dialog,
+                hex(&ps["chosen"]),
+            ))
+        })
+        .collect();
+    assert!(states.len() > 1000);
+    let first = full
+        .snapshots
+        .iter()
+        .find(|s| {
+            s.state
+                .get("pres")
+                .and_then(|p| p.get("petscreen"))
+                .is_some()
+        })
+        .unwrap();
+    let owned = hex(&first.state["pres"]["petscreen"]["owned"]);
+    let mut profile = Profile {
+        tank: 2,
+        level: 1,
+        ..Profile::default()
+    };
+    for (id, &o) in owned.iter().enumerate() {
+        profile.pets[id] = o != 0;
+    }
+    // The first snapshot is the freshly built screen (t = 0).
+    let mut screen = PetScreen::new(&profile);
+    let mut outcome = PetOutcome::Stay;
+    for w in states.windows(2) {
+        let (prev, now) = (&w[0], &w[1]);
+        // Infer this tick's inputs from what changed.
+        let mut inputs = Vec::new();
+        if now.6 && !prev.6 {
+            inputs.push(PetInput::Continue);
+        }
+        if prev.6 && !now.6 {
+            inputs.push(PetInput::ConfirmNo);
+        }
+        if now.1 != prev.1 && now.1 >= 0 {
+            inputs.push(PetInput::Enter(now.1));
+        }
+        if now.4 == 6 && prev.4 == 0 {
+            inputs.push(PetInput::Leave(prev.1));
+        }
+        if now.3 != prev.3 {
+            // The toggled pet is the one under the mouse (shown).
+            inputs.push(PetInput::Toggle(now.1));
+        }
+        outcome = screen.step(&inputs, &mut profile);
+        let got = (
+            screen.shown,
+            screen.fallback,
+            screen.count,
+            screen.fade,
+            screen.ticks,
+            screen.confirm_open,
+        );
+        assert_eq!(
+            got,
+            (now.1, now.2, now.3, now.4, now.5, now.6),
+            "tick {} after {:?}",
+            now.0,
+            inputs
+        );
+    }
+    // The last snapshot left on Continue with 3 chosen.
+    let last = states.last().unwrap();
+    assert_eq!(outcome, PetOutcome::Stay);
+    assert_eq!(
+        screen.step(&[PetInput::Continue], &mut profile),
+        PetOutcome::StartLevel
+    );
+    let chosen: Vec<i32> = last
+        .7
+        .iter()
+        .enumerate()
+        .filter(|&(_, &c)| c != 0)
+        .map(|(i, _)| i as i32)
+        .collect();
+    assert_eq!(profile.level_pets(), vec![0, 3, 4], "Stinky, Prego, Zorf");
+    // The chosen bytes are written on Continue; the capture's last pet-screen
+    // snapshot is before it, and the dialog's Continue wrote none chosen.
+    assert!(chosen.is_empty() || chosen == vec![0, 3, 4]);
+    // The RNG doesn't move on this screen.
+    let mti: Vec<u64> = full
+        .snapshots
+        .iter()
+        .filter(|s| {
+            s.state
+                .get("pres")
+                .and_then(|p| p.get("petscreen"))
+                .is_some()
+        })
+        .filter_map(|s| s.state["rng_mti"]["app"].as_u64())
+        .collect();
+    assert!(mti.windows(2).all(|w| w[0] == w[1]), "no app draws");
+    // And 2-1 started with those pets: two OtherTypePets (Stinky, and no
+    // Niko) plus Prego and Zorf as fish pets.
+    let board = full
+        .snapshots
+        .iter()
+        .find(|s| s.state["board"].is_object())
+        .unwrap();
+    let raw = board.state["raw"]
+        .get("pet_other")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+    let fish = board.state["raw"]
+        .get("pet_fish")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+    assert_eq!((raw, fish), (1, 2));
+}
+
 fn captured(name: &str) -> bool {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"))

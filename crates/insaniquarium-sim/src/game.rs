@@ -7,6 +7,7 @@ use sexy_core::rand::MtRand;
 use crate::board::{Board, Input};
 use crate::hatch::{Hatch, HatchOut};
 use crate::music::MusicState;
+use crate::pet_screen::{PetInput, PetOutcome, PetScreen};
 use crate::profile::Profile;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,19 @@ pub enum Screen {
     Tank(Box<Board>),
     /// The hatch screen and the streams it keeps drawing from.
     Hatch(Box<HatchScreen>),
+    /// Choosing pets for the next level (`pet-screen.md`). No RNG: the
+    /// streams wait here for `StartLevel`.
+    Pets(Box<PetsScreen>),
+    /// Back at the main menu (`pet-screen.md#input`, Menu). TODO(spec): the
+    /// game selector screen.
+    Menu,
+}
+
+#[derive(Debug, Clone)]
+pub struct PetsScreen {
+    pub screen: PetScreen,
+    pub rng: MtRand,
+    pub global_rng: MtRand,
 }
 
 #[derive(Debug, Clone)]
@@ -43,22 +57,62 @@ pub struct Game {
 
 impl Game {
     /// Start Adventure at the profile's level.
+    /// Starting Adventure from the menu goes through `NextLevel` too, so
+    /// with more than 3 pets it opens on the pet screen.
     pub fn new(profile: Profile, rng: MtRand, global_rng: MtRand) -> Self {
-        let board = Self::level_board(&profile, rng, global_rng);
-        let mut music = MusicState::default();
-        // `StartLevel` → `PlayTankMusic(false)`.
-        music.tank(profile.tank, false);
-        Game {
+        let mut g = Game {
             profile,
-            screen: Screen::Tank(Box::new(board)),
-            music,
-        }
+            screen: Screen::Menu,
+            music: MusicState::default(),
+        };
+        g.next_level(rng, global_rng);
+        g
     }
 
     fn level_board(p: &Profile, rng: MtRand, global_rng: MtRand) -> Board {
-        // TODO(spec): bonus rounds (`0x00537e20`) and the pet screen for
-        // more than 3 owned pets; neither happens before 1-5.
+        // TODO(spec): bonus rounds (`0x00537e20`) after each tank's 5th level.
         Board::start_level(rng, global_rng, p.tank, p.level, &p.level_pets())
+    }
+
+    /// `App::NextLevel` (`hatch-screen.md`): clear the chosen pets, then the
+    /// pet screen when more than 3 are owned, else straight into the level.
+    fn next_level(&mut self, rng: MtRand, global_rng: MtRand) {
+        if self.profile.is_bonus_round() {
+            // TODO(spec): the bonus round (`0x00537e20`) and its results
+            // screen; skipped to the next tank for now.
+            self.profile.advance();
+        }
+        self.profile.chosen = Default::default();
+        if self.profile.needs_pet_screen() {
+            self.screen = Screen::Pets(Box::new(PetsScreen {
+                screen: PetScreen::new(&self.profile),
+                rng,
+                global_rng,
+            }));
+        } else {
+            self.start_level(rng, global_rng);
+        }
+    }
+
+    fn start_level(&mut self, rng: MtRand, global_rng: MtRand) {
+        let board = Self::level_board(&self.profile, rng, global_rng);
+        self.screen = Screen::Tank(Box::new(board));
+        self.music.tank(self.profile.tank, false);
+    }
+
+    /// One tick of the pet screen. Its music isn't touched.
+    pub fn step_pets(&mut self, inputs: &[PetInput]) {
+        let Screen::Pets(p) = &mut self.screen else {
+            return;
+        };
+        match p.screen.step(inputs, &mut self.profile) {
+            PetOutcome::Stay => self.music.update(),
+            PetOutcome::StartLevel => {
+                let (rng, global_rng) = (p.rng.clone(), p.global_rng.clone());
+                self.start_level(rng, global_rng);
+            }
+            PetOutcome::Menu => self.screen = Screen::Menu,
+        }
     }
 
     /// One tick of the tank. After the last egg piece, the board is
@@ -98,9 +152,7 @@ impl Game {
         } = &mut **h;
         if inputs.contains(&HatchInput::Continue) && hatch.can_continue() {
             let (rng, global_rng) = (rng.clone(), global_rng.clone());
-            let board = Self::level_board(&self.profile, rng, global_rng);
-            self.screen = Screen::Tank(Box::new(board));
-            self.music.tank(self.profile.tank, false);
+            self.next_level(rng, global_rng);
             return HatchOut::default();
         }
         let out = hatch.update(rng, inputs.contains(&HatchInput::Held));
@@ -111,7 +163,7 @@ impl Game {
     pub fn board(&self) -> Option<&Board> {
         match &self.screen {
             Screen::Tank(b) => Some(b),
-            Screen::Hatch(_) => None,
+            _ => None,
         }
     }
 }

@@ -12,6 +12,7 @@ pub mod itchy;
 pub mod message;
 pub mod music;
 pub mod pet;
+pub mod pet_screen;
 pub mod profile;
 pub mod shop;
 pub mod sound;

@@ -63,6 +63,59 @@ fn hatch_game(pres: &Value) -> Option<Game> {
     Some(g)
 }
 
+/// A game on the pet screen, rebuilt from the capture's object and the
+/// profile bytes (`pet-screen.md#fields`).
+fn pets_game(pres: &Value) -> Option<Game> {
+    use insaniquarium_sim::game::PetsScreen;
+    use insaniquarium_sim::pet_screen::PetScreen;
+    let ps = pres.get("petscreen")?;
+    let bytes = |k: &str| -> Vec<u8> {
+        let s = ps[k].as_str().unwrap_or("");
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap_or(0))
+            .collect()
+    };
+    let raw = bytes("raw");
+    let at = |o: usize| i32::from_le_bytes(raw[o..o + 4].try_into().unwrap());
+    let mut profile = Profile::default();
+    for (id, &o) in bytes("owned").iter().enumerate().take(24) {
+        profile.pets[id] = o != 0;
+    }
+    let mut screen = PetScreen::new(&profile);
+    for (id, &c) in bytes("buttons").iter().enumerate().take(24) {
+        screen.chosen[id] = c != 0;
+    }
+    screen.ticks = at(0x120);
+    screen.count = at(0x124);
+    screen.shown = at(0x128);
+    screen.fallback = at(0x12c);
+    screen.fade = at(0x134);
+    // Dialog 0x14 "Select More Pets?" open.
+    screen.confirm_open = pres["dialogs"]
+        .as_array()
+        .is_some_and(|d| d.iter().any(|x| x.as_i64() == Some(0x14)));
+    let mut g = Game::new(Profile::default(), MtRand::new(1), MtRand::new(2));
+    g.profile = profile;
+    g.screen = Screen::Pets(Box::new(PetsScreen {
+        screen,
+        rng: MtRand::new(1),
+        global_rng: MtRand::new(2),
+    }));
+    Some(g)
+}
+
+/// Where the mouse was in a frame set (the capture doesn't record it; the
+/// frame driver put it there): per frame index.
+fn cursor_of(name: &str, i: usize) -> Option<(i32, i32)> {
+    match (name, i) {
+        // `pets_01`: off the widgets, on Zorf, on Stinky (just clicked), off.
+        ("pets_01", 1) => Some((67, 413)),
+        ("pets_01", 2) => Some((67, 87)),
+        _ => None,
+    }
+}
+
 /// A game in the tank, rebuilt from the capture's board.
 fn tank_game(t: &Trace) -> Option<Game> {
     let mut board = board_from_capture(t).ok()?;
@@ -156,9 +209,10 @@ fn check(name: &str) -> Vec<String> {
     for (i, (trace, png)) in pairs.iter().enumerate() {
         let snap = &trace.snapshots[0];
         let game = hatch_game(&snap.state["pres"])
+            .or_else(|| pets_game(&snap.state["pres"]))
             .or_else(|| tank_game(trace))
-            .expect("a hatch or tank frame");
-        let frame = scene::frame(&game, None, false, &mut r.fonts, &r.images);
+            .expect("a hatch, pet screen or tank frame");
+        let frame = scene::frame(&game, cursor_of(name, i), false, &mut r.fonts, &r.images);
         let ours = render(&frame, &r.sheets);
         let original = load_png(png).unwrap();
         let mask = ignore_regions(name);
@@ -194,6 +248,22 @@ fn check(name: &str) -> Vec<String> {
 #[test]
 fn hatch_screen_frames_match_original() {
     let failures = check("hatch_niko_01");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The pet screen after tank 1 (`pets_01`): empty panel, hovering Zorf,
+/// three chosen with the mouse on Stinky, and with the mouse off.
+#[test]
+fn pet_screen_frames_match_original() {
+    let failures = check("pets_01");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The pet screen's "Select More Pets?" (Yes/No dialog) with 2 chosen.
+#[test]
+#[ignore = "the Yes/No dialog is ~6 px shorter than the original's (Dialog::GetPreferredHeight for button mode 1 not matched yet)"]
+fn pet_screen_dialog_frames_match_original() {
+    let failures = check("pets_dialog_01");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
