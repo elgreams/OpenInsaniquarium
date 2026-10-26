@@ -1426,6 +1426,9 @@ impl Board {
             if self.wave_kind == 11 {
                 self.wave_b.1 = 280;
             }
+            if self.wave_countdown == 225 {
+                self.play(0x13c, Sound::Sonar);
+            }
         }
         // Board::Update (`0x00548e29`, right after the waves and before the
         // objects update): no fish left → pause and raise the

@@ -45,6 +45,9 @@ MAX_QUANTITY = int(sys.argv[sys.argv.index("--quantity") + 1]) if "--quantity" i
 RESUME = (312, 258)
 # Egg price by level (shop-bar.md): 1-1 150, 1-2 500.
 EGG_PRICE = int(sys.argv[sys.argv.index("--egg") + 1]) if "--egg" in sys.argv else 150
+# Never buy egg pieces (`--no-egg`): for recordings that must not end the
+# level (pet zoos on 1-2, where the egg costs 500, not the 1-1 default).
+NO_EGG = "--no-egg" in sys.argv
 
 
 def window():
@@ -153,7 +156,7 @@ def main():
         elif st["revealed"][3] and bought_quantity < MAX_QUANTITY and st["money"] >= 400:
             click(win, *QUANTITY_BTN)
             bought_quantity += 1
-        elif st["rev_egg"] and st["money"] >= EGG_PRICE:
+        elif not NO_EGG and st["rev_egg"] and st["money"] >= EGG_PRICE:
             click(win, *EGG_BTN)
         elif (st["rev_guppy"] and bought_guppies < MAX_GUPPIES and st["money"] >= 120
               and (not st["rev_egg"] or MAX_GUPPIES > 1)):

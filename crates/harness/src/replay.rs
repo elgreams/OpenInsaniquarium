@@ -1011,6 +1011,30 @@ pub fn by_board_clock(t: &Trace) -> Trace {
     out
 }
 
+/// The replay tick (board-clock keyed, as [`by_board_clock`]) for each
+/// update count `u` in a raw capture window: the last snapshot read at or
+/// before `u` gives the clock; later updates add one each.
+pub fn demo_tick_map(raw: &Trace) -> impl Fn(i64) -> Option<u32> + use<> {
+    let clock = |s: &Snapshot| {
+        s.state
+            .get("board")
+            .and_then(|b| b.get("clock"))
+            .and_then(Value::as_i64)
+    };
+    let pairs: Vec<(i64, i64)> = raw
+        .snapshots
+        .iter()
+        .filter_map(|s| Some((s.state.get("u")?.as_i64()?, clock(s)?)))
+        .collect();
+    let tick0 = raw.snapshots.first().map_or(0, |s| s.tick);
+    let base = pairs.first().map_or(0, |p| p.1);
+    move |u: i64| {
+        let i = pairs.partition_point(|p| p.0 <= u).checked_sub(1)?;
+        let (pu, pc) = pairs[i];
+        u32::try_from(i64::from(tick0) + (pc + (u - pu)) - base).ok()
+    }
+}
+
 /// Ticks right after a gap in a [`by_board_clock`] trace: the capture
 /// missed updates there (a catch-up burst), so its read may be torn.
 pub fn after_gaps(t: &Trace) -> Vec<u32> {
@@ -1058,15 +1082,19 @@ impl Inferred {
         let mut snapshots = Vec::new();
         let mut prev_tick: Option<u32> = None;
         let mut skip_sounds = 0;
+        let mut prev_was_gap = false;
         for s in &expected.snapshots {
             let gap = prev_tick.is_some_and(|p| s.tick > p + 1);
             prev_tick = Some(s.tick);
             // A long gap (a stalled capture) can hold sounds the snapshot
             // after it can't place (only the sample table's last stamp is
             // read): don't compare sounds on the two snapshots after it.
-            if gap && prev_gap_len(&expected.snapshots, s.tick) > 3 {
+            // A torn burst (several short gaps in a row) can't place its
+            // sounds either; treat back-to-back gaps like a long one.
+            if gap && (prev_gap_len(&expected.snapshots, s.tick) > 3 || prev_was_gap) {
                 skip_sounds = 2;
             }
+            prev_was_gap = gap;
             if skip_sounds > 0 {
                 skip_sounds -= 1;
                 if !self.dirty.contains(&s.tick) {
@@ -1078,6 +1106,7 @@ impl Inferred {
                 continue;
             }
             if gap
+                && !self.dirty.contains(&s.tick)
                 && let Some(Value::Array(v)) = s.state.get("sounds")
                 && !v.is_empty()
             {
@@ -1914,11 +1943,24 @@ pub fn demo_board_inputs(
     from: u32,
     to: u32,
 ) -> (Inferred, Vec<crate::demo::TimedEvent>) {
+    demo_board_inputs_mapped(demo, |u| u32::try_from(u - offset).ok(), from, to)
+}
+
+/// [`demo_board_inputs`] with an explicit map from the demo's update count
+/// to the replay's tick. The board clock skips an update now and then (a
+/// widget update the board missed), so a fixed offset drifts by one; use
+/// [`demo_tick_map`] for the capture's own `u` → board-clock pairs.
+pub fn demo_board_inputs_mapped(
+    demo: &crate::demo::Demo,
+    map: impl Fn(i64) -> Option<u32>,
+    from: u32,
+    to: u32,
+) -> (Inferred, Vec<crate::demo::TimedEvent>) {
     use crate::demo::{DemoEvent, MouseButton};
     let mut out = Inferred::default();
     let mut unsupported = Vec::new();
     for e in &demo.events {
-        let Ok(at) = u32::try_from(i64::from(e.tick) - offset) else {
+        let Some(at) = map(i64::from(e.tick)) else {
             continue;
         };
         if !(from..to).contains(&at) {

@@ -722,6 +722,16 @@ fn zoo_c_seymour_shrapnel_gumbo() {
     }
 }
 
+/// Pet zoo D (`zoo_d_01`): 1-2 with Blip, Rhubarb and Nimbus, three waves,
+/// inputs from the demo (`pet-blip.md`, `pet-rhubarb.md`, `pet-nimbus.md`).
+#[test]
+#[ignore = "diverges at tick 8622, 1,930 ticks in (first alien death): see pet-blip.md open questions"]
+fn zoo_d_blip_rhubarb_nimbus() {
+    if captured("zoo_d_01") {
+        replay_level("zoo_d_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
@@ -933,6 +943,7 @@ fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
         .get("u")
         .and_then(|u| u.as_i64())
         .map(|u| u - i64::from(from));
+    let demo_map = from_demo.then(|| harness::replay::demo_tick_map(&raw));
     // The RNG at every debris tick, then the full capture can go: long
     // captures are several GB once parsed.
     let debris = debris_ticks(&harness::replay::by_board_clock(&raw));
@@ -957,9 +968,10 @@ fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
             .join(format!("../../traces/demos/{name}.dmo"));
         let demo = harness::demo::Demo::parse(&std::fs::read(demo_path).unwrap()).unwrap();
         let last = t.snapshots.last().unwrap().tick;
-        let (mut inputs, unsupported) = harness::replay::demo_board_inputs(
+        assert!(demo_offset.is_some(), "capture has no update count (u)");
+        let (mut inputs, unsupported) = harness::replay::demo_board_inputs_mapped(
             &demo,
-            demo_offset.expect("capture has no update count (u)"),
+            demo_map.as_ref().unwrap(),
             from,
             last,
         );

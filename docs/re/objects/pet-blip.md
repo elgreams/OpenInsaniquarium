@@ -83,3 +83,4 @@ The generic pet draw (`pet-vert.md#drawing-0x004dfbb0`) with `IMAGE_BLIP` (globa
 - `+0x148` and `board+0x4ff` in the hunger-marker test (from stage 3 on the marker needs `board+0x4ff`).
 - Whether the shop reveal also shows its pop animation sound per button (`RefreshSlotButton` with popAnim 1).
 - First capture: tank 3-5 or later with Blip chosen; check the shop at tick 201 and the alien spawn y (280).
+- **Zoo D (`zoo_d_01`, 1-2 with Blip, Rhubarb and Nimbus):** the replay (`zoo_d_blip_rhubarb_nimbus`, ignored for now) matches for 1,930 ticks, through the shop reveal at tick 201, the SONAR at countdown 225, the spawn at y 280 and the first Sylvester wave, then diverges at the first alien's death (clock ~1931; the original draws 4 more app numbers there). Nimbus hadn't tossed a coin yet and Rhubarb hadn't snapped by then, so neither is covered.
