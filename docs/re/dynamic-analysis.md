@@ -46,3 +46,18 @@ The DRM launcher passes only `-changedir` to the game, so flags given to Steam n
 - `ce_capture.lua` returns after the MCP call times out (30 s). That's expected for long captures: the Lua keeps running, and the output file fills to `CAPTURE_TICKS + 1` lines.
 - **Catch-up bursts tear captures.** After a stall the game runs several logic updates back to back (up to the 200 ms cap, `framework/timing.md`), faster than the capture's 5 ms poll. Snapshots inside a burst can miss updates or straddle one (objects read before an update, board fields after). Detect it by the board clock `+0x28` advancing differently from the capture tick (`harness::replay::first_burst`) and don't compare across it. Captures key snapshots on `app+0x47c` (frames that slept) and, since 2026-10-26, also record the logic update count `app+0x484` as `u` (`framework/demo-recording.md#tick-basis`). (Earlier notes had the two swapped.) Replays re-key by the board clock, so either works within a level.
 - Long-running Lua loops inside one MCP call can drop the bridge connection ("connection reset"). The Lua usually finishes anyway; write results to a file and read them back.
+
+## Recording a pet zoo (any pets, any level)
+
+How `zoo_a_01` and `zoo_b_01` were made (2026-10-26). RE tooling only.
+
+1. Back up `userdata/` to `re/backup/`, then `tools/set_profile.py <user1.dat> --level T-L` and delete `adv1.dat`.
+2. `tools/run_inner_proton.sh -record`, attach CE to the `game.exe -changedir…` process.
+3. In CE, set the profile `[app+0x8b8]`:
+   - owned flags `+0x00..+0x13` = 1, count `+0x18` = 20;
+   - chosen `+0x5a + id` = 1 for the 3 pets (the rest 0).
+4. Go to the level through Adventure. The help screen (1-2) starts it via StartLevel, which takes `+0x5a` as is. A level started earlier must be restarted (Menu → Restart Level); set the chosen bytes again just before.
+5. Run `ce_capture.lua` (`CAPTURE_GPOS=/tmp/gpos`) and `tools/autoplay_tank11.py`. Captures cap at `CAPTURE_TICKS`; start a second one for long sessions and join them.
+6. Quit through the menu, so the game writes `popcap.dmo`. Save it as `traces/demos/<name>.dmo` and the capture as `traces/original/<name>.trace.jsonl.zst`. Restore the save.
+
+Replay with `replay_level(name, level, true)` in `tank1_1.rs`, which takes the inputs from the demo.
