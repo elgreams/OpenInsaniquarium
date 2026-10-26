@@ -32,6 +32,8 @@ MIN_GUPPIES_FOR_CARNIVORE = (int(sys.argv[sys.argv.index("--carnivore-min") + 1]
 # Feed the carnivore: once one is up, keep buying guppies (small ones are
 # its food) whenever affordable (`--feed-carnivore`).
 FEED_CARNIVORE = "--feed-carnivore" in sys.argv
+# Feed hungry guppies before collecting coins (`--feed-first`).
+FEED_FIRST = "--feed-first" in sys.argv
 EGG_BTN = (BTN_X[6] + 29, 33)
 WEAPON_BTN = (BTN_X[5] + 29, 33)
 # Buy weapon upgrades (up to N) once revealed and affordable (`--weapon N`).
@@ -161,6 +163,14 @@ def main():
               and min(o[2] for o in st["oscars"]) < 700):
             # A hungry carnivore: drop a fresh (small) guppy in for it.
             click(win, *GUPPY_BTN)
+        elif (FEED_FIRST and st["guppies"] and st["foods"] <= bought_quantity
+              and now - last_feed > 0.8 and st["money"] >= 5
+              and min(g[2] for g in st["guppies"]) < 450):
+            # Pets that move coins (Nimbus) can keep the coin branch busy
+            # forever: feed hungry guppies first.
+            g = min(st["guppies"], key=lambda g: g[2])
+            click(win, min(max(g[0] + 40, 40), 580), min(max(g[1] - 20, 75), 390))
+            last_feed = now
         elif any(c[2] == 0 for c in st["coins"]):
             c = max((c for c in st["coins"] if c[2] == 0), key=lambda c: c[1])
             click(win, c[0] + 36, min(c[1] + 36, 440))
