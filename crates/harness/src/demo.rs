@@ -195,14 +195,31 @@ fn parse_events(b: &[u8]) -> Result<Vec<TimedEvent>, DemoError> {
     let mut tick = 0u32;
     let (mut mx, mut my) = (0i32, 0i32);
     let mut out = Vec::new();
-    // The final byte is zero-padded; stop when less than a header remains.
+    // The final byte is zero-padded; stop when less than a header remains,
+    // or when what's left can't hold a whole event (a stream can end
+    // exactly on the last event's last bit, or inside the padding).
     while b.len() * 8 - bits.bit >= 6 {
         let t = tick;
         let trunc = move || DemoError::BitstreamTruncated(t);
-        tick += bits.read(4).ok_or_else(trunc)?;
-        let short = bits.read(1).ok_or_else(trunc)? == 1;
-        let cmd = bits.read(if short { 1 } else { 5 }).ok_or_else(trunc)?;
-        let event = decode_event(&mut bits, short, cmd, &mut mx, &mut my, tick)?;
+        let mark = bits.bit;
+        // A header cut off by the end of the stream is padding.
+        let (Some(dt), Some(short)) = (bits.read(4), bits.read(1)) else {
+            break;
+        };
+        let short = short == 1;
+        let Some(cmd) = bits.read(if short { 1 } else { 5 }) else {
+            break;
+        };
+        tick += dt;
+        let event =
+            decode_event(&mut bits, short, cmd, &mut mx, &mut my, tick).inspect_err(|_| {
+                if std::env::var_os("DEMO_DEBUG").is_some() {
+                    eprintln!(
+                        "demo: failed at bit {mark} of {}, short {short} cmd {cmd:#x}",
+                        b.len() * 8
+                    );
+                }
+            })?;
         if let Some(event) = event {
             out.push(TimedEvent { tick, event });
         }

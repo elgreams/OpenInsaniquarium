@@ -107,6 +107,21 @@ So the original can't replay its own demos. **Consequences for us:**
 - Our engine *can* replay `.dmo` files (`harness::demo`): it consumes the recorded I/O events in order and ignores the early-read ordering bug.
 - A one-byte patch to the original (e.g. reorder the flag set) would likely make `-play` work. We deliberately don't patch the original binary. Revisit only if live capture turns out to be insufficient.
 
+## Using `-record` alongside a CE capture (`confirmed`, 2026-10-26)
+
+`traces/demos/tank2-1_pets_01.dmo` was recorded in the same session as `traces/original/demo_test_01.trace.jsonl` (menu → pet screen → 2-1, about 2 minutes). `crates/harness/tests/demo_sync.rs` lines them up:
+
+- **Every click in the demo matches an effect in the capture**, at its exact position:
+  - pet picks (67,87), (67,333), (67,413), then Continue (318,263);
+  - the guppy button (47,33): the purchase shows in the capture with money 200 → 100 and a new guppy at y 38.5;
+  - a coin click (50,323), money +15.
+- **The two counters differ.** The demo is keyed on `app+0x484` (frames) and the capture on `app+0x47c` (logic updates). Here they were offset by about 10 ticks on the pet screen and 7 in the tank (13523 vs 13530 for the guppy purchase). The offset changes when frames are skipped. A replay should anchor the two at one known event per screen, e.g. the first purchase, and use the capture's board clock within a level.
+- **Food from Zorf** (two pellets with no click near them) shows up in the capture only. The demo doesn't list game effects, only input, which is what makes it useful: it **removes the guesswork of inferring clicks from state changes**.
+
+So the plan for new recordings is to run with `-record` and a CE capture, and replay from the demo's inputs.
+
+The parser used to fail on the last header when the stream ended inside it; a truncated final header is now treated as padding.
+
 ## Open questions
 
 - Exact payload of the long-form Activate (cmd 1) in playback vs. recording.
