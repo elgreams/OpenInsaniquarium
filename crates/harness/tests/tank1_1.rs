@@ -712,6 +712,16 @@ fn zoo_b_zorf_meryl_wadsworth() {
     }
 }
 
+/// Pet zoo C (`zoo_c_01`): 1-2 with Seymour, Shrapnel and Gumbo, inputs
+/// from the demo; Shrapnel's bombs end it (`pet-seymour.md`,
+/// `pet-shrapnel.md`, `pet-gumbo.md`).
+#[test]
+fn zoo_c_seymour_shrapnel_gumbo() {
+    if captured("zoo_c_01") {
+        replay_level("zoo_c_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are

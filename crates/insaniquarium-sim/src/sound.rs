@@ -41,6 +41,7 @@ pub enum Sound {
     Fart,
     Fart2,
     Sing,
+    Unleash,
 }
 
 impl Sound {
@@ -84,6 +85,7 @@ impl Sound {
             Sound::Fart => 0x120,
             Sound::Fart2 => 0x121,
             Sound::Sing => 0x137,
+            Sound::Unleash => 0x143,
         }
     }
 
@@ -140,6 +142,7 @@ impl Sound {
             Sound::Fart => "SOUND_FART",
             Sound::Fart2 => "SOUND_FART2",
             Sound::Sing => "SOUND_SING",
+            Sound::Unleash => "SOUND_UNLEASH",
         }
     }
 

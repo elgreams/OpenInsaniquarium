@@ -51,7 +51,7 @@ Confirmed: a coin appears at `(fish.wx + 5, fish.wy + 10)` on the tick the timer
 2. `anim += 1`, `age += 1`; `anim` wraps to 0 after 79. Cel = `(anim / 2) % 10` (other kinds use other divisors).
 3. **Expiry:** if `expire ≠ 0`: when collected, cancel it (`expire = 0`). Otherwise `expire −= 1`, remove at 0, and **return**.
 4. **Collected:** glide to the counter, 1/7 of the remaining distance per tick, toward (550, 30) on each axis. When `widget_y < 40` (checked on the previous position): remove the coin and **bank** its value.
-5. **Falling:** `y += 1.5`. When `y ≥ 370`: `y = 370`, `floor_time += 1`. Once `floor_time ≥ limit`, start expiring (`expire = 5`; star coins (kind 0x11) are removed at once).
+5. **Falling:** `y += 1.5`. When `y ≥ 370`: `y = 370`, `floor_time += 1`. Once `floor_time ≥ limit`, start expiring (`expire = 5`; Shrapnel's bombs (kind 0x11, `pet-shrapnel.md`) are removed at once, which explodes them).
    - limit: 20 normally; **150 on the tutorial level** (tank 1 level 1, and not a "skip tutorial" profile); 108 in Virtual Tank-like modes; 200 when `board+0x16c` is set.
 6. Set the widget position to `trunc(x), trunc(y)`.
 

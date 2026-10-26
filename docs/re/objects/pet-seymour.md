@@ -9,19 +9,19 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-10 differen
 - Reader of his presence: `Coin::Update` @ `0x004f5050`, pet counter **`board+0x16c`** (`board+0x144 + 4·10`) at `0x004f5120`, `0x004f514b`, `0x004f5375`, `0x004f53f7`. A byte scan of `.text` for `[reg + 0x16c]` loads off a board pointer (`app+0x730`) finds only these four.
 - Animation (slot 89) `0x004dfc50`, id-10 branch `0x004e00f9`; draw body `0x004f8610` case 10 → generic pet draw `0x004dfbb0` with `IMAGE_SEYMOUR`
 
-Confidence: everything here is `static` (no capture with Seymour yet).
+Confidence per section. `zoo_c_seymour_shrapnel_gumbo` (`tank1_1.rs`) replays 1-2 with Seymour, Shrapnel and Gumbo from the game's own demo (`zoo_c_01`, about 3,000 ticks: every coin fell at his slower rate) and compares the pets, guppies, coins, corpses, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 (Ultravores, Gekkos, Pentas, Grubbers, Breeders) stay `static`.
 
 ## Fields used by id 10
 
 As Itchy's (`pet-itchy.md#fields-used-by-id-2`). Divisor `+0x180` is the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a guppy's (floor 370). `+0x220`/`+0x224` are unused.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Construction
 
 `Board::AddPet(10, -1, -1)` (`0x00544a90`): the same **9 app draws** as Itchy (2 position, 6 `Fish::Init`, 1 type-0 shadow); no extra draw. Adding him to `+0xb4` does `board+0x16c += 1` (`Board::AddGameObject` `0x00542ee0`), and the board's list removal `0x00541d90` (type 0x15 case) does `−= 1`, so the effect holds exactly while he is in the tank.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Update (`0x004f7ad0`), id 10
 
@@ -33,7 +33,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 RNG: the re-roll draws only (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Effect on coins (`Coin::Update` `0x004f5050`)
 
@@ -51,7 +51,7 @@ So a silver or gold coin dropped at y ≈ 100 reaches the floor (370) in about 3
 
 No RNG.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Animation (`0x004dfc50`), id 10
 
@@ -62,7 +62,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`). When not turn
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Drawing (`0x004dfbb0`)
 

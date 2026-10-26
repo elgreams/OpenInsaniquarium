@@ -411,6 +411,16 @@ impl Board {
         } else if id == crate::itchy::ZORF {
             self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
             self.rng.next_range(5);
+        } else if id == crate::itchy::SEYMOUR {
+            self.fish_pets.push(Fish::new_seymour(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::SHRAPNEL {
+            self.fish_pets
+                .push(Fish::new_shrapnel(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::GUMBO {
+            self.fish_pets.push(Fish::new_gumbo(a, _b, &mut self.rng));
+            self.rng.next_range(5);
         } else if id == crate::itchy::WADSWORTH {
             self.fish_pets
                 .push(Fish::new_wadsworth(a, _b, &mut self.rng));
@@ -574,6 +584,54 @@ impl Board {
             self.play(0x132, Sound::Ricochet);
         }
         ClickResult::Ignored
+    }
+
+    /// The first fish a bomb centred at (`cx`, `cy`) touches: guppies, then
+    /// carnivores (the other fish lists aren't modelled yet). Index into
+    /// guppies, then carnivores.
+    fn bomb_victim(&self, cx: f64, cy: f64) -> Option<usize> {
+        let touches = |f: &Fish| {
+            let (fx, fy) = (f64::from(f.widget_x), f64::from(f.widget_y));
+            !f.dead && fx + 10.0 < cx && cx < fx + 70.0 && fy + 10.0 < cy && cy < fy + 70.0
+        };
+        self.guppies
+            .iter()
+            .chain(&self.carnivores)
+            .position(touches)
+    }
+
+    /// The bomb's victim dies the starvation death (slot 88, argument 1):
+    /// DIE (gap 3) and a corpse that updates this tick (board.md).
+    fn bomb_kill(&mut self, victim: usize) {
+        let n = self.guppies.len();
+        let f = if victim < n {
+            &mut self.guppies[victim]
+        } else {
+            &mut self.carnivores[victim - n]
+        };
+        f.dead = true;
+        let mut corpse = DeadFish::from_fish(f);
+        if victim >= n {
+            self.carnivore_died();
+        }
+        if self.sample_ready(0x117, 3) {
+            self.sounds.push(Sound::Die.into());
+        }
+        corpse.update();
+        self.dead_fish.push(corpse);
+    }
+
+    /// A bomb removed without being banked (`0x004d5510`): EXPLODE, then
+    /// `r % 3 + 2` effect shots, each with its kind, y and x drawn.
+    fn explode_bomb(&mut self, c: &Coin) {
+        self.play(0x11d, Sound::Explode);
+        let n = self.rng.next_range(3) + 2;
+        for _ in 0..n {
+            let s = self.rng.next_range(3) as i32 + 3;
+            let y = self.rng.next_range(30) as i32 - 10 + c.widget_y;
+            let x = self.rng.next_range(30) as i32 - 10 + c.widget_x;
+            self.add_effect_shot(x, y, s);
+        }
     }
 
     /// `EffectShot` (`0x005436f0`, see `alien::add_effect_shot`).
@@ -789,7 +847,8 @@ impl Board {
     /// Diamonds and pearls play a fixed sample (`0x00538470`, no RNG).
     /// TODO(spec): treasure chests and the other kinds' samples.
     fn play_collect_sound(&mut self, kind: i32) {
-        if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10) && self.sample_ready(0x12c, 3) {
+        // `0x005383d0` (POINTS family) also for Shrapnel's bomb (0x11).
+        if matches!(kind, 1 | 2 | 3 | 8 | 9 | 10 | 0x11) && self.sample_ready(0x12c, 3) {
             let r = self.rng.next_u31() & 3;
             self.sounds.push(Sound::points(r).into());
         } else if matches!(kind, 4 | 5 | 11 | 12) {
@@ -1235,6 +1294,11 @@ impl Board {
             artifacts: &mut self.artifacts,
             song: self.song,
             shelter: self.shelter,
+            lure: self
+                .fish_pets
+                .iter()
+                .find(|f| f.kind == crate::fish::FishKind::Gumbo)
+                .map(|f| (f.widget_x, f.widget_y)),
         };
         for &i in born {
             self.guppies[i].update(env, &mut world);
@@ -1370,6 +1434,11 @@ impl Board {
             artifacts: &mut self.artifacts,
             song: self.song,
             shelter: self.shelter,
+            lure: self
+                .fish_pets
+                .iter()
+                .find(|f| f.kind == crate::fish::FishKind::Gumbo)
+                .map(|f| (f.widget_x, f.widget_y)),
         };
         for f in &mut self.guppies {
             f.update(env, &mut world);
@@ -1513,6 +1582,10 @@ impl Board {
                 // Coins come after `+0xb4` in z-order: it updates this tick.
                 self.coins.push(Coin::new(x, y, crate::coin::kind::GOLD));
             }
+            if let Some((x, y)) = out.bomb {
+                self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));
+                self.play(0x143, Sound::Unleash);
+            }
             if self.fish_pets[i].is_prego() {
                 // Slot 81, id 3: the newborn (`AddGuppyAt`, pet-prego.md),
                 // then the birth sound (`0x005382c0`: BABY by default).
@@ -1535,14 +1608,47 @@ impl Board {
         self.shots.retain_mut(Shot::update);
         let mut banked = 0;
         let long_rest = self.tutorial;
-        self.coins.retain_mut(|c| match c.update(long_rest) {
-            CoinStep::Keep => true,
-            CoinStep::Remove => false,
-            CoinStep::Bank(v) => {
-                banked += v;
-                false
+        let seymour = self
+            .fish_pets
+            .iter()
+            .any(|f| f.kind == crate::fish::FishKind::Seymour);
+        // Coins in list order; a bomb (kind 0x11) can kill a fish and
+        // explode inside its update (pet-shrapnel.md#coinupdate-0x004f5050-kind-0x11-normal-game).
+        let mut i = 0;
+        while i < self.coins.len() {
+            let step = self.coins[i].update_with(long_rest, seymour);
+            match step {
+                CoinStep::Keep => {
+                    let c = &self.coins[i];
+                    if c.kind == crate::coin::kind::BOMB
+                        && !c.collected
+                        && c.age >= 31
+                        && let Some(victim) = self.bomb_victim(c.x + 36.0, c.y + 36.0)
+                    {
+                        self.bomb_kill(victim);
+                        let c = self.coins.remove(i);
+                        self.explode_bomb(&c);
+                        let s = self.rng.next_range(3) as i32 + 3;
+                        self.add_effect_shot(c.x as i32, c.y as i32, s);
+                        continue;
+                    }
+                    i += 1;
+                }
+                CoinStep::Remove => {
+                    self.coins.remove(i);
+                }
+                CoinStep::Explode => {
+                    let c = self.coins.remove(i);
+                    self.explode_bomb(&c);
+                }
+                CoinStep::Bank(v) => {
+                    banked += v;
+                    self.coins.remove(i);
+                }
             }
-        });
+        }
+        self.guppies.retain(|f| !f.dead);
+        self.carnivores.retain(|f| !f.dead);
         self.pearls.retain_mut(|c| match c.update(long_rest) {
             CoinStep::Keep => true,
             CoinStep::Remove => false,
@@ -1550,6 +1656,7 @@ impl Board {
                 banked += v;
                 false
             }
+            CoinStep::Explode => false,
         });
         // `0x0053c1e0`: add money, capped at 9,999,999.
         self.money = (self.money + banked).min(9_999_999);

@@ -39,6 +39,15 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 9, Wadsworth: shelters small and medium
     /// guppies from aliens (`pet-wadsworth.md`).
     Wadsworth,
+    /// `Sexy::FishTypePet` id 10, Seymour: coins fall slower
+    /// (`pet-seymour.md`).
+    Seymour,
+    /// `Sexy::FishTypePet` id 11, Shrapnel: drops bombs
+    /// (`pet-shrapnel.md`).
+    Shrapnel,
+    /// `Sexy::FishTypePet` id 12, Gumbo: lures guppies during waves
+    /// (`pet-gumbo.md`).
+    Gumbo,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -172,6 +181,9 @@ pub struct World<'a> {
     /// Wadsworth's shelter (globals `0x005e89d0..d8`): his published
     /// widget position while the count is non-zero (pet-wadsworth.md).
     pub shelter: Option<(i32, i32)>,
+    /// The first Gumbo's widget position, if one is in the tank
+    /// (`board+0x174`, pet-gumbo.md).
+    pub lure: Option<(i32, i32)>,
 }
 
 impl World<'_> {
@@ -304,7 +316,16 @@ impl Fish {
         } else {
             self.update_hunger(env, w)
         };
-        if !chasing {
+        // Gumbo's lure (`0x004f6b72`, pet-gumbo.md#effect-on-guppies): with
+        // an alien in, guppies not chasing food head for his lantern.
+        let lured = match w.lure {
+            Some((gx, gy)) if !chasing && !self.is_carnivore() && env.has_aliens => {
+                self.steer_to_lantern(gx, gy);
+                true
+            }
+            _ => false,
+        };
+        if !chasing && !lured {
             self.swim_modes(w.rng, w.global);
         }
         // Mode reroll, then the coin drop (slot 81) when there are no aliens.
@@ -336,6 +357,52 @@ impl Fish {
         self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
+    }
+
+    /// Steer toward Gumbo's lantern at (`gx + 40`, `gy + 20`).
+    fn steer_to_lantern(&mut self, gx: i32, gy: i32) {
+        let (cx, cy) = (self.x + 40.0, self.y + 40.0);
+        let gx = f64::from(gx);
+        let gy = f64::from(gy);
+        let mut dx = |cond_hi: bool, cond_lo: bool, step: f64| -> bool {
+            if cond_hi {
+                if self.vx > -4.0 {
+                    self.vx -= step;
+                }
+                true
+            } else if cond_lo {
+                if self.vx < 4.0 {
+                    self.vx += step;
+                }
+                true
+            } else {
+                false
+            }
+        };
+        let _ = dx(cx > gx + 50.0, cx < gx + 30.0, 1.3)
+            || dx(cx > gx + 45.0, cx < gx + 35.0, 0.2)
+            || dx(cx > gx + 40.0, cx < gx + 40.0, 0.05);
+        if cy > gy + 25.0 {
+            if self.vy > -3.0 {
+                self.vy -= 1.0;
+            }
+        } else if cy < gy + 15.0 {
+            if self.vy < 4.0 {
+                self.vy += 1.3;
+            }
+        } else if cy > gy + 20.0 {
+            if self.vy > -3.0 {
+                self.vy -= 0.5;
+            }
+        } else if cy < gy + 20.0 && self.vy < 4.0 {
+            self.vy += 0.7;
+        }
+        if self.widget_y <= self.ceil_y && self.vy < 0.0 {
+            self.vy = 0.0;
+        }
+        if self.anim_frame < 5 {
+            self.anim_frame += 1;
+        }
     }
 
     /// A sheltered guppy's step toward Wadsworth (pet-wadsworth.md#fishupdate):

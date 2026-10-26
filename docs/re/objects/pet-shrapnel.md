@@ -10,7 +10,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-11 differen
 - Coin click `0x004e51f0`, value `0x004d53a0`, Coin draw (slot 27) @ `0x004dd7a0`
 - Animation (slot 89) @ `0x004dfc50`, id-11 branch `0x004e0039`; draw body `0x004f8610` case 11 → `0x004df890`
 
-Confidence: everything here is `static` (read from code; no capture with Shrapnel yet).
+Confidence per section. `zoo_c_seymour_shrapnel_gumbo` (`tank1_1.rs`) replays 1-2 with Seymour, Shrapnel and Gumbo from the game's own demo (`zoo_c_01`, about 3,000 ticks: bombs dropped, clicked, killing guppies and exploding) and compares the pets, guppies, coins, corpses, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 (Ultravores, Gekkos, Pentas, Grubbers, Breeders) stay `static`.
 
 ## Fields used by id 11
 
@@ -24,7 +24,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 
 Divisor `+0x180` stays the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a guppy's (floor 370).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Construction
 
@@ -37,7 +37,7 @@ Divisor `+0x180` stays the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a gup
 
 So adding Shrapnel costs **10 app draws** (Itchy's 9 plus the interval). In the Virtual Tank (`app+0x87c == 5`) step 3 is instead `Sexy::Rand() % 200 + 1080` (the `Sexy::Rand` stream, not the app MTRand), so the app stream sees 9.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Update (`0x004f7ad0`), id 11
 
@@ -49,7 +49,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are unchanged.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Bomb drop (slot 81, `0x004e5900`, id 11)
 
@@ -62,7 +62,7 @@ Each call (calm ticks only):
 
 The interval is **not re-drawn**: every bomb after the first comes exactly `+0x224` calm ticks after the previous one. **RNG: none** in the drop itself.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## The bomb (Coin kind 0x11)
 
@@ -72,7 +72,7 @@ The interval is **not re-drawn**: every bomb after the first comes exactly `+0x2
 
 Stinky's and Clyde's coin search skips kinds 0x11/0x12 (`pet-stinky.md#coin-chasing`), so pets never collect it.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ### `Coin::Update` (`0x004f5050`), kind 0x11, normal game
 
@@ -97,7 +97,7 @@ Stinky's and Clyde's coin search skips kinds 0x11/0x12 (`pet-stinky.md#coin-chas
    - remove the bomb (`0x004d5510`) → **explosion** (below);
    - **one more effect shot**: `s = r % 3 + 3`, then `EffectShot(trunc x, trunc y, s)` (`0x005436f0`) at the bomb's top-left.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ### Explosion (`0x004d5510`, coin removal)
 
@@ -111,19 +111,19 @@ Every coin removal goes through `0x004d5510` (WM removal, app registry, board li
 
 So per tick: a floor explosion costs `1 + 3n` draws (+ shot ctors); a contact explosion `1 + 3n + 1` (+ shot ctors, `n + 1` shots). A banked bomb is removed with `+0x198` set and does not explode.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ### Clicking (`0x004e51f0`)
 
 Kind 0x11 is accepted like a coin: `collected = 1`, flight starts, and the sound is the coin helper **`0x005383d0`** (`POINTS` family: 1 app draw `r & 3` if `0x12c` is off its 3-tick cooldown; `coin.md#collecting`). Value (`0x004d53a0`): **150** in the normal game (multiplier × 5 in the Virtual Tank or on `board+0x2a5` boards). With aliens on the board the click also counts as a shot (as for any coin).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ### Drawing (`0x004dd7a0`, kind 0x11)
 
 `IMAGE_MISCITEMS` (`0x005e8bc4`, 3 cels) cel 0 at (0, 0); then, in additive draw mode, `IMAGE_SPARKS` (`0x005e8d04`, 5 cels) cel `+0x174` (0..4) at (10, −10): the lit fuse. (Kind 16, the rising note, uses `MISCITEMS` cel 1.) No expiry fade (the countdown is never set).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Animation (`0x004dfc50`), id 11
 
@@ -134,7 +134,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`); while turning
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Drawing (`0x004df890`)
 

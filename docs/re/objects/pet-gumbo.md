@@ -10,19 +10,19 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-12 differen
 - Guppy side: `Fish::Update` @ `0x004f6970`, lure branch `0x004f6b72`..`0x004f6fbb`, reading the pet counter **`board+0x174`** (`board+0x144 + 4·12`)
 - Animation (slot 89) @ `0x004dfc50`, id-12 branch; draw body `0x004f8610` case 12 → `0x004df470`
 
-Confidence: everything here is `static` (no capture with Gumbo yet).
+Confidence per section. `zoo_c_seymour_shrapnel_gumbo` (`tank1_1.rs`) replays 1-2 with Seymour, Shrapnel and Gumbo from the game's own demo (`zoo_c_01`, about 3,000 ticks: one wave of luring) and compares the pets, guppies, coins, corpses, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 (Ultravores, Gekkos, Pentas, Grubbers, Breeders) stay `static`.
 
 ## Fields used by id 12
 
 As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus `+0x258` (double, glow phase, 0.0 from the ctor). Divisor `+0x180` is the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a guppy's (floor 370). `+0x220`/`+0x224` are unused.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Construction
 
 `Board::AddPet(12, -1, -1)` (`0x00544a90`): the same **9 app draws** as Itchy (2 position, 6 `Fish::Init`, 1 type-0 shadow). No id-12 ctor branch, so no extra draw. `board+0x174 += 1` when he is added to `+0xb4` (`sim/board.md`, pet counters).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Update (`0x004f7ad0`), id 12
 
@@ -34,7 +34,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 RNG: the re-roll draws only (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks, aliens or not).
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Fleeing the alien (chase `0x004e02d0`, id 12)
 
@@ -48,7 +48,7 @@ RNG: the re-roll draws only (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks, al
 
 The rest of the update (drift by vx bucket, clamps, edge steer, `x += vx/div`) moves him as usual. No RNG, no sound.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Effect on guppies (`Fish::Update` `0x004f6970`, at `0x004f6b72`)
 
@@ -66,13 +66,13 @@ In `Fish::Update` step 2 (`fish-guppy.md#fishupdate-order-per-tick`), when the f
 
 The lure runs every tick, has **no RNG** and skips mode 123's draws (the swim modes don't run). A hungry guppy that has food to chase chases it first (`food.md`: with aliens, slot 83 still chases food when hunger < 500 and the first alien isn't kind 4). Gumbo updates after the guppies (`+0xb4` comes later in the z-order), so guppies steer toward his position from the previous tick.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Effect on aliens
 
 None directly. `board+0x174` was looked for in the alien prey search `0x004e8b60`, eat test `0x004e8f70` and prey filter `0x00500ff0`, and isn't read there: aliens target the nearest prey as usual (`alien-sylvester.md#31-nearest-prey-0x004e8b60`). The "luring away" comes from the two rules above: Gumbo heads for the far corner from the alien and the guppies follow him. Gumbo, as a pet, is not prey.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Animation (`0x004dfc50`), id 12
 
@@ -83,7 +83,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`); while turning
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_c_seymour_shrapnel_gumbo`).
 
 ## Drawing (`0x004df470`)
 

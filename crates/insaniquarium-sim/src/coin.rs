@@ -13,6 +13,8 @@ pub mod kind {
     pub const DIAMOND: i32 = 4;
     /// Niko's pearl (pet-niko.md#the-pearl).
     pub const PEARL: i32 = 15;
+    /// Shrapnel's bomb (pet-shrapnel.md#the-bomb-coin-kind-0x11).
+    pub const BOMB: i32 = 0x11;
 }
 
 /// A resting pearl disappears after this many ticks (`0xd9`; `static`).
@@ -59,6 +61,8 @@ pub enum CoinStep {
     Remove,
     /// Reached the counter: pay `value`.
     Bank(i32),
+    /// A bomb's rest ran out: remove it with the explosion.
+    Explode,
 }
 
 impl Coin {
@@ -129,12 +133,25 @@ impl Coin {
     /// `Coin::Update` (`0x004f5050`), normal game, basic coin kinds.
     /// `long_rest` is the tutorial level's longer floor time (150 vs 20).
     pub fn update(&mut self, long_rest: bool) -> CoinStep {
+        self.update_with(long_rest, false)
+    }
+
+    /// [`Self::update`] with Seymour in the tank (`board+0x16c`,
+    /// pet-seymour.md): slower fall (0.8), 200-tick rest, half-speed spin.
+    /// A bomb (kind 0x11) explodes instead of fading: [`CoinStep::Explode`].
+    pub fn update_with(&mut self, long_rest: bool, seymour: bool) -> CoinStep {
         self.anim += 1;
         self.age += 1;
         if self.anim > 79 {
             self.anim = 0;
         }
-        self.cel = (self.anim / 2) % 10;
+        self.cel = if self.kind == kind::BOMB {
+            (self.anim / 2) % 5
+        } else if seymour {
+            (self.anim / 4) % 10
+        } else {
+            (self.anim / 2) % 10
+        };
         if self.expire != 0 {
             if self.collected {
                 self.expire = 0;
@@ -172,12 +189,21 @@ impl Coin {
                 return CoinStep::Bank(self.value() * self.multiplier);
             }
         } else {
-            self.y += 1.5;
+            self.y += if seymour { 0.8 } else { 1.5 };
             if self.y >= FLOOR_Y {
                 self.y = FLOOR_Y;
                 self.floor_time += 1;
-                let limit = if long_rest { 150 } else { 20 };
+                let limit = if seymour {
+                    200
+                } else if long_rest {
+                    150
+                } else {
+                    20
+                };
                 if self.floor_time >= limit {
+                    if self.kind == kind::BOMB {
+                        return CoinStep::Explode;
+                    }
                     self.expire = 5;
                 }
             }

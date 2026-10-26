@@ -22,6 +22,10 @@ pub const ZORF: i32 = 4;
 pub const MERYL: i32 = 8;
 /// Pet id 9 (Wadsworth, same class; `pet-wadsworth.md`).
 pub const WADSWORTH: i32 = 9;
+/// Pet ids 10–12 (`pet-seymour.md`, `pet-shrapnel.md`, `pet-gumbo.md`).
+pub const SEYMOUR: i32 = 10;
+pub const SHRAPNEL: i32 = 11;
+pub const GUMBO: i32 = 12;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -91,6 +95,29 @@ impl Fish {
         f
     }
 
+    /// `AddPet(10)`'s fish part: no id-10 ctor branch.
+    pub fn new_seymour(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Seymour;
+        f
+    }
+
+    /// `AddPet(11)`'s fish part: the bomb interval `r % 20 + 633`, drawn
+    /// after `Fish::Init`'s 6 (the board draws the shadow after).
+    pub fn new_shrapnel(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Shrapnel;
+        f.coin_interval = rng.next_range(20) as i32 + 633;
+        f
+    }
+
+    /// `AddPet(12)`'s fish part: no id-12 ctor branch.
+    pub fn new_gumbo(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Gumbo;
+        f
+    }
+
     /// `AddPet(9)`'s fish part: mouth-open length 120, divisor 4.0 (no RNG).
     pub fn new_wadsworth(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -121,6 +148,9 @@ impl Fish {
             FishKind::Zorf => self.update_zorf(ctx, rng),
             FishKind::Meryl => self.update_meryl(aliens, rng),
             FishKind::Wadsworth => self.update_wadsworth(ctx, rng),
+            FishKind::Seymour => self.update_seymour(rng),
+            FishKind::Shrapnel => self.update_shrapnel(ctx.aliens, rng),
+            FishKind::Gumbo => self.update_gumbo(ctx.aliens, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
                 ..Default::default()
@@ -380,6 +410,117 @@ impl Fish {
         out
     }
 
+    /// A calm-swimming pet with its own swim-cycle shape (no ability):
+    /// cel = cycle / `div`, the cycle wraps above `wrap`; it steps by 2 once
+    /// the speed bucket exceeds `fast_at`.
+    fn swim_tail(&mut self, div: i32, wrap: i32, fast_at: i32) {
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        if self.facing > 0.0 && self.vx < 0.0 {
+            self.turn_timer = 20;
+        } else if self.facing < 0.0 && self.vx > 0.0 {
+            self.turn_timer = -20;
+        }
+        if self.turn_timer != 0 {
+            self.turn_timer -= self.turn_timer.signum();
+            if self.turn_timer == 0 {
+                self.eat_timer = 0;
+            }
+        }
+        if self.turn_timer > 0 {
+            self.cel = 9 - self.turn_timer / 2;
+        } else if self.turn_timer < 0 {
+            self.cel = self.turn_timer / 2 + 9;
+        } else {
+            self.swim_cycle += if self.anim_frame <= fast_at { 1 } else { 2 };
+            if self.swim_cycle > wrap {
+                self.swim_cycle = 0;
+            }
+            self.cel = self.swim_cycle / div;
+        }
+        self.update_facing();
+        self.integrate();
+    }
+
+    /// Seymour (pet-seymour.md): swims, no ability; cel = cycle / 8 (the
+    /// cycle wraps above 79). His effect is in the coins' update.
+    fn update_seymour(&mut self, rng: &mut MtRand) -> PetFishOut {
+        self.swim_and_reroll(rng);
+        self.swim_tail(8, 79, 1);
+        PetFishOut::default()
+    }
+
+    /// Shrapnel (pet-shrapnel.md): swims; every `+0x224` calm ticks a bomb
+    /// at (wx + 15, wy + 10); cel = cycle / 6 (cycle wraps at 60).
+    fn update_shrapnel(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.swim_and_reroll(rng);
+        if aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer >= self.coin_interval {
+                self.coin_timer = 0;
+                out.bomb = Some((self.widget_x + 15, self.widget_y + 10));
+            }
+        }
+        self.swim_tail(6, 59, 2);
+        out
+    }
+
+    /// Gumbo (pet-gumbo.md): with an alien in he flees to the far corner
+    /// (steering every 5th tick, no swim modes); calm, he swims.
+    fn update_gumbo(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        self.pre_update();
+        if aliens.is_empty() {
+            self.swim_modes_calm();
+        } else {
+            self.flee(aliens);
+        }
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.swim_tail(2, 19, 1);
+        PetFishOut::default()
+    }
+
+    /// Gumbo's chase (`0x004e02d0`, id 12): steer by the nearest alien's
+    /// centre toward the opposite corner, every 5th tick.
+    fn flee(&mut self, aliens: &[Alien]) {
+        let mut best = 10_000;
+        let mut target = None;
+        for (i, a) in aliens.iter().enumerate() {
+            let dx = ((self.x + 40.0) - f64::from(a.widget_x + 80)) as i32;
+            let dy = ((self.y + 40.0) - f64::from(a.widget_y + 80)) as i32;
+            let d = (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
+            if d < best {
+                best = d;
+                target = Some(i);
+            }
+        }
+        let Some(t) = target else { return };
+        if self.mode_timer < 5 {
+            return;
+        }
+        self.mode_timer = 0;
+        let (acx, acy) = (aliens[t].widget_x + 80, aliens[t].widget_y + 80);
+        if acy >= 261 && self.vy > -8.0 {
+            self.vy -= 2.0;
+        } else if acy < 300 && self.vy < 8.0 {
+            self.vy += 2.0;
+        }
+        if acx >= 291 && self.vx > -8.0 {
+            self.vx -= 2.0;
+        } else if acx < 330 && self.vx < 8.0 {
+            self.vx += 2.0;
+        }
+    }
+
     /// The rest of Prego's update, after the board placed any newborn
     /// (`guppies` = the guppy count including it, for the next interval).
     pub fn finish_prego(&mut self, born: bool, guppies: usize) {
@@ -512,6 +653,8 @@ pub struct PetFishOut {
     pub song: Option<bool>,
     /// Wadsworth shelters (true: publish his position) or releases (false).
     pub shelter: Option<bool>,
+    /// Shrapnel drops a bomb at this widget position.
+    pub bomb: Option<(i32, i32)>,
 }
 
 /// What a fish-shaped pet's update reads from the board.
