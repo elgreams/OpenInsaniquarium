@@ -10,6 +10,7 @@ license.workspace = true
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+zstd = "0.13"
 insaniquarium-sim.workspace = true
 sexy-core.workspace = true
 

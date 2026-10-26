@@ -2,8 +2,6 @@
 //! the requested track/order) and dialogs, tick by tick, from captures
 //! with a `pres` block (`tools/ce_capture.lua`). Skips when absent.
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 
 use harness::presentation::{
@@ -16,7 +14,7 @@ fn capture(name: &str) -> Option<Trace> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original")
         .join(name);
-    Some(Trace::read(BufReader::new(File::open(p).ok()?)).unwrap())
+    Some(Trace::open(p)?.unwrap())
 }
 
 /// Tank 1-2 from its first running tick to the last level-2 tick: two alien

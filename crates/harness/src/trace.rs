@@ -87,6 +87,24 @@ pub struct Trace {
 }
 
 impl Trace {
+    /// Read a trace file, plain (`*.jsonl`) or zstd-compressed (the same
+    /// name plus `.zst`, preferred when both exist). `None` if neither
+    /// exists. Captures are stored compressed: they are 90% redundant JSON.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Option<Result<Self, TraceError>> {
+        let path = path.as_ref();
+        let mut zst = path.as_os_str().to_owned();
+        zst.push(".zst");
+        if let Ok(f) = std::fs::File::open(&zst) {
+            return Some(
+                zstd::Decoder::new(f)
+                    .map_err(TraceError::from)
+                    .and_then(|d| Self::read(std::io::BufReader::new(d))),
+            );
+        }
+        let f = std::fs::File::open(path).ok()?;
+        Some(Self::read(std::io::BufReader::new(f)))
+    }
+
     pub fn read(r: impl BufRead) -> Result<Self, TraceError> {
         let mut lines = r.lines().enumerate();
         let (_, first) = lines.next().ok_or(TraceError::Empty)?;

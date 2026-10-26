@@ -21,6 +21,8 @@ Recorded by the original with `-record` (see `tools/run_inner_proton.sh` and `do
 
 A trace is a **JSON Lines** file (`*.trace.jsonl`). The first line is a header and each following line is one tick's snapshot. JSON Lines keeps traces diffable with standard tools and lets captures stream to disk.
 
+Traces are **stored zstd-compressed** (`*.trace.jsonl.zst`, about 50× smaller: tank 1's 1.5 GB of captures are 29 MB). `Trace::open(path)` takes the plain name and reads the `.zst` if it exists. Compress a new capture with `zstd -19 --rm <file>`; `zstdcat` reads one for ad-hoc inspection.
+
 ### Header (line 1)
 
 ```json
@@ -69,7 +71,7 @@ Versioning: any incompatible change bumps `version`. Readers reject versions the
    `CAPTURE_OUT="/tmp/x.jsonl"; CAPTURE_TICKS=5000; CAPTURE_GPOS="/tmp/gpos"; dofile("tools/ce_capture.lua")`.
    The MCP call times out after 30 s but the capture keeps running.
 4. Optional scripted play: with `CAPTURE_GPOS` set, the capture publishes `gx gy paused` for the first guppy, plus one `x y` line per uncollected coin. A shell clicker (xdotool) can then feed, collect, and click Resume (312, 258) when paused.
-5. Copy to `traces/original/tank1-1_<what>_NN.trace.jsonl`. `crates/harness/tests/tank1_1.rs` picks up `_raw_`, `_feed_` and `_coin_` captures.
+5. Copy to `traces/original/tank1-1_<what>_NN.trace.jsonl` and compress it (`zstd -19 --rm`). `crates/harness/tests/tank1_1.rs` picks up `_raw_`, `_feed_` and `_coin_` captures.
 
 Replay details (`harness::replay`):
 - The board is rebuilt from the **first** snapshot (paused lead-in skipped) and replayed up to the first pause.

@@ -2,8 +2,6 @@
 //! recovered from the capture itself.
 //! Uses captures in `traces/original/` (gitignored); skips when absent.
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 
 use harness::replay::{
@@ -23,8 +21,13 @@ fn captures() -> Vec<PathBuf> {
                 ["_raw_", "_feed_", "_coin_", "_buy_"]
                     .iter()
                     .any(|k| n.contains(k))
-                    && n.ends_with(".trace.jsonl")
+                    && (n.ends_with(".trace.jsonl") || n.ends_with(".trace.jsonl.zst"))
             })
+        })
+        // `Trace::open` takes the uncompressed name and finds either.
+        .map(|p| {
+            let s = p.to_string_lossy();
+            PathBuf::from(s.strip_suffix(".zst").unwrap_or(&s).to_string())
         })
         .collect();
     v.sort();
@@ -39,8 +42,7 @@ fn tank1_1_matches_original() {
         return;
     }
     for path in files {
-        let capture =
-            until_pause(&Trace::read(BufReader::new(File::open(&path).unwrap())).unwrap());
+        let capture = until_pause(&Trace::open(&path).unwrap().unwrap());
         let inferred = inferred_clicks(&capture);
         let expected = inferred.clean(&decode_capture(&capture));
         // All captures here are tank 1-1, the tutorial level.
@@ -57,8 +59,8 @@ fn tank1_1_matches_original() {
 fn feeding_replay_is_sensitive() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_feed_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let capture = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let capture = t.unwrap();
     let expected = decode_capture(&capture);
     let clicks = inferred_clicks(&capture).inputs;
     assert_eq!(clicks.len(), 4, "{clicks:?}");
@@ -80,8 +82,8 @@ fn feeding_replay_is_sensitive() {
 fn coin_collection_capture_is_covered() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_coin_04.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let capture = until_pause(&Trace::read(BufReader::new(f)).unwrap());
+    let Some(t) = Trace::open(&path) else { return };
+    let capture = until_pause(&t.unwrap());
     let inferred = inferred_clicks(&capture);
     let expected = inferred.clean(&decode_capture(&capture));
     let ticks = expected.snapshots.len();
@@ -109,8 +111,8 @@ fn full_level_replays_exactly() {
     use harness::replay::{rebase_rng, window};
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     // The run that completes the level: from the last unpause to the end.
     let paused = |s: &harness::trace::Snapshot| {
         s.state["board"]["paused"].as_bool().unwrap_or(true) || s.state["board"]["money"].is_null()
@@ -178,8 +180,8 @@ fn level_start_matches_original() {
     use harness::replay::rebase_rng;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     // First snapshot of the level (board present, unpaused) and the one
     // before it (no board yet: the level was populated in between).
     let i = full
@@ -215,8 +217,8 @@ fn level_1_2_start_with_stinky() {
     use harness::replay::rebase_rng;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-2_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let i = full
         .snapshots
         .iter()
@@ -247,8 +249,8 @@ fn level_1_4_start_with_itchy() {
     use harness::replay::rebase_rng;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-4_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let i = full
         .snapshots
         .iter()
@@ -303,8 +305,8 @@ fn tank_1_2_until_alien_matches() {
     use harness::replay::{rebase_rng, window};
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-2_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let i = full
         .snapshots
         .iter()
@@ -349,8 +351,8 @@ fn sylvester_wave_matches() {
     use harness::replay::{first_burst, rebase_rng, window};
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-2_full_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let cd = |s: &harness::trace::Snapshot| s.state["board"]["wave"]["countdown"].as_i64();
     // On 1-2 the countdown stops at 276 for the "DANGER!" hint dialog
     // (board paused). Dismissing it resumes the board mid-update: that tick
@@ -431,8 +433,8 @@ fn full_tank_1_2_replays() {
     };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-2_full_02.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let level = |s: &harness::trace::Snapshot| s.state["board"]["level"].as_i64();
     let i = full
         .snapshots
@@ -512,8 +514,8 @@ fn tank_1_1_from_start_with_messages() {
     use harness::replay::{rebase_rng, window};
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_pres_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
     let i = full.snapshots.iter().position(board_of).unwrap();
     let before = full.snapshots[i - 1].tick;
@@ -566,8 +568,8 @@ fn hatch_screen_after_1_1_matches() {
     use insaniquarium_sim::hatch::Hatch;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/tank1-1_pres_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let hatch: Vec<_> = full
         .snapshots
         .iter()
@@ -689,8 +691,8 @@ fn pet_screen_matches_original() {
     use insaniquarium_sim::profile::Profile;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../traces/original/petscreen_01.trace.jsonl");
-    let Ok(f) = File::open(&path) else { return };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
     let hex = |s: &serde_json::Value| -> Vec<u8> {
         let s = s.as_str().unwrap();
         (0..s.len())
@@ -831,9 +833,9 @@ fn pet_screen_matches_original() {
 }
 
 fn captured(name: &str) -> bool {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../../traces/original/{name}.trace.jsonl"))
-        .exists()
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../traces/original/{name}.trace.jsonl"));
+    p.exists() || p.with_extension("jsonl.zst").exists()
 }
 
 fn replay_1_3(name: &str) -> usize {
@@ -853,8 +855,10 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
     let _one_at_a_time = BIG_REPLAY.lock().unwrap_or_else(|e| e.into_inner());
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"));
-    let Ok(f) = File::open(&path) else { return 0 };
-    let full = Trace::read(BufReader::new(f)).unwrap();
+    let Some(t) = Trace::open(&path) else {
+        return 0;
+    };
+    let full = t.unwrap();
     let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
     // From the level's first board tick (a capture may open on the help
     // screen) to the last one. Keyed on the board clock, like the full 1-2
