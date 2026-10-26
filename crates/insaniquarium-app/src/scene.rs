@@ -14,9 +14,10 @@ use std::sync::Arc;
 
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::Dialog;
+use insaniquarium_sim::fish::FishKind;
 use insaniquarium_sim::game::{Game, Screen};
 use insaniquarium_sim::hatch::Hatch;
-use insaniquarium_sim::pet::{NIKO, Pet};
+use insaniquarium_sim::pet::{CLYDE, NIKO, Pet, RUFUS};
 use insaniquarium_sim::pet_screen::{self, PetScreen};
 use insaniquarium_sim::shop::{BUTTON_X, BUTTON_Y, Slot};
 use insaniquarium_sim::{Board, Fish};
@@ -76,6 +77,11 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_ITCHY",
     "IMAGE_PREGO",
     "IMAGE_ZORF",
+    "IMAGE_VERT",
+    "IMAGE_MERYL",
+    "IMAGE_WADSWORTH",
+    "IMAGE_CLYDE",
+    "IMAGE_RUFUS",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -874,6 +880,49 @@ fn itchy_cel(f: &Fish, alarmed: bool, z: f32) -> Cel {
     Cel::new("IMAGE_ITCHY", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
 }
 
+/// Fish-shaped pets without alarm rows (pet-vert.md, pet-zorf.md,
+/// pet-meryl.md, pet-wadsworth.md `#drawing`; `static`, not frame-checked):
+/// row 1 while turning (mirrored iff turn > 0), else a pet-specific row and
+/// the guppy mirror rule.
+fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
+    let mirror = match f.turn_timer {
+        t if t > 0 => true,
+        t if t < 0 => false,
+        _ => f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0),
+    };
+    let (image, col, row) = match f.kind {
+        FishKind::Zorf if f.turn_timer == 0 && f.coin_timer < 0 => {
+            ("IMAGE_ZORF", f.coin_timer + 10, 2)
+        }
+        FishKind::Zorf => ("IMAGE_ZORF", f.cel, i32::from(f.turn_timer != 0)),
+        FishKind::Meryl if f.turn_timer != 0 => ("IMAGE_MERYL", f.cel, 2),
+        FishKind::Meryl if f.coin_timer > f.coin_interval - 100 => ("IMAGE_MERYL", f.cel, 1),
+        FishKind::Meryl if f.cel < 5 && f.blink => ("IMAGE_MERYL", f.cel, 3),
+        FishKind::Meryl => ("IMAGE_MERYL", f.cel, 0),
+        FishKind::Wadsworth if f.coin_timer > 0 => {
+            let t = f.coin_timer;
+            let col = if f.blink && t > f.coin_interval - 10 {
+                9 - ((f.coin_interval - t) - 1) / 2
+            } else if !f.blink && t > 20 {
+                9 - (29 - t) / 2
+            } else if t < 11 {
+                (t - 1) / 2
+            } else {
+                5
+            };
+            ("IMAGE_WADSWORTH", col, 2)
+        }
+        FishKind::Wadsworth => ("IMAGE_WADSWORTH", f.cel, i32::from(f.turn_timer != 0)),
+        _ => ("IMAGE_VERT", f.cel, i32::from(f.turn_timer != 0)),
+    };
+    let mirror = if row == 1 && f.turn_timer != 0 {
+        f.turn_timer > 0
+    } else {
+        mirror
+    };
+    Cel::new(image, col, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
 /// Prego (`0x004df230`, pet-prego.md#drawing): row and cel by the birth
 /// counter (`coin_timer`) against the interval.
 fn prego_cel(f: &Fish, z: f32) -> Cel {
@@ -911,10 +960,29 @@ fn niko_cel(p: &Pet, z: f32) -> Cel {
     Cel::new("IMAGE_NIKO", col, row, p.widget_x, p.widget_y, z)
 }
 
-/// Stinky (pet-stinky.md#drawing).
+/// Stinky (pet-stinky.md#drawing); Clyde and Rufus are never mirrored
+/// (pet-clyde.md, pet-rufus.md `#drawing`; `static`).
 fn pet_cels(p: &Pet, z: f32, cels: &mut Vec<Cel>) {
     if p.id == NIKO {
         cels.push(niko_cel(p, z));
+        return;
+    }
+    if p.id == CLYDE {
+        cels.push(Cel::new("IMAGE_CLYDE", p.cel, 0, p.widget_x, p.widget_y, z));
+        return;
+    }
+    if p.id == RUFUS {
+        #[allow(clippy::float_cmp)]
+        let moving = p.vx > 0.01 || p.vx < -0.01 || p.target_vx != 0.0;
+        let row = if moving { 0 } else { 1 };
+        cels.push(Cel::new(
+            "IMAGE_RUFUS",
+            p.cel,
+            row,
+            p.widget_x,
+            p.widget_y,
+            z,
+        ));
         return;
     }
     let mirror = if p.shell > 0 {
@@ -1414,10 +1482,10 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
     // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#drawing).
     for (i, f) in b.fish_pets.iter().enumerate() {
         let z = 2.75 + i as f32 * 0.001;
-        cels.push(if f.is_prego() {
-            prego_cel(f, z)
-        } else {
-            itchy_cel(f, !b.aliens.is_empty(), z)
+        cels.push(match f.kind {
+            FishKind::Prego => prego_cel(f, z),
+            FishKind::Itchy => itchy_cel(f, !b.aliens.is_empty(), z),
+            _ => fish_pet_cel(f, z),
         });
     }
     for (i, s) in b.shots.iter().enumerate() {
