@@ -9,13 +9,13 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-6 differenc
 - Coin made through `Board::AddCoin` @ `0x00544430` → `Coin::Coin` @ `0x004eead0`
 - Animation (slot 89) @ `0x004dfc50`; draw body `0x004f8610` → generic pet draw `0x004dfbb0` with `IMAGE_VERT`
 
-Confidence: `static` throughout. Nothing here is under a replay test yet.
+Confidence per section. `zoo_a_clyde_vert_rufus` (`tank1_1.rs`) replays 1-2 with Vert from the game's own demo (`zoo_a_01`, 4800 ticks, 12 coin drops) and compares his fields, the coins and the app RNG every tick. Drawing and the Virtual Tank paths are `static`.
 
 ## Fields used by id 6
 
 As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus the coin counter `+0x220` (the guppy coin timer, starts at 0) and the coin interval `+0x224`. Divisor `+0x180` stays the `Fish::Init` draw (2.0, 1.8 or 1.6) and the bounds are a guppy's (floor 370).
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Construction
 
@@ -23,7 +23,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus the coin counter `+0x220` 
 
 In the Virtual Tank (`app+0x87c == 5`) the interval is instead `Sexy::Rand() % 200 + 1080` (one draw from the `Sexy::Rand` stream, not the app MTRand), drawn inside the ctor before the shadow.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Update (`0x004f7ad0`), id 6
 
@@ -35,7 +35,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are the same as Itchy's.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Coin drop (slot 81, `0x004e5900`, id 6)
 
@@ -50,7 +50,7 @@ So the first coin comes on Vert's 216th calm update, and one every 216 calm tick
 
 **RNG:** none. **Sound:** none (a guppy's coin drop is silent too).
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Vert's coin
 
@@ -63,7 +63,7 @@ So the first coin comes on Vert's 216th calm update, and one every 216 calm tick
 
 The only difference from a guppy's coin is the spawn point: **(wx + 15, wy + 10)**, where a guppy uses (wx + 5, wy + 10). It falls, rests, expires and is collected exactly as `coin.md` describes, and Stinky chases it like any coin.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Animation (`0x004dfc50`), id 6
 
@@ -72,7 +72,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` or `turn/2 + 9`). When not tur
 - The swim cycle `+0x1b8` advances by 1 (speed bucket `+0x1bc` ≤ 1) or 2, and wraps to 0 above 19.
 - Cel = cycle if cycle < 10, else `19 − cycle`. So the cels run 0, 1, … 9, 9, 8, … 0 (at speed 1).
 
-Facing follows vx as for the guppy. No RNG. `static`.
+Facing follows vx as for the guppy. No RNG. `traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Drawing (`0x004dfbb0`)
 

@@ -1,13 +1,18 @@
-//! Pets. Specs: `docs/re/objects/pet-stinky.md` (pet 0, Stinky the snail)
-//! and `pet-niko.md` (pet 1, Niko the oyster). Other pets are TODO(spec).
+//! Pets of class `OtherTypePet`. Specs: `docs/re/objects/pet-stinky.md`
+//! (pet 0, Stinky the snail), `pet-niko.md` (1, Niko the oyster),
+//! `pet-clyde.md` (5, Clyde the jellyfish), `pet-rufus.md` (7, Rufus the
+//! fiddler crab). Rhubarb (14) is TODO(spec).
 
 use sexy_core::rand::MtRand;
 
+use crate::alien::Alien;
 use crate::coin::Coin;
 
 /// Pet ids (profile order). `OtherTypePet` covers 0, 1, 5, 7 and 14.
 pub const STINKY: i32 = 0;
 pub const NIKO: i32 = 1;
+pub const CLYDE: i32 = 5;
+pub const RUFUS: i32 = 7;
 
 /// Niko's pearl timer milestones (`0x004e2a20`, pet-niko.md#update).
 const NIKO_OPEN: i32 = 1224;
@@ -72,6 +77,9 @@ pub struct PetOut {
     pub pearl: Option<(i32, i32)>,
     /// Niko's open / close sample (`0x129` / `0x12a`).
     pub sound: Option<crate::sound::Sound>,
+    /// Rufus hit these aliens this tick (index, damage); each hit plays
+    /// `0x130` throttled to 10 ticks.
+    pub hits: Vec<(usize, f64)>,
 }
 
 impl Pet {
@@ -131,13 +139,44 @@ impl Pet {
         p
     }
 
-    /// `OtherTypePet::Update` (`0x004f2e80`), pet 0, normal game.
+    /// Clyde (pet-clyde.md#construction): Stinky's ctor draws, but y keeps
+    /// AddPet's draw and the divisor is 1.5.
+    pub fn clyde(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut p = Pet::stinky(x, y, rng);
+        p.id = CLYDE;
+        p.y = f64::from(y);
+        p.widget_y = y;
+        p.divisor = 1.5;
+        p
+    }
+
+    /// Rufus (pet-rufus.md#construction): on the floor at y 365, divisor
+    /// 2.0.
+    pub fn rufus(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut p = Pet::stinky(x, y, rng);
+        p.id = RUFUS;
+        p.y = 365.0;
+        p.widget_y = 365;
+        p.divisor = 2.0;
+        p
+    }
+
+    /// `OtherTypePet::Update` (`0x004f2e80`), normal game.
     /// A collected coin is reported in `out`; the board banks it and plays
     /// its sound (which may draw RNG).
-    pub fn update(&mut self, has_aliens: bool, coins: &[Coin], rng: &mut MtRand, out: &mut PetOut) {
-        if self.id == NIKO {
-            self.update_niko(rng, out);
-            return;
+    pub fn update(
+        &mut self,
+        has_aliens: bool,
+        aliens: &[Alien],
+        coins: &[Coin],
+        rng: &mut MtRand,
+        out: &mut PetOut,
+    ) {
+        match self.id {
+            NIKO => return self.update_niko(rng, out),
+            CLYDE => return self.update_clyde(coins, rng, out),
+            RUFUS => return self.update_rufus(aliens, rng, out),
+            _ => {}
         }
         // Coin chase (`0x004efe80`): for pet 0, runs whenever the coin list is
         // non-empty, there are no aliens and he isn't slowed, and then
@@ -287,6 +326,264 @@ impl Pet {
         self.widget_y = self.y as i32;
     }
 
+    /// Clyde's update (pet-clyde.md#update-0x004f2e80-id-5): the coin chase
+    /// whenever any coin exists (no alien check), else Stinky's wander
+    /// targets; vx steps toward the target without snapping; a slow sink
+    /// with an upward pulse timed by the animation counter.
+    fn update_clyde(&mut self, coins: &[Coin], rng: &mut MtRand, out: &mut PetOut) {
+        let chasing = !coins.is_empty() && !self.slow;
+        if chasing {
+            self.chase_clyde(coins, out);
+        } else {
+            match self.mode {
+                _ if self.shell != 0 => self.target_vx = 0.0,
+                0 => self.target_vx = 0.0,
+                1 => self.target_vx = -0.5,
+                2 => self.target_vx = 0.5,
+                _ => {}
+            }
+        }
+        self.drift_vx();
+        if matches!(self.anim, 2 | 3) {
+            self.vy -= if self.y >= 240.0 { 0.75 } else { 0.3 };
+        } else {
+            self.vy += 0.03;
+        }
+        self.tail(rng, 550.0, 370.0, 3);
+        // `0x004eb7c0`, id 5: a 40-tick cycle, no turning or facing.
+        self.anim = (self.anim + 1) % 40;
+        self.cel = if self.anim < 7 {
+            self.anim / 2
+        } else if self.anim < 16 {
+            4
+        } else {
+            self.anim / 4
+        };
+        self.advance();
+    }
+
+    /// Rufus's update (pet-rufus.md#update-0x004f2e80-id-7): runs at the
+    /// nearest alien and hits it while any is in, else a 9-way wander.
+    fn update_rufus(&mut self, aliens: &[Alien], rng: &mut MtRand, out: &mut PetOut) {
+        let chasing = !aliens.is_empty();
+        if chasing {
+            self.attack_rufus(aliens, out);
+        } else {
+            self.target_vx = match self.mode {
+                0 | 5 | 6 => 0.0,
+                1 => -0.5,
+                2 => 0.5,
+                3 => -1.0,
+                4 => 1.0,
+                7 => -2.5,
+                8 => 2.5,
+                _ => self.target_vx,
+            };
+        }
+        self.drift_vx();
+        self.tail(rng, 560.0, 365.0, 9);
+        self.animate_rufus(!aliens.is_empty());
+        self.advance();
+    }
+
+    /// vx steps 0.1 toward the target, both tests in sequence, no snap
+    /// (ids 5 and 7).
+    fn drift_vx(&mut self) {
+        if self.target_vx < self.vx {
+            self.vx -= 0.1;
+        }
+        if self.vx < self.target_vx {
+            self.vx += 0.1;
+        }
+    }
+
+    /// The shared part of the update after movement: counters, the mode
+    /// re-roll (`% modes`), countdowns, clamps and edge modes.
+    #[allow(clippy::manual_clamp)]
+    fn tail(&mut self, rng: &mut MtRand, max_x: f64, floor: f64, modes: u32) {
+        self.counter += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20
+            || (self.x <= 10.0 && self.target_vx <= 0.0)
+            || (self.x >= 540.0 && self.target_vx >= 0.0)
+        {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(modes) as i32;
+            }
+        }
+        if self.countdown_1ac != 0 {
+            self.countdown_1ac -= 1;
+        }
+        if self.counter_1a8 < 20 {
+            self.counter_1a8 += 1;
+        }
+        if self.x > max_x {
+            self.x = max_x;
+        }
+        if self.x < 10.0 {
+            self.x = 10.0;
+        }
+        if self.y > floor {
+            self.y = floor;
+            self.vy = 0.0;
+        }
+        if self.y < 95.0 {
+            self.y = 95.0;
+        }
+        if self.x > 535.0 && self.vx > 0.1 {
+            self.mode = 1;
+        }
+        if self.x < 15.0 && self.vx < -0.1 {
+            self.mode = 2;
+        }
+    }
+
+    fn advance(&mut self) {
+        let div = if self.slow {
+            self.divisor * 5.0
+        } else {
+            self.divisor
+        };
+        self.x += self.vx / div;
+        self.y += self.vy / div;
+        self.widget_x = self.x as i32;
+        self.widget_y = self.y as i32;
+    }
+
+    /// The nearest eligible coin (`0x004e7270`): Stinky's search.
+    fn nearest_coin(&self, coins: &[Coin]) -> Option<usize> {
+        let mut best = 100_000_000;
+        let mut target = None;
+        for (i, c) in coins.iter().enumerate() {
+            if !Self::eligible(c, false) {
+                continue;
+            }
+            let dx = (f64::from(c.widget_x + 36) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(c.widget_y + 36) - (self.y + 40.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best {
+                best = d;
+                target = Some(i);
+            }
+        }
+        target
+    }
+
+    /// Clyde's chase (`0x004ebc80`, id 5): a ±1 nudge on both axes every 5
+    /// ticks toward the nearest coin, then Stinky's pickup.
+    fn chase_clyde(&mut self, coins: &[Coin], out: &mut PetOut) {
+        let Some(t) = self.nearest_coin(coins) else {
+            return;
+        };
+        if self.counter > 4 {
+            self.counter = 0;
+            let (cx, cy) = (self.x + 40.0, self.y + 40.0);
+            let tx = f64::from(coins[t].widget_x + 36);
+            let ty = f64::from(coins[t].widget_y + 36);
+            if cx > tx {
+                if self.vx > -2.0 {
+                    self.vx -= 1.0;
+                }
+            } else if cx < tx && self.vx < 2.0 {
+                self.vx += 1.0;
+            }
+            if cy > ty {
+                if self.vy > -2.0 {
+                    self.vy -= 1.0;
+                }
+            } else if cy < ty && self.vy < 2.0 {
+                self.vy += 1.0;
+            }
+        }
+        self.pick_up(coins, out);
+    }
+
+    /// The nearest alien by squared distance (`0x004e7270`, id 7).
+    fn nearest_alien(&self, aliens: &[Alien]) -> Option<usize> {
+        let mut best = 100_000_000;
+        let mut target = None;
+        for (i, a) in aliens.iter().enumerate() {
+            let dx = (f64::from(a.widget_x + 80) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(a.widget_y + 80) - (self.y + 40.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best {
+                best = d;
+                target = Some(i);
+            }
+        }
+        target
+    }
+
+    /// Rufus's chase (`0x004ebc80`, id 7): ±1.8 in x every 5 ticks toward
+    /// the nearest alien, then a hit on every alien whose box holds his
+    /// centre (`0x004e7c30`).
+    fn attack_rufus(&mut self, aliens: &[Alien], out: &mut PetOut) {
+        let Some(t) = self.nearest_alien(aliens) else {
+            return;
+        };
+        if self.counter > 4 {
+            self.counter = 0;
+            let cx = self.x + 40.0;
+            let tx = f64::from(aliens[t].widget_x + 80);
+            if cx > tx {
+                if self.vx > -5.0 {
+                    self.vx -= 1.8;
+                }
+            } else if cx < tx && self.vx < 5.0 {
+                self.vx += 1.8;
+            }
+        }
+        let (cx, cy) = (self.x + 40.0, self.y + 40.0);
+        for (i, a) in aliens.iter().enumerate() {
+            let (wx, wy) = (f64::from(a.widget_x), f64::from(a.widget_y));
+            if wx + 30.0 < cx && cx < wx + 140.0 && wy + 10.0 < cy && cy < wy + 150.0 {
+                let damage = match a.kind {
+                    5 => 0.25,
+                    4 | 6 => 0.5,
+                    _ => 2.0,
+                };
+                out.hits.push((i, damage));
+                self.vx = 0.0;
+                self.target_vx = 0.0;
+            }
+        }
+    }
+
+    /// `0x004eb7c0`, id 7. No RNG.
+    fn animate_rufus(&mut self, aliens: bool) {
+        #[allow(clippy::float_cmp)]
+        let still = (-0.01..=0.01).contains(&self.vx) && self.target_vx == 0.0;
+        if still && !aliens {
+            self.anim = (self.anim + 1) % 60;
+            let a = self.anim;
+            self.cel = match a {
+                0..3 => a / 2,
+                3..24 => 2,
+                24..33 => a / 2 - 10,
+                33..54 => 7,
+                _ => a / 2 - 20,
+            };
+            return;
+        }
+        self.anim %= 40;
+        if still {
+            self.anim = (self.anim + 4) % 40;
+        } else {
+            self.anim += if self.vx >= 1.0 {
+                2
+            } else if self.vx > 0.0 {
+                1
+            } else if self.vx > -1.0 {
+                -1
+            } else {
+                -2
+            };
+            self.anim = self.anim.rem_euclid(40);
+        }
+        self.cel = self.anim / 4;
+    }
+
     fn eligible(c: &Coin, have_starcatcher: bool) -> bool {
         let star = matches!(c.kind, 3 | 10);
         !c.collected && !matches!(c.kind, 0x11 | 0x12) && (!star || !have_starcatcher)
@@ -340,10 +637,16 @@ impl Pet {
                 self.vx = 0.0;
             }
         }
-        // Collect: first eligible coin within the pickup box.
+        self.pick_up(coins, out);
+        true
+    }
+
+    /// Collect (`0x004e7c30`, ids 0 and 5): the first eligible coin whose
+    /// pickup box holds the pet's centre.
+    fn pick_up(&mut self, coins: &[Coin], out: &mut PetOut) {
         let (cx, cy) = (self.x + 40.0, self.y + 40.0);
         for (i, c) in coins.iter().enumerate() {
-            if !Self::eligible(c, have_starcatcher) {
+            if !Self::eligible(c, false) {
                 continue;
             }
             let (wx, wy) = (f64::from(c.widget_x), f64::from(c.widget_y));
@@ -353,7 +656,6 @@ impl Pet {
                 break;
             }
         }
-        true
     }
 
     /// `0x004eb7c0`, pet 0 path. No RNG.

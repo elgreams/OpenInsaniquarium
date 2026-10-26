@@ -691,6 +691,17 @@ fn tank_1_2_from_demo() {
     }
 }
 
+/// Pet zoo A (`zoo_a_01`): 1-2 with Clyde, Vert and Rufus (owned and
+/// chosen by editing the profile in memory), inputs from the demo. The
+/// first time the pets' specs (`pet-clyde.md`, `pet-vert.md`,
+/// `pet-rufus.md`) meet the original.
+#[test]
+fn zoo_a_clyde_vert_rufus() {
+    if captured("zoo_a_01") {
+        replay_level("zoo_a_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
@@ -880,8 +891,14 @@ fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
     let board_of = |s: &harness::trace::Snapshot| s.state["board"].is_object();
     // From the level's first board tick (a capture may open on the help
     // screen) to the last one. Keyed on the board clock, like the full 1-2
-    // replay.
-    let i = full.snapshots.iter().position(board_of).unwrap();
+    // replay. A capture holding several levels replays the last one (the
+    // board clock restarts at 1).
+    let i = full
+        .snapshots
+        .iter()
+        .rposition(|s| s.state["board"]["clock"].as_i64() == Some(1))
+        .or_else(|| full.snapshots.iter().position(board_of))
+        .unwrap();
     let from = full.snapshots[i].tick;
     let to = full.snapshots[i..]
         .iter()

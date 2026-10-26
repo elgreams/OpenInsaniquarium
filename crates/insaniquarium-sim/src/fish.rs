@@ -27,6 +27,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 3, Prego: gives birth to guppies
     /// (`pet-prego.md`).
     Prego,
+    /// `Sexy::FishTypePet` id 6, Vert: drops a gold coin every 216 calm
+    /// ticks (`pet-vert.md`).
+    Vert,
 }
 
 #[derive(Debug, Clone, PartialEq)]

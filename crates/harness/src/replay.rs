@@ -40,6 +40,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             5 => FishKind::Carnivore,
             // FishTypePet: the pet id (`+0x234`) says which.
             0x15 if rd_i32(b, 0x234) == 3 => FishKind::Prego,
+            0x15 if rd_i32(b, 0x234) == 6 => FishKind::Vert,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -1857,6 +1858,8 @@ pub fn replay_idle(t: &Trace) -> Result<Trace, ReplayError> {
 ///   mouse-up, and dismissing with no dialog open does nothing. TODO: check
 ///   the dialog's button rect (`dialog.md`); a release off the button
 ///   doesn't close the original's dialog.
+/// - Focus loss → [`Input::SetPaused`]`(true)`; focus regained and keys →
+///   nothing (the board has no keyboard handling).
 /// - Moves, mouse enter/leave and recorded I/O don't touch the board.
 ///
 /// Anything else in `from..=to` (right clicks, keys, focus changes) is
@@ -1891,6 +1894,13 @@ pub fn demo_board_inputs(
                     Input::DismissDialog
                 }
             }
+            // Focus loss pauses the board; regaining focus doesn't resume
+            // it (the player clicks Resume) (`dynamic-analysis.md`).
+            DemoEvent::Activate(false) => Input::SetPaused(true),
+            DemoEvent::Activate(true) => continue,
+            // The board has no keyboard handling (typing goes to dialogs and
+            // screens, `pet-screen.md#input`).
+            DemoEvent::KeyDown(_) | DemoEvent::KeyUp(_) | DemoEvent::Char(_) => continue,
             DemoEvent::MouseMove { .. }
             | DemoEvent::MouseEnter
             | DemoEvent::MouseLeave

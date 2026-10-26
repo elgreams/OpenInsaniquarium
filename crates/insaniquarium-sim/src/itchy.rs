@@ -13,6 +13,11 @@ use crate::fish::{Fish, FishKind};
 pub const ITCHY: i32 = 2;
 /// Pet id 3 (Prego, same class; `pet-prego.md`).
 pub const PREGO: i32 = 3;
+/// Pet id 6 (Vert, same class; `pet-vert.md`).
+pub const VERT: i32 = 6;
+
+/// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
+const VERT_INTERVAL: i32 = 216;
 
 /// Prego's first birth interval (`FishTypePet` ctor, id 3).
 const PREGO_INTERVAL: i32 = 930;
@@ -49,14 +54,28 @@ impl Fish {
         self.kind == FishKind::Prego
     }
 
+    /// `AddPet(6)`'s fish part: as Itchy, then the id-6 ctor branch (no RNG
+    /// outside the Virtual Tank): the coin interval becomes 216.
+    pub fn new_vert(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Vert;
+        f.coin_interval = VERT_INTERVAL;
+        f
+    }
+
+    pub fn is_vert(&self) -> bool {
+        self.kind == FishKind::Vert
+    }
+
     /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
     /// board must apply.
     pub fn update_fish_pet(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
         match self.kind {
             FishKind::Prego => self.update_prego(aliens, rng),
+            FishKind::Vert => self.update_vert(aliens, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
-                birth: None,
+                ..Default::default()
             },
         }
     }
@@ -111,6 +130,48 @@ impl Fish {
                 out.birth = Some((self.widget_x + 7, self.widget_y + 25));
             }
         }
+        out
+    }
+
+    /// `FishTypePet::Update` for id 6 (pet-vert.md#update-0x004f7ad0-id-6):
+    /// Prego's movement, the coin drop (slot 81) while no alien is in, and
+    /// the ping-pong swim animation.
+    fn update_vert(&mut self, aliens: &[Alien], rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        if aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer >= self.coin_interval {
+                self.coin_timer = 0;
+                // `AddCoin(wx + 15, wy + 10, kind 2)`: a gold coin.
+                out.coin = Some((self.widget_x + 15, self.widget_y + 10));
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        self.animate();
+        // Id 6's swim branch (`0x004dfc50`): the cycle ping-pongs, cel =
+        // cycle below 10, else 19 − cycle (the cycle itself advanced in
+        // `animate`).
+        if self.turn_timer == 0 && self.eat_timer == 0 {
+            self.cel = if self.swim_cycle < 10 {
+                self.swim_cycle
+            } else {
+                19 - self.swim_cycle
+            };
+        }
+        self.integrate();
         out
     }
 
@@ -238,6 +299,8 @@ pub struct PetFishOut {
     pub stabbed: Option<usize>,
     /// Prego gives birth: `AddGuppyAt` here, then `finish_prego`.
     pub birth: Option<(i32, i32)>,
+    /// Vert drops a gold coin at this widget position.
+    pub coin: Option<(i32, i32)>,
 }
 
 /// `0x004fb5b0` for Itchy: the alien loses [`STAB`] health.

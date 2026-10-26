@@ -11,7 +11,7 @@ Same class, fields and update skeleton as Stinky (`pet-stinky.md`). Only the id-
 - Animation `0x004eb7c0` (id-5 path)
 - Draw (slot 26) `0x004f37c0` → `0x004f3590` → `0x004e2db0`
 
-Confidence: `static` throughout. No capture with Clyde exists yet.
+Confidence per section. `zoo_a_clyde_vert_rufus` (`tank1_1.rs`) replays 1-2 with Clyde from the game's own demo (`zoo_a_01`, 4800 ticks) and compares his fields, the coins, money and the app RNG every tick. Clicks, drawing and the Virtual Tank paths are `static`.
 
 ## Fields used by id 5
 
@@ -26,7 +26,7 @@ As Stinky's table (`pet-stinky.md#fields`), with these differences:
 | `+0x1b4` | shell counter: never changes for id 5 (the shell routine `0x004e2a20` only handles ids 0 and 1), so it stays 0 | 0 |
 | `+0x1bc` | reset to 0 on each pickup, never counted up (only Stinky's chase increments it) | 0 |
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Construction
 
@@ -40,7 +40,7 @@ As Stinky's table (`pet-stinky.md#fields`), with these differences:
 
 That is **5 app draws**, like Stinky. Divisor `+0x188 = 1.5` (`0x005c3d58`). The ctor has no other id-5 branch; `0x004d89f0` (fixed spot) is Niko-only.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Update (`0x004f2e80`), id 5
 
@@ -68,7 +68,7 @@ Same skeleton as Stinky's update (`pet-stinky.md#update-0x004f2e80-pet-0-normal-
 
 RNG per tick: only step 6 (`% 10`, then `% 3` w.p. 1/10, every 21 ticks or on each edge-bump tick) and the pickup sound (below). All app MTRand.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Coin chasing
 
@@ -84,7 +84,7 @@ RNG per tick: only step 6 (`% 10`, then `% 3` w.p. 1/10, every 21 ticks or on ea
 
 Because the gate reports "chasing" whenever the coin list is non-empty, the wander target is frozen while any coin (even a collected one flying to the counter, or an unreachable kind) exists.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Effects on other objects
 
@@ -92,7 +92,7 @@ Because the gate reports "chasing" whenever the coin list is non-empty, the wand
 - **Aliens:** none. Aliens target fish only (`alien-sylvester.md`), and Clyde ignores them. He keeps collecting during a wave.
 - **Food, fish:** none.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Clicks
 

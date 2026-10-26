@@ -374,6 +374,14 @@ impl Board {
                 t => t,
             };
             self.pets.push(Pet::niko(a, _b, backdrop, &mut self.rng));
+        } else if id == crate::pet::CLYDE || id == crate::pet::RUFUS {
+            let mut p = if id == crate::pet::CLYDE {
+                Pet::clyde(a, _b, &mut self.rng)
+            } else {
+                Pet::rufus(a, _b, &mut self.rng)
+            };
+            p.shadow_y = self.rng.next_range(5) as i32 + 410;
+            self.pets.push(p);
         } else if id == crate::itchy::ITCHY {
             // `FishTypePet` (pet-itchy.md#construction): `Fish::Init`'s 6
             // draws, then a type-0 shadow (one draw).
@@ -381,6 +389,9 @@ impl Board {
             self.rng.next_range(5);
         } else if id == crate::itchy::PREGO {
             self.fish_pets.push(Fish::new_prego(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::VERT {
+            self.fish_pets.push(Fish::new_vert(a, _b, &mut self.rng));
             self.rng.next_range(5);
         } else {
             // TODO(spec): other pets.
@@ -1134,7 +1145,19 @@ impl Board {
     /// One pet's update and what it asks the board to do.
     fn update_pet(&mut self, i: usize) {
         let mut out = PetOut::default();
-        self.pets[i].update(self.has_aliens, &self.coins, &mut self.rng, &mut out);
+        self.pets[i].update(
+            self.has_aliens,
+            &self.aliens,
+            &self.coins,
+            &mut self.rng,
+            &mut out,
+        );
+        // Rufus's hits (`0x004e7c30`): health only; the alien dies in its
+        // own update.
+        for &(a, damage) in &out.hits {
+            self.aliens[a].health -= damage;
+            self.play_throttled(0x130, 10, Sound::Punch);
+        }
         if let Some(ci) = out.picked {
             // `0x004ddc40`: bank the coin, remove it, play its sound.
             let c = self.coins.remove(ci);
@@ -1400,6 +1423,10 @@ impl Board {
                 crate::itchy::stab(&mut self.aliens[a]);
                 // `0x00538340(11)`: PUNCH, throttled to one per 11 ticks.
                 self.play_throttled(0x130, 11, Sound::Punch);
+            }
+            if let Some((x, y)) = out.coin {
+                // Coins come after `+0xb4` in z-order: it updates this tick.
+                self.coins.push(Coin::new(x, y, crate::coin::kind::GOLD));
             }
             if self.fish_pets[i].is_prego() {
                 // Slot 81, id 3: the newborn (`AddGuppyAt`, pet-prego.md),

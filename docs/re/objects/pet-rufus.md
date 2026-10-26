@@ -11,7 +11,7 @@ Same class, fields and update skeleton as Stinky (`pet-stinky.md`) and Clyde (`p
 - Draw (slot 26) `0x004f37c0` → `0x004f3590` case 7
 - Sound: `0x00538340(gap)` = `Board::PlaySample(0x130, gap)` (`0x00538230`), the same hit sound as Itchy's stab
 
-Confidence: `static` throughout. No capture with Rufus exists yet.
+Confidence per section. `zoo_a_clyde_vert_rufus` (`tank1_1.rs`) replays 1-2 with Rufus from the game's own demo (`zoo_a_01`, 4800 ticks, one Sylvester wave he fought for 88 ticks) and compares his fields, the alien's health and the app RNG every tick. Bilaterus, alien kinds 4–6, clicks and drawing are `static`.
 
 ## Fields used by id 7
 
@@ -25,7 +25,7 @@ As Stinky's table (`pet-stinky.md#fields`), with these differences:
 | `+0x1a0` | animation counter (0..59 idle, 0..39 otherwise) | 0 |
 | `+0x1b4` | unused by id 7 (no shell) | 0 |
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Construction
 
@@ -39,7 +39,7 @@ As Stinky's table (`pet-stinky.md#fields`), with these differences:
 
 **5 app draws.** Divisor 2.0 (`0x005c3cc8`, the default). No other id-7 ctor code.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Update (`0x004f2e80`), id 7
 
@@ -65,7 +65,7 @@ Same skeleton as Stinky's update. Board `tank` = `board+0x3c8`.
 
 RNG per tick: only the reroll in step 4 (`% 10`, then `% 9` w.p. 1/10). All app MTRand. The attack and its sound draw nothing.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Attack
 
@@ -87,7 +87,7 @@ RNG per tick: only the reroll in step 4 (`% 10`, then `% 9` w.p. 1/10). All app 
 
 Damage per second at 2 HP/tick (≈ 71 HP/s): Sylvester (50 HP, `alien-sylvester.md`) dies after 25 ticks in the box. Health ≤ 0 is handled by the alien's own update, not here.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Effects on other objects
 
@@ -95,7 +95,7 @@ Damage per second at 2 HP/tick (≈ 71 HP/s): Sylvester (50 HP, `alien-sylvester
 - **Bilaterus** (`board+0xf4`): health at `[segment+0x158] + 0x1d8` reduced by 2.0 per overlapping segment per tick (`0x004e7d7c`).
 - **Coins, food, fish:** none.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Animation
 
@@ -109,7 +109,7 @@ Damage per second at 2 HP/tick (≈ 71 HP/s): Sylvester (50 HP, `alien-sylvester
 
 No turn counter and no facing update.
 
-`static`.
+`traced` (`zoo_a_clyde_vert_rufus`).
 
 ## Clicks
 
