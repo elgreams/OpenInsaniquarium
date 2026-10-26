@@ -17,6 +17,7 @@ Status: per section. Drawing is `confirmed` by the frame diff (GAME OVER, pixel-
 - Content insets `(36, 15, 36, 36)` (left, top, right, bottom); the space between lines is set to 15.
 - **Size** (`NewDialog`): width `w = header font's text width + 150`, at least 348. Height = the dialog's preferred height for that width, at least `2/3 · DIALOGBUTTON height + 10`. **Position (143, 142)**, i.e. near the centre of the 640×480 board.
 - Button mode 1 is a single button whose label is the "button text" argument ("Click to Continue" for every board hint).
+- **Two buttons** (`Dialog::Dialog` @ `0x00475c40`, button modes 1/2 with Yes/No or OK/Cancel ids 1000/1001), e.g. the pet screen's "Select More Pets?" (YES / NO): `Dialog::Resize` (`0x00476af0`) splits the content width into two buttons `(inner − 8) / 2` wide, 8 px apart. The dialog comes out **13 px taller** than the one-button height rule above gives; the text stays in place and the buttons sit 13 px lower. `confirmed` by the frame diff (`pet_screen_dialog_frames_match_original`, pixel-exact); where the 13 px come from in `GetPreferredHeight` (`0x00476570`) is `guess`.
 
 `confirmed` (size 348×170 and position read live, and matched by the frame diff).
 

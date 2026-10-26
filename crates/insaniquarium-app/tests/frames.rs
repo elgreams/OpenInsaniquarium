@@ -261,7 +261,6 @@ fn pet_screen_frames_match_original() {
 
 /// The pet screen's "Select More Pets?" (Yes/No dialog) with 2 chosen.
 #[test]
-#[ignore = "the Yes/No dialog is ~6 px shorter than the original's (Dialog::GetPreferredHeight for button mode 1 not matched yet)"]
 fn pet_screen_dialog_frames_match_original() {
     let failures = check("pets_dialog_01");
     assert!(failures.is_empty(), "{}", failures.join("\n"));

@@ -1216,7 +1216,11 @@ pub fn render_yes_no_dialog(
     let lines = body.wrap(text, inner - 4);
     let bh = button.height as i32;
     let body_h = lines.len() as i32 * body.line_spacing();
-    let preferred = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom;
+    // Measured against the original (`pets_dialog_01`): with two buttons the
+    // dialog is 13 px taller than the one-button layout gives, everything
+    // above the buttons in place. TODO(spec): where in GetPreferredHeight
+    // (`0x00476570`) the 13 px come from.
+    let preferred = top + head.line_spacing() + 10 + body_h + 8 + bh + bottom + 13;
     let h = preferred.max(panel.height as i32 * 2 / 3 + 10);
     let mut out = Rgba::new_transparent(w as u32, h as u32);
     out.draw_image_box(panel, (0, 0, w, h));
