@@ -389,11 +389,14 @@ impl Board {
                 t => t,
             };
             self.pets.push(Pet::niko(a, _b, backdrop, &mut self.rng));
-        } else if id == crate::pet::CLYDE || id == crate::pet::RUFUS {
-            let mut p = if id == crate::pet::CLYDE {
-                Pet::clyde(a, _b, &mut self.rng)
-            } else {
-                Pet::rufus(a, _b, &mut self.rng)
+        } else if matches!(
+            id,
+            crate::pet::CLYDE | crate::pet::RUFUS | crate::pet::RHUBARB
+        ) {
+            let mut p = match id {
+                crate::pet::CLYDE => Pet::clyde(a, _b, &mut self.rng),
+                crate::pet::RUFUS => Pet::rufus(a, _b, &mut self.rng),
+                _ => Pet::rhubarb(a, _b, &mut self.rng),
             };
             p.shadow_y = self.rng.next_range(5) as i32 + 410;
             self.pets.push(p);
@@ -410,6 +413,12 @@ impl Board {
             self.rng.next_range(5);
         } else if id == crate::itchy::ZORF {
             self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::BLIP {
+            self.fish_pets.push(Fish::new_blip(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::NIMBUS {
+            self.fish_pets.push(Fish::new_nimbus(a, _b, &mut self.rng));
             self.rng.next_range(5);
         } else if id == crate::itchy::SEYMOUR {
             self.fish_pets.push(Fish::new_seymour(a, _b, &mut self.rng));
@@ -920,6 +929,27 @@ impl Board {
         ClickResult::FoodDropped
     }
 
+    /// `AddFood(x, y, 0, tossed 1, 0, level)` for Nimbus: the player's drop
+    /// path (limit check, one draw, DROPFOOD) with the tossed flag.
+    fn add_tossed_food(&mut self, x: i32, y: i32, level: i32) {
+        let extra = self
+            .foods
+            .iter()
+            .filter(|f| f.motion != 0 || f.kind != 0)
+            .count() as i32;
+        if self.foods.len() as i32 >= self.max_food + extra {
+            // TODO(spec): the limit path's refund and hint (pet-nimbus.md
+            // open question).
+            return;
+        }
+        let mut food = Food::new_pellet(x, y, level, &mut self.rng);
+        food.tossed = true;
+        self.foods.push(food);
+        if self.sample_ready(0x118, 3) {
+            self.sounds.push(Sound::DropFood.into());
+        }
+    }
+
     /// One logic tick (28 ms) with this tick's inputs.
     pub fn step(&mut self, inputs: &[Input]) {
         self.apply_inputs(inputs);
@@ -1238,13 +1268,36 @@ impl Board {
     /// One pet's update and what it asks the board to do.
     fn update_pet(&mut self, i: usize) {
         let mut out = PetOut::default();
+        let fish: Vec<(i32, i32)> = if self.pets[i].id == crate::pet::RHUBARB {
+            self.guppies
+                .iter()
+                .chain(&self.carnivores)
+                .map(|f| (f.widget_x, f.widget_y))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.pets[i].update(
             self.has_aliens,
             &self.aliens,
             &self.coins,
+            &fish,
             &mut self.rng,
             &mut out,
         );
+        // Rhubarb's flings (`0x004e7e5a`): vy and the damp timer.
+        let n = self.guppies.len();
+        for &(f, vy) in &out.flings {
+            let fish = if f < n {
+                &mut self.guppies[f]
+            } else {
+                &mut self.carnivores[f - n]
+            };
+            fish.vy = vy;
+            fish.vy_damp_timer = 50;
+        }
+        // TODO(spec): Rhubarb's snap click (`out.click`, SOUND_BUTTONCLICK
+        // through the app, no board throttle) isn't in the sound list yet.
         // Rufus's hits (`0x004e7c30`): health only; the alien dies in its
         // own update.
         for &(a, damage) in &out.hits {
@@ -1359,6 +1412,21 @@ impl Board {
         }
         // After the ambient check: `+0x2c4`, then the wave countdown.
         self.update_waves();
+        // Blip's reticle (pet-blip.md, board draw `0x0053ffaa`): while the
+        // countdown is 1..225 the alien will appear at y 280. The original
+        // does this in its draw; the sim applies it once per tick.
+        if (1..=225).contains(&self.wave_countdown)
+            && self.tank != 5
+            && self
+                .fish_pets
+                .iter()
+                .any(|f| f.kind == crate::fish::FishKind::Blip)
+        {
+            self.wave_a.1 = 280;
+            if self.wave_kind == 11 {
+                self.wave_b.1 = 280;
+            }
+        }
         // Board::Update (`0x00548e29`, right after the waves and before the
         // objects update): no fish left → pause and raise the
         // tutorial's second-chance dialog, or game over. (Coins still on the
@@ -1543,10 +1611,19 @@ impl Board {
             // Zorf's hungry check (`0x004e5b8e`): guppies, then breeders
             // (none yet), with hunger below 300.
             let hungry = self.guppies.iter().any(|g| g.hunger < 300);
+            let hidden = self
+                .shop
+                .position
+                .iter()
+                .zip(&self.shop.revealed)
+                .any(|(p, &r)| p.is_some() && !r);
             let ctx = crate::itchy::PetCtx {
                 aliens: &self.aliens,
                 hungry,
                 guppies: &self.guppies,
+                coins: &self.coins,
+                foods: &self.foods,
+                reveal_due: hidden && self.level_ticks > 200,
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
@@ -1581,6 +1658,25 @@ impl Board {
             if let Some((x, y)) = out.coin {
                 // Coins come after `+0xb4` in z-order: it updates this tick.
                 self.coins.push(Coin::new(x, y, crate::coin::kind::GOLD));
+            }
+            if out.reveal_shop {
+                // Blip (`0x004f7b01`): SONAR, then every slot revealed.
+                self.play(0x13c, Sound::Sonar);
+                for slot in Slot::ALL {
+                    self.shop.reveal(slot, true);
+                }
+            }
+            if let Some((ci, y)) = out.toss_coin {
+                // Nimbus: the coin is replaced by its rising kind.
+                let c = self.coins.remove(ci);
+                let kind = if c.kind <= 7 { c.kind + 7 } else { c.kind };
+                self.coins.push(Coin::new(c.widget_x, y, kind));
+            }
+            if let Some((fi, y)) = out.toss_food {
+                // Nimbus: the pellet is removed and dropped again, tossed
+                // (the normal drop path: limit check, 1 draw, DROPFOOD).
+                let f = self.foods.remove(fi);
+                self.add_tossed_food(f.widget_x, y, f.level);
             }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));

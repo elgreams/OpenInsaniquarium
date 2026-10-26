@@ -30,6 +30,9 @@ pub struct Food {
     pub kind: i32,
     /// `+0x198`: ticks until edible.
     pub delay: i32,
+    /// `+0x190`: tossed up by Nimbus; `+0x184`: reached the top.
+    pub tossed: bool,
+    pub risen: bool,
     /// `+0x30`, `+0x34`: truncated position.
     pub widget_x: i32,
     pub widget_y: i32,
@@ -60,6 +63,8 @@ impl Food {
             motion: 0,
             kind: 0,
             delay: 0,
+            tossed: false,
+            risen: false,
             widget_x: x,
             widget_y: y,
         }
@@ -96,8 +101,17 @@ impl Food {
                 FoodStep::Keep
             };
         }
-        // TODO(spec): carried and dropped-from-above variants.
-        self.y += 1.5;
+        // TODO(spec): carried food.
+        if self.tossed && !self.risen {
+            // Tossed by Nimbus: rise until y 120, then fall.
+            if self.y < 120.0 {
+                self.risen = true;
+            } else {
+                self.y -= crate::coin::rise_step(self.y);
+            }
+        } else {
+            self.y += 1.5;
+        }
         // Thrown food (motion 1/2): rises then sinks, glides sideways.
         if self.motion != 0 {
             if self.vy < 0.0 {

@@ -48,6 +48,12 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 12, Gumbo: lures guppies during waves
     /// (`pet-gumbo.md`).
     Gumbo,
+    /// `Sexy::FishTypePet` id 13, Blip: info displays; reveals the shop
+    /// at tick 201 (`pet-blip.md`).
+    Blip,
+    /// `Sexy::FishTypePet` id 15, Nimbus: tosses coins and food up
+    /// (`pet-nimbus.md`).
+    Nimbus,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -17,6 +17,22 @@ pub mod kind {
     pub const BOMB: i32 = 0x11;
 }
 
+/// The rising speed of a tossed coin or pellet at height `y`
+/// (`Coin::Update` / `Food::Update`, pet-nimbus.md).
+pub fn rise_step(y: f64) -> f64 {
+    if y >= 150.0 {
+        8.0
+    } else if y >= 135.0 {
+        2.5
+    } else if y >= 130.0 {
+        1.5
+    } else if y >= 125.0 {
+        1.0
+    } else {
+        0.5
+    }
+}
+
 /// A resting pearl disappears after this many ticks (`0xd9`; `static`).
 const PEARL_LIFE: i32 = 217;
 
@@ -48,6 +64,9 @@ pub struct Coin {
     pub floor_time: i32,
     /// `+0x1c0`: value multiplier (Virtual Tank shells).
     pub multiplier: i32,
+    /// `+0x168`: a rising coin (kinds 5, 8–14, 0x12) has reached the top
+    /// and now falls like any coin (pet-nimbus.md).
+    pub risen: bool,
     /// `+0x30`, `+0x34`: truncated position.
     pub widget_x: i32,
     pub widget_y: i32,
@@ -84,6 +103,7 @@ impl Coin {
             collected: false,
             floor_time: 0,
             multiplier: 1,
+            risen: false,
             widget_x: x,
             widget_y: y,
         }
@@ -187,6 +207,13 @@ impl Coin {
             }
             if self.widget_y < 40 {
                 return CoinStep::Bank(self.value() * self.multiplier);
+            }
+        } else if !self.risen && matches!(self.kind, 5 | 8..=14 | 0x12) {
+            // Rising kinds go up until y 120 (pet-nimbus.md#effects-on-other-objects).
+            if self.y < 120.0 {
+                self.risen = true;
+            } else {
+                self.y -= rise_step(self.y);
             }
         } else {
             self.y += if seymour { 0.8 } else { 1.5 };

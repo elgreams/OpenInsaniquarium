@@ -47,6 +47,8 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 10 => FishKind::Seymour,
             0x15 if rd_i32(b, 0x234) == 11 => FishKind::Shrapnel,
             0x15 if rd_i32(b, 0x234) == 12 => FishKind::Gumbo,
+            0x15 if rd_i32(b, 0x234) == 13 => FishKind::Blip,
+            0x15 if rd_i32(b, 0x234) == 15 => FishKind::Nimbus,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -117,6 +119,8 @@ pub fn food_from_raw(b: &[u8]) -> Food {
         motion: rd_i32(b, 0x18c),
         kind: rd_i32(b, 0x194),
         delay: rd_i32(b, 0x198),
+        tossed: b[0x190] != 0,
+        risen: b[0x184] != 0,
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -139,6 +143,7 @@ pub fn coin_from_raw(b: &[u8]) -> Coin {
         collected: b[0x198] != 0,
         floor_time: rd_i32(b, 0x19c),
         multiplier: rd_i32(b, 0x1c0),
+        risen: b[0x168] != 0,
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }

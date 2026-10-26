@@ -26,6 +26,8 @@ pub const WADSWORTH: i32 = 9;
 pub const SEYMOUR: i32 = 10;
 pub const SHRAPNEL: i32 = 11;
 pub const GUMBO: i32 = 12;
+pub const BLIP: i32 = 13;
+pub const NIMBUS: i32 = 15;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -111,6 +113,22 @@ impl Fish {
         f
     }
 
+    /// `AddPet(13)`'s fish part: no id-13 ctor branch.
+    pub fn new_blip(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Blip;
+        f
+    }
+
+    /// `AddPet(15)`'s fish part: divisor 0.5, ceiling 320 (no RNG).
+    pub fn new_nimbus(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Nimbus;
+        f.divisor = 0.5;
+        f.ceil_y = 320;
+        f
+    }
+
     /// `AddPet(12)`'s fish part: no id-12 ctor branch.
     pub fn new_gumbo(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -151,6 +169,8 @@ impl Fish {
             FishKind::Seymour => self.update_seymour(rng),
             FishKind::Shrapnel => self.update_shrapnel(ctx.aliens, rng),
             FishKind::Gumbo => self.update_gumbo(ctx.aliens, rng),
+            FishKind::Blip => self.update_blip(ctx, rng),
+            FishKind::Nimbus => self.update_nimbus(ctx, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
                 ..Default::default()
@@ -489,6 +509,156 @@ impl Fish {
         PetFishOut::default()
     }
 
+    /// Blip (pet-blip.md): Itchy's swimming; on the first update past
+    /// level tick 200 he reveals every shop slot (the board does it).
+    fn update_blip(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        out.reveal_shop = ctx.reveal_due;
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.swim_tail(2, 19, 1);
+        out
+    }
+
+    /// Nimbus (pet-nimbus.md): with any coin or (calm) food in the tank he
+    /// chases at divisor 0.5 and tosses what he touches; else he swims at
+    /// divisor 1.8. Cel = cycle / 4.
+    fn update_nimbus(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        let food_ok = ctx.aliens.is_empty();
+        if ctx.coins.iter().len() > 0 || !ctx.foods.is_empty() {
+            self.divisor = 0.5;
+            self.chase_toss(ctx, food_ok, &mut out);
+        } else {
+            self.divisor = 1.8;
+            self.swim_modes_calm();
+        }
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.swim_tail_nimbus();
+        out
+    }
+
+    /// Nimbus's tail: the shared steps with his ceiling, and cel = cycle
+    /// / 4 (the cycle steps by 2 from speed bucket 2, wraps above 39).
+    fn swim_tail_nimbus(&mut self) {
+        self.swim_tail(4, 39, 1);
+    }
+
+    /// Chase (`0x004e02d0`/`0x004e5fc0`) and toss (`0x004fe740`), id 15.
+    fn chase_toss(&mut self, ctx: PetCtx<'_>, food_ok: bool, out: &mut PetFishOut) {
+        let (px, py) = (self.x + 40.0, self.y + 40.0);
+        let dist = |cx: i32, cy: i32| -> i32 {
+            let mut dx = (px - f64::from(cx)) as i32;
+            if dx.wrapping_mul(dx) < 250 {
+                dx = 50;
+            }
+            let dy = (py - f64::from(cy)) as i32;
+            (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32
+        };
+        let coin_ok = |c: &crate::coin::Coin| !c.collected && !matches!(c.kind, 0x11 | 0x12);
+        let mut best = 10_000;
+        let mut target: Option<(i32, i32)> = None;
+        if food_ok {
+            for f in ctx.foods {
+                let d = dist(f.widget_x + 20, f.widget_y + 20);
+                if d < best && f.kind == 0 && f.motion == 0 {
+                    best = d;
+                    target = Some((f.widget_x, f.widget_y));
+                }
+            }
+        }
+        for c in ctx.coins {
+            if !coin_ok(c) {
+                continue;
+            }
+            let d = dist(c.widget_x + 36, c.widget_y + 36);
+            if d < best {
+                best = d;
+                target = Some((c.widget_x, c.widget_y));
+            }
+        }
+        let Some((w, h)) = target else {
+            self.divisor = 1.8;
+            return;
+        };
+        if self.mode_timer >= 5 {
+            self.mode_timer = 0;
+            let cx = self.x + 40.0;
+            let w = f64::from(w);
+            // Bands by position; each speed guard sits inside its band
+            // (as Stinky's, pet-stinky.md#coin-chasing).
+            if cx > w + 54.0 {
+                if self.vx > -2.3 {
+                    self.vx -= 0.5;
+                }
+            } else if cx < w + 18.0 {
+                if self.vx < 2.3 {
+                    self.vx += 0.5;
+                }
+            } else if cx > w + 44.0 {
+                if self.vx > -1.3 {
+                    self.vx -= 0.1;
+                }
+            } else if cx < w + 28.0 {
+                if self.vx < 1.3 {
+                    self.vx += 0.1;
+                }
+            } else if (cx > w + 36.0 && self.vx > -0.3) || (cx < w + 36.0 && self.vx < 0.3) {
+                self.vx = 0.0;
+            }
+            let cy = self.y + 40.0;
+            let h = f64::from(h);
+            if cy > h + 42.0 {
+                if self.vy > -2.0 {
+                    self.vy -= 0.6;
+                }
+            } else if cy < h + 30.0 {
+                if self.vy < 3.0 {
+                    self.vy += 1.0;
+                }
+            } else if cy > h + 36.0 {
+                if self.vy > -2.0 {
+                    self.vy -= 0.3;
+                }
+            } else if cy < h + 36.0 && self.vy < 3.0 {
+                self.vy += 0.5;
+            }
+        }
+        // Toss: the first coin, then the first pellet, within 30 px.
+        if let Some(i) = ctx.coins.iter().position(|c| {
+            coin_ok(c)
+                && (px - f64::from(c.widget_x + 36)).abs() < 30.0
+                && (py - f64::from(c.widget_y + 36)).abs() < 30.0
+        }) {
+            out.toss_coin = Some((i, (self.y - 25.0) as i32));
+        }
+        if food_ok
+            && let Some(i) = ctx.foods.iter().position(|f| {
+                (px - f64::from(f.widget_x + 20)).abs() < 30.0
+                    && (py - f64::from(f.widget_y + 20)).abs() < 30.0
+                    && f.motion == 0
+            })
+        {
+            out.toss_food = Some((i, (self.y - 30.0) as i32));
+        }
+    }
+
     /// Gumbo's chase (`0x004e02d0`, id 12): steer by the nearest alien's
     /// centre toward the opposite corner, every 5th tick.
     fn flee(&mut self, aliens: &[Alien]) {
@@ -655,6 +825,12 @@ pub struct PetFishOut {
     pub shelter: Option<bool>,
     /// Shrapnel drops a bomb at this widget position.
     pub bomb: Option<(i32, i32)>,
+    /// Blip reveals every shop slot (once, at level tick 201).
+    pub reveal_shop: bool,
+    /// Nimbus tosses coin `i` up to widget y `y` (removed, re-added as
+    /// its rising kind), and pellet `i` (re-dropped at y, tossed).
+    pub toss_coin: Option<(usize, i32)>,
+    pub toss_food: Option<(usize, i32)>,
 }
 
 /// What a fish-shaped pet's update reads from the board.
@@ -664,6 +840,10 @@ pub struct PetCtx<'a> {
     /// Some guppy (or breeder) has hunger below 300 (Zorf's check).
     pub hungry: bool,
     pub guppies: &'a [Fish],
+    pub coins: &'a [crate::coin::Coin],
+    pub foods: &'a [crate::food::Food],
+    /// Blip's shop reveal is due (level tick > 200, slots still hidden).
+    pub reveal_due: bool,
 }
 
 impl PetCtx<'_> {

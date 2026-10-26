@@ -13,6 +13,7 @@ pub const STINKY: i32 = 0;
 pub const NIKO: i32 = 1;
 pub const CLYDE: i32 = 5;
 pub const RUFUS: i32 = 7;
+pub const RHUBARB: i32 = 14;
 
 /// Niko's pearl timer milestones (`0x004e2a20`, pet-niko.md#update).
 const NIKO_OPEN: i32 = 1224;
@@ -80,6 +81,11 @@ pub struct PetOut {
     /// Rufus hit these aliens this tick (index, damage); each hit plays
     /// `0x130` throttled to 10 ticks.
     pub hits: Vec<(usize, f64)>,
+    /// Rhubarb flings these fish (index into guppies then carnivores, new
+    /// vy): vy −20 / −30 by one app draw each, damp timer 50.
+    pub flings: Vec<(usize, f64)>,
+    /// Rhubarb's snap click (`SOUND_BUTTONCLICK`, mid-snap).
+    pub click: bool,
 }
 
 impl Pet {
@@ -161,14 +167,26 @@ impl Pet {
         p
     }
 
+    /// Rhubarb (pet-rhubarb.md#construction): on the floor at y 355.
+    pub fn rhubarb(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut p = Pet::stinky(x, y, rng);
+        p.id = RHUBARB;
+        p.y = 355.0;
+        p.widget_y = 355;
+        p.divisor = 2.0;
+        p
+    }
+
     /// `OtherTypePet::Update` (`0x004f2e80`), normal game.
     /// A collected coin is reported in `out`; the board banks it and plays
     /// its sound (which may draw RNG).
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         has_aliens: bool,
         aliens: &[Alien],
         coins: &[Coin],
+        fish: &[(i32, i32)],
         rng: &mut MtRand,
         out: &mut PetOut,
     ) {
@@ -176,6 +194,7 @@ impl Pet {
             NIKO => return self.update_niko(rng, out),
             CLYDE => return self.update_clyde(coins, rng, out),
             RUFUS => return self.update_rufus(aliens, rng, out),
+            RHUBARB => return self.update_rhubarb(has_aliens, fish, rng, out),
             _ => {}
         }
         // Coin chase (`0x004efe80`): for pet 0, runs whenever the coin list is
@@ -384,6 +403,106 @@ impl Pet {
         self.tail(rng, 560.0, 365.0, 9);
         self.animate_rufus(!aliens.is_empty());
         self.advance();
+    }
+
+    /// Rhubarb's update (pet-rhubarb.md#update-0x004f2e80-id-14): the snap
+    /// chase every tick, the 9-way wander target refreshed every tick, the
+    /// shared tail with x ≤ 540 and floor 355. `fish` = widget positions of
+    /// guppies then carnivores (the lists he scans on tank 1).
+    fn update_rhubarb(
+        &mut self,
+        has_aliens: bool,
+        fish: &[(i32, i32)],
+        rng: &mut MtRand,
+        out: &mut PetOut,
+    ) {
+        self.snap(has_aliens, fish, rng, out);
+        self.target_vx = match self.mode {
+            0 => 0.0,
+            1 => -0.5,
+            2 => 0.5,
+            3 => -1.0,
+            4 => 1.0,
+            5 => 1.5,
+            6 => -1.5,
+            7 => -2.5,
+            8 => 2.5,
+            _ => self.target_vx,
+        };
+        self.drift_vx();
+        self.tail(rng, 540.0, 355.0, 9);
+        // `0x004eb7c0`, id 14: the snap counter, else a reversed walk.
+        if self.shell > 0 {
+            self.shell -= 1;
+            self.cel = self.shell / 2;
+            if self.shell == 10 {
+                out.click = true;
+            }
+        } else {
+            let a = &mut self.anim;
+            if self.vx >= 1.0 {
+                *a -= 2;
+            } else if self.vx <= -1.0 {
+                *a = (*a + 2) % 40;
+            } else if self.vx > 0.0 {
+                *a -= 1;
+            } else {
+                *a = (*a + 1) % 40;
+            }
+            if *a < 0 {
+                *a += 40;
+            }
+            self.cel = *a / 4;
+        }
+        self.advance();
+    }
+
+    /// The snap (`0x004ebc80` → `0x004e7270` / `0x004e7c30`, id 14).
+    fn snap(&mut self, has_aliens: bool, fish: &[(i32, i32)], rng: &mut MtRand, out: &mut PetOut) {
+        let t = if has_aliens { 250 } else { 260 };
+        let mut best = 100_000_000;
+        let mut target = None;
+        for (i, &(fx, fy)) in fish.iter().enumerate() {
+            if fy <= t {
+                continue;
+            }
+            let dx = (f64::from(fx + 40) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(fy + 40) - (self.y + 40.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best {
+                best = d;
+                target = Some(i);
+            }
+        }
+        let Some(ti) = target else { return };
+        if self.counter > 4 {
+            self.counter = 0;
+            let cx = self.x + 40.0;
+            let tx = f64::from(fish[ti].0 + 40);
+            if cx > tx {
+                if self.vx > -5.0 {
+                    self.vx -= 1.8;
+                }
+            } else if cx < tx && self.vx < 5.0 {
+                self.vx += 1.8;
+            }
+        }
+        let s = if has_aliens { 260 } else { 270 };
+        let cx = self.x + 40.0;
+        for (i, &(fx, fy)) in fish.iter().enumerate() {
+            let (fxf, low) = (f64::from(fx), fy > s);
+            if fxf < cx && cx < fxf + 80.0 && low && self.shell == 5 {
+                let vy = if rng.next_u31() & 1 == 0 {
+                    -20.0
+                } else {
+                    -30.0
+                };
+                out.flings.push((i, vy));
+            }
+            if fxf - 10.0 < cx && cx < fxf + 90.0 && low && self.shell == 0 {
+                self.shell = 20;
+            }
+        }
     }
 
     /// vx steps 0.1 toward the target, both tests in sequence, no snap
