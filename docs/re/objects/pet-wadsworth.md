@@ -74,6 +74,8 @@ Right after `PreUpdate`, if `0x005e89d0 ≠ 0`, the fish's `+0x229` byte is set 
 
 So a sheltered guppy jumps up to 5 px per tick toward him, regardless of its own speed, and doesn't chase food. (Hunger doesn't drop while aliens are present anyway; the shelter only adds the tick after the last alien leaves and before his next update, when the count is still set.)
 
+`static`.
+
 ### `Fish::Draw` (`0x004e4a90`)
 
 If `0x005e89d0 ≠ 0`, `wx − 8 < x < wx + 8`, `wy − 8 < y < wy + 8` (strict, doubles against the published ints), `+0x229` set and stage < 2: the fish **is not drawn**, and its shadow's scale (`shadow+0x168`) is set to 0, hiding the shadow too. Otherwise the shadow scale is set back to 1.0 and the fish draws normally. So guppies vanish once they are within 8 px of his position, and reappear as they drift out.
