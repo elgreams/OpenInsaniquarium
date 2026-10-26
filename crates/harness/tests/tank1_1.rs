@@ -145,6 +145,8 @@ fn full_level_replays_exactly() {
         // The window opens on the "last fish died" dialog.
         board.paused = true;
         board.dialog = Some(insaniquarium_sim::board::Dialog::LastFishDied);
+        // Opened before the capture window: long past its button delay.
+        board.dialog_age = insaniquarium_sim::board::DIALOG_BUTTON_DELAY;
     }
     let mut end_board = board.clone();
     let actual = replay_from(board, &expected, &inferred.inputs).unwrap();
@@ -680,6 +682,15 @@ fn tank_1_5_won() {
     replay_tank_1("tank1-5_full_01", 5);
 }
 
+/// 1-2 replayed from the demo recorded with it (`-record`): every input
+/// comes from the original's own input log, none inferred.
+#[test]
+fn tank_1_2_from_demo() {
+    if captured("tank1-2_demo_01") {
+        replay_level("tank1-2_demo_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
@@ -847,6 +858,13 @@ static BIG_REPLAY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Replay a whole tank-1 level `level` from its first board tick; returns
 /// the number of ticks with a carnivore up.
 fn replay_tank_1(name: &str, level: i32) -> usize {
+    replay_level(name, level, false)
+}
+
+/// [`replay_tank_1`], with the inputs taken from the demo recorded in the
+/// same session (`traces/demos/<name>.dmo`) instead of inferred from the
+/// capture.
+fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
@@ -872,6 +890,12 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
         .unwrap()
         .tick;
     let raw = window(&full, from, to);
+    // The demo's tick basis (`u`, app+0x484) against the board clock.
+    let demo_offset = raw.snapshots[0]
+        .state
+        .get("u")
+        .and_then(|u| u.as_i64())
+        .map(|u| u - i64::from(from));
     // The RNG at every debris tick, then the full capture can go: long
     // captures are several GB once parsed.
     let debris = debris_ticks(&harness::replay::by_board_clock(&raw));
@@ -891,7 +915,26 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
     let mut t = harness::replay::by_board_clock(&raw);
     drop(raw);
     t.header.rng.extend(rng0);
-    let mut inferred = inferred_clicks(&t);
+    let mut inferred = if from_demo {
+        let demo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../traces/demos/{name}.dmo"));
+        let demo = harness::demo::Demo::parse(&std::fs::read(demo_path).unwrap()).unwrap();
+        let last = t.snapshots.last().unwrap().tick;
+        let (mut inputs, unsupported) = harness::replay::demo_board_inputs(
+            &demo,
+            demo_offset.expect("capture has no update count (u)"),
+            from,
+            last,
+        );
+        assert!(
+            unsupported.is_empty(),
+            "demo events the replay can't feed: {unsupported:?}"
+        );
+        inputs.dirty.extend(harness::replay::torn_snapshots(&t));
+        inputs
+    } else {
+        inferred_clicks(&t)
+    };
     inferred.dirty.extend(harness::replay::after_gaps(&t));
     let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();

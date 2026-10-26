@@ -62,3 +62,14 @@ All of them use the button `Click to Continue`.
 The three hints are chosen in order at countdown 276, when not in Virtual Tank mode and the profile hasn't completed the game (`0x00537bb0(tank, level)`). Each sets its board byte when shown, so a hint appears at most once per level. Its board byte is cleared at level start. `traced`: `tank_1_2_music_and_dialogs_match` compares the dialog id every tick (both 1-2 waves). The 2-3 row is `static` (corrected 2026-10-23: it was wrongly listed as 1-3).
 
 A click anywhere other than the button does nothing. The button fires on mouse-up.
+
+## Button delay
+
+Every board dialog's button **ignores clicks for its first 30 updates**. `WinFishApp::DoDialog` (`0x0054b5b0`) calls the new dialog's slot 76 with 30. `MoneyDialog`'s slot 76 (`0x00530a30`) stores it at `+0x154` and disables both buttons. Its Update (slot 22, `0x00530a70`) counts the widget's updates (`+0x28`) and re-enables the buttons once the count reaches the stored value. The dialog updates every tick while the board is paused under it, so the button works from the 31st tick after the dialog opened.
+
+`traced` by `tank_1_2_from_demo` (inputs from the game's own demo):
+- the "DANGER!" dialog opened on update 3214;
+- clicks on its button at updates 3220 and 3241 did nothing;
+- the click at 3262 closed it.
+
+The sim counts board updates with the dialog up (`Board::dialog_age`) and ignores a dismiss below `DIALOG_BUTTON_DELAY`.

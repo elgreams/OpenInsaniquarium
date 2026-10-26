@@ -31,7 +31,7 @@ The DRM launcher passes only `-changedir` to the game, so flags given to Steam n
 |---|---|
 | App (`WinFishApp*`) | `[0x005eb680]` |
 | `mFrameTime` | `app+0x454` (28) |
-| Update counter | `app+0x47c` |
+| Update counter | `app+0x484` (logic updates; `+0x47c` counts frames that slept) |
 | App MTRand | `[app+0x7b0]`; state words `+0x000..+0x9bc`, `mti` `+0x9c0` |
 | Global MTRand | `0x005eb928` |
 
@@ -44,5 +44,5 @@ The DRM launcher passes only `-changedir` to the game, so flags given to Steam n
 - **CE dialogs freeze the bridge.** When CE attaches to a Proton process it shows a modal "Proton target" dialog, and the trial build periodically shows a "Patreon or Trial" nag. Either one blocks CE's main thread, and every MCP call then times out (30 s). Dismiss them (for the nag, click the button whose number the dialog names) before relying on the bridge.
 - **Focus loss pauses the game.** Anything that takes focus (CE's trial nag, CE's window) puts the board into "Game Paused". Captures record `board.paused` and the replay harness trims to the running segment. Scripted clickers should read the pause flag (published by `ce_capture.lua` via `CAPTURE_GPOS`) and click Resume at (312, 258).
 - `ce_capture.lua` returns after the MCP call times out (30 s). That's expected for long captures: the Lua keeps running, and the output file fills to `CAPTURE_TICKS + 1` lines.
-- **Catch-up bursts tear captures.** After a stall the game runs several logic updates back to back (up to the 200 ms cap, `framework/timing.md`), faster than the capture's 5 ms poll. Snapshots inside a burst can miss updates or straddle one (objects read before an update, board fields after). Detect it by the board clock `+0x28` advancing differently from the capture tick (`harness::replay::first_burst`) and don't compare across it. Captures now key on the logic counter `app+0x47c`; older ones used `app+0x484`, which counts frames, not updates.
+- **Catch-up bursts tear captures.** After a stall the game runs several logic updates back to back (up to the 200 ms cap, `framework/timing.md`), faster than the capture's 5 ms poll. Snapshots inside a burst can miss updates or straddle one (objects read before an update, board fields after). Detect it by the board clock `+0x28` advancing differently from the capture tick (`harness::replay::first_burst`) and don't compare across it. Captures key snapshots on `app+0x47c` (frames that slept) and, since 2026-10-26, also record the logic update count `app+0x484` as `u` (`framework/demo-recording.md#tick-basis`). (Earlier notes had the two swapped.) Replays re-key by the board clock, so either works within a level.
 - Long-running Lua loops inside one MCP call can drop the bridge connection ("connection reset"). The Lua usually finishes anyway; write results to a file and read them back.

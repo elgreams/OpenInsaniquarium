@@ -1,6 +1,6 @@
 # Timing & main loop
 
-Status: `confirmed`. CE on the live game (Proton, 2026-10-21): `app+0x454 == 28`, `app+0x47c` advanced 36 in a 1 s window (title screen).
+Status: `confirmed`. CE on the live game (Proton, 2026-10-21): `app+0x454 == 28`, `app+0x47c` advanced 36 in a 1 s window (title screen). (Corrected 2026-10-26: `+0x47c` counts frames that slept; the logic update count is `+0x484`.)
 Binary: inner game PE extracted from `Insaniquarium.exe` (see `docs/re/framework/drm-wrapper.md`). Addresses are inner-PE VAs (image base `0x400000`).
 
 ## Summary
@@ -23,7 +23,8 @@ Binary: inner game PE extracted from `Insaniquarium.exe` (see `docs/re/framework
 | `+0x460` | double | `update_accum`: fractional updates owed to the render loop |
 | `+0x468` | double | Accumulated real ms since the last check, capped at 200.0 (`0x005c3c10`) |
 | `+0x470` | DWORD | Last `timeGetTime()` sample |
-| `+0x47c` | int | `update_count`: total logic ticks executed (incremented in `UpdateApp`) |
+| `+0x47c` | int | frames that slept (`Process` @ `0x004868ab`, before its `Sleep`) |
+| `+0x484` | int | `update_count`: total logic ticks executed (incremented in `UpdateApp` @ `0x004802d3`; the demo's tick basis) |
 | `+0x490` | double | `speed`: playback multiplier, default 1.0; `<= 0` pauses updates |
 | `+0x5b0` | byte | VSync / "wait for vblank" mode flag |
 | `+0x5b4` | int | Display refresh rate (Hz) used in vsync mode |
@@ -45,7 +46,7 @@ Per call (one Windows message-pump iteration):
 4. Demo playback (`+0x509`) runs a separate fast path: while `update_count < demo_target_tick`, it runs updates back-to-back, yielding to the window only once a second.
 
 `UpdateApp` (slot 9 @ `0x004802d0`, overridden by `WinFishApp` slot 9 @ `0x0054bb30`):
-- `update_count += 1` (`+0x47c`)
+- `update_count += 1` (`+0x484`)
 - calls `WidgetManager::UpdateFrame` (the widget tree's `Update()`, where `Board::Update` lives)
 - `WinFishApp` wraps this. It has two compile-time debug toggles (`0x005e9635` slow-mo: 1 update per 4 calls; `0x005e9636` turbo: 100 updates per call). Both bytes are **never written** in the binary, so they're always off in shipped builds. We may expose them as dev options.
 
@@ -62,6 +63,6 @@ Design notes (no claims about the original).
 
 ## Open questions
 
-- Dynamic confirmation: does `update_count` advance at ~35.7/s in-game (CE watch on `app+0x47c`)?
+- Dynamic confirmation: `+0x484` gained 42 and `+0x47c` 36 over 1 s with a 1 s suspension in the middle (2026-10-26), so `+0x484` catches up after a stall; a long in-game rate measurement is still open.
 - Are any per-screen update rates different (e.g. Board skipping ticks while paused or in menus)?
 - Exact semantics of the `+0x509` demo-playback fast path → `demo-recording.md`.

@@ -4,7 +4,7 @@ Status: `confirmed` (tooling). How to get frames from the original that the harn
 
 ## How
 
-`tools/frame_capture.lua` (CE Lua, read-only) waits until the logic counter `app+0x47c` has advanced by `FRAME_EVERY` ticks, then:
+`tools/frame_capture.lua` (CE Lua, read-only) waits until the frame counter `app+0x47c` (frames that slept, about one per update at full speed) has advanced by `FRAME_EVERY` ticks, then:
 
 1. `pause()`: CE suspends the process's threads, so the update counter stops (checked: `0x47c` doesn't move across 600 ms paused).
 2. Writes one snapshot with `tools/ce_capture.lua` (`CAPTURE_TICKS = 1`) to `<out>/NNNNN.state.jsonl`. The capture emits the current tick first, so this works while paused.

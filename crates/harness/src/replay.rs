@@ -1293,9 +1293,19 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                 .unwrap_or_default()
             };
             let before = flashes(prev_snap);
+            // Shots don't age while the board is paused: the same flash
+            // then shows with the same age.
+            let still = s
+                .state
+                .get("board")
+                .and_then(|b| b.get("paused"))
+                .and_then(Value::as_bool)
+                == Some(true);
             for f in flashes(Some(s)).iter().filter(|f| f.age <= 1) {
                 let seen = before.iter().any(|p| {
-                    p.widget_x == f.widget_x && p.widget_y == f.widget_y && p.age + 1 == f.age
+                    p.widget_x == f.widget_x
+                        && p.widget_y == f.widget_y
+                        && (p.age + 1 == f.age || (still && p.age == f.age))
                 });
                 if seen {
                     continue;
@@ -1829,4 +1839,75 @@ pub fn replay_resync_dirty(
 /// Replay a capture with no input.
 pub fn replay_idle(t: &Trace) -> Result<Trace, ReplayError> {
     replay(t, &BTreeMap::new())
+}
+
+/// Board inputs from a demo recorded alongside the capture
+/// (`framework/demo-recording.md#using--record-alongside-a-ce-capture`).
+///
+/// A demo event at tick `T` (the update count `app+0x484`, which captures
+/// record as `"u"`) is handled after update `T`, so it reaches the board
+/// before update `T + 1`. `offset` is `u − tick` for the trace being replayed
+/// (constant within a level when it's keyed by the board clock). The
+/// snapshot at `u == T` may have been read before or after the event, so it
+/// is marked dirty.
+///
+/// - Left-button down (single or double click) → [`Input::Click`]. The board
+///   ignores it while a dialog is up.
+/// - Left-button up → [`Input::DismissDialog`]: dialog buttons fire on
+///   mouse-up, and dismissing with no dialog open does nothing. TODO: check
+///   the dialog's button rect (`dialog.md`); a release off the button
+///   doesn't close the original's dialog.
+/// - Moves, mouse enter/leave and recorded I/O don't touch the board.
+///
+/// Anything else in `from..=to` (right clicks, keys, focus changes) is
+/// returned in `unsupported`, so a replay can refuse it rather than drift.
+pub fn demo_board_inputs(
+    demo: &crate::demo::Demo,
+    offset: i64,
+    from: u32,
+    to: u32,
+) -> (Inferred, Vec<crate::demo::TimedEvent>) {
+    use crate::demo::{DemoEvent, MouseButton};
+    let mut out = Inferred::default();
+    let mut unsupported = Vec::new();
+    for e in &demo.events {
+        let Ok(at) = u32::try_from(i64::from(e.tick) - offset) else {
+            continue;
+        };
+        if !(from..to).contains(&at) {
+            continue;
+        }
+        let input = match e.event {
+            DemoEvent::MouseButton {
+                button: MouseButton::Left,
+                down,
+                x,
+                y,
+                ..
+            } => {
+                if down {
+                    Input::Click { x, y }
+                } else {
+                    Input::DismissDialog
+                }
+            }
+            DemoEvent::MouseMove { .. }
+            | DemoEvent::MouseEnter
+            | DemoEvent::MouseLeave
+            | DemoEvent::RegistryRead(_)
+            | DemoEvent::RegistryWrite(_)
+            | DemoEvent::RegistryQuery(_)
+            | DemoEvent::FileRead(_)
+            | DemoEvent::FileWrite(_) => continue,
+            _ => {
+                unsupported.push(e.clone());
+                continue;
+            }
+        };
+        out.inputs.entry(at + 1).or_default().push(input);
+        if out.dirty.last() != Some(&at) {
+            out.dirty.push(at);
+        }
+    }
+    (out, unsupported)
 }

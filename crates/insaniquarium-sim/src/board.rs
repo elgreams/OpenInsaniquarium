@@ -15,6 +15,11 @@ use crate::shop::{EGG_DONE, Shop, Slot};
 use crate::sound::{Music, Played, Sound};
 
 /// Player input, applied at the start of a tick.
+/// A board dialog's button stays disabled until the dialog has updated this
+/// many times (`MoneyDialog` slot 76 @ `0x00530a30` with 30 from
+/// `WinFishApp::DoDialog`; dialog.md#button-delay).
+pub const DIALOG_BUTTON_DELAY: i32 = 30;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
     /// Mouse-down at board coordinates.
@@ -123,6 +128,9 @@ pub struct Board {
     pub arrow_food_quality: bool,
     /// The modal dialog raised by the board, if any.
     pub dialog: Option<Dialog>,
+    /// Board updates since the dialog opened: its button ignores clicks
+    /// until [`DIALOG_BUTTON_DELAY`] (dialog.md#button-delay).
+    pub dialog_age: i32,
     /// One-time hint bytes `+0x4b0..` (message.rs): each hint dialog or
     /// one-time message is shown once per level.
     pub hints: [bool; HINTS],
@@ -216,6 +224,7 @@ impl Board {
             arrow_buy_egg: false,
             arrow_food_quality: false,
             dialog: None,
+            dialog_age: 0,
             hints: [false; HINTS],
             message: Message::default(),
             guppies: Vec::new(),
@@ -1060,9 +1069,11 @@ impl Board {
     /// `WinFishApp` dialog-button handler (vtable slot 3 @ `0x00552a8a`).
     fn dismiss_dialog(&mut self) {
         // Game over has no "continue": the board stays paused under it.
-        if self.dialog == Some(Dialog::GameOver) {
+        // A new dialog's button is disabled for its first updates.
+        if self.dialog == Some(Dialog::GameOver) || self.dialog_age < DIALOG_BUTTON_DELAY {
             return;
         }
+        self.dialog_age = 0;
         match self.dialog.take() {
             Some(Dialog::LastFishDied) => {
                 self.paused = false;
@@ -1181,6 +1192,9 @@ impl Board {
         // board is paused; the board clock (`+0x28`) does not.
         // The board clock `+0x28` (widget update count) runs while paused.
         self.clock += 1;
+        if self.dialog.is_some() {
+            self.dialog_age += 1;
+        }
         if self.paused {
             self.tick += 1;
             return;
@@ -1222,6 +1236,20 @@ impl Board {
         }
         // After the ambient check: `+0x2c4`, then the wave countdown.
         self.update_waves();
+        // Board::Update (`0x00548e29`, right after the waves and before the
+        // objects update): no fish left → pause and raise the
+        // tutorial's second-chance dialog, or game over. (Coins still on the
+        // board are banked first in the original via `0x0053c2d0`; that only
+        // matters once coin values on-screen are tracked separately.)
+        // TODO(spec): other fish kinds and pets count as fish (`0x005392a0`).
+        if self.guppies.is_empty() && self.carnivores.is_empty() && self.dialog.is_none() {
+            self.paused = true;
+            self.dialog = Some(if self.tutorial {
+                Dialog::LastFishDied
+            } else {
+                Dialog::GameOver
+            });
+        }
         // A dialog raised by Board::Update pauses the board before the
         // objects run this tick (they're separate widgets updated after).
         if self.paused {
@@ -1417,19 +1445,6 @@ impl Board {
         // is later in the widget list), so a message shown this tick counts
         // down once already (captures show 184 on the first tick).
         self.message.update();
-        // Board::Update (`0x00548e29`): no fish left → pause and raise the
-        // tutorial's second-chance dialog, or game over. (Coins still on the
-        // board are banked first in the original via `0x0053c2d0`; that only
-        // matters once coin values on-screen are tracked separately.)
-        // TODO(spec): other fish kinds and pets count as fish (`0x005392a0`).
-        if self.guppies.is_empty() && self.carnivores.is_empty() && self.dialog.is_none() {
-            self.paused = true;
-            self.dialog = Some(if self.tutorial {
-                Dialog::LastFishDied
-            } else {
-                Dialog::GameOver
-            });
-        }
         self.tick += 1;
     }
 }
@@ -1463,6 +1478,12 @@ mod tests {
         let before = b.clock;
         b.step(&[Input::Click { x: 300, y: 200 }]);
         assert_eq!((b.clock, b.money, b.foods.len()), (before + 1, 200, 0));
+        // The button ignores clicks until the dialog has updated 30 times.
+        b.step(&[Input::DismissDialog]);
+        assert!(b.dialog.is_some());
+        while b.dialog_age < DIALOG_BUTTON_DELAY {
+            b.step(&[]);
+        }
         b.step(&[Input::DismissDialog]);
         assert!(b.dialog.is_none() && !b.paused);
         assert_eq!(b.guppies.len(), 1);

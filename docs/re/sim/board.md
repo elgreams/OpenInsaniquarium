@@ -70,6 +70,10 @@ Per logic tick (28 ms, see `framework/timing.md`):
 
 **Paused board** (dialogs, focus loss): the board clock `+0x28` still advances by one per update, and nothing else runs. When `Board::Update` raises a dialog itself (the 1-2 "DANGER!" hint at countdown 276), the objects don't update on that tick either. Confirmed in `tank1-2_full_02`.
 
+**No fish left** (`0x00548e29`, `0x005392a0`) is checked in `Board::Update` right after the wave countdown, so it also comes before the objects update. When the last guppy dies (eaten or starved) during tick *n*'s object updates, tick *n + 1* still runs the board's own part (ambient draw, wave countdown − 1). Then it raises GAME OVER (dialog 0x11, or 0x10 in the tutorial) and pauses, and the objects don't run. `traced`:
+- `tank_1_2_from_demo`: the last guppy eaten at update 7012, the dialog at 7013 with the countdown one lower and one more draw;
+- `tank_1_4_from_start`.
+
 Removal during iteration is safe: `WidgetContainer` keeps the iteration cursor in the container (`+0x18/+0x1c`) plus a "removed current" flag (`+0x14`).
 
 `traced` (paused-board behaviour and the dialog-raising tick are covered by the 1-2 replays).

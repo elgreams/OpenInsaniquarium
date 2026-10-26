@@ -267,9 +267,11 @@ fn decode_event(
             let down = bits.read(1).ok_or_else(trunc)? == 1;
             let btn = bits.read_signed(3).ok_or_else(trunc)?;
             let (button, double_click) = match btn {
+                // The window procedure's codes (`0x004846c0`): left 1,
+                // left double-click 2, right −1, right double-click −2.
                 1 => (MouseButton::Left, false),
-                -1 => (MouseButton::Left, true),
-                2 => (MouseButton::Right, false),
+                2 => (MouseButton::Left, true),
+                -1 => (MouseButton::Right, false),
                 -2 => (MouseButton::Right, true),
                 _ => (MouseButton::Middle, false),
             };

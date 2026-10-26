@@ -59,7 +59,7 @@ Multi-byte payloads are written with `WriteByte` (`0x00413020`), which places 8 
 | Form | cmd | Meaning | Payload |
 |---|---|---|---|
 | short | 0 | Mouse move (relative) | dx: 6 bits signed, dy: 6 bits signed. Used when both deltas are in −32..31 |
-| short | 1 | Mouse button | down: 1 bit, button: 3 bits signed (1=left, 2=right, 3=middle, −1/−2 = left/right double-click). Position is the last mouse position |
+| short | 1 | Mouse button | down: 1 bit, button: 3 bits signed (1 = left, 2 = left double-click, −1 = right, −2 = right double-click, 3 = middle). Position is the last mouse position |
 | long | 0x00 | Mouse move (absolute) | x: 12 bits, y: 12 bits |
 | long | 0x01 | Activate/focus | 1 bit |
 | long | 0x02 | Minimized | bool (8 bits) |
@@ -82,7 +82,7 @@ Multi-byte payloads are written with `WriteByte` (`0x00413020`), which places 8 
 
 Verified against the recording: the decoded stream covers 34862 of 34864 bits, the final event lands on tick 11420 (= header total), and it contains 190 absolute moves plus 380 button events (190 clicks), matching the script. So **all game I/O (registry, profile/save files, properties) is in the stream**, and playback is hermetic.
 
-The short-form mouse button `button` encoding comes from the window message (`0x201`…`0x208`): LBUTTONDOWN→(1, down), LBUTTONUP→(1, up), LBUTTONDBLCLK→(−1, down), RBUTTONDOWN→(2, down), RBUTTONUP→(2, up), RBUTTONDBLCLK→(−2, down), MBUTTONDOWN→(3, down), MBUTTONUP→(3, up).
+The short-form mouse button `button` encoding comes from the window message (`0x201`…`0x208`, window procedure `0x004846c0`): LBUTTONDOWN→(1, down), LBUTTONUP→(1, up), LBUTTONDBLCLK→(2, down), RBUTTONDOWN→(−1, down), RBUTTONUP→(−1, up), RBUTTONDBLCLK→(−2, down), MBUTTONDOWN→(3, down), MBUTTONUP→(3, up). `static`, plus `confirmed` by a recording: a fast double click shows as (1, down), (1, up), (2, down), (1, up). (An earlier version of this table swapped 2 and −1.) In playback a down with a negative code goes to the right-button handler, any other code to the left/middle one.
 
 ### Playback timing
 
@@ -115,10 +115,35 @@ So the original can't replay its own demos. **Consequences for us:**
   - pet picks (67,87), (67,333), (67,413), then Continue (318,263);
   - the guppy button (47,33): the purchase shows in the capture with money 200 → 100 and a new guppy at y 38.5;
   - a coin click (50,323), money +15.
-- **The two counters differ.** The demo is keyed on `app+0x484` (frames) and the capture on `app+0x47c` (logic updates). Here they were offset by about 10 ticks on the pet screen and 7 in the tank (13523 vs 13530 for the guppy purchase). The offset changes when frames are skipped. A replay should anchor the two at one known event per screen, e.g. the first purchase, and use the capture's board clock within a level.
+- **The two counters differ.** The demo is keyed on `app+0x484` (logic updates) and older captures on `app+0x47c` (frames that slept; see "Tick basis" below). Here they were offset by about 10 ticks on the pet screen and 7 in the tank (13523 vs 13530 for the guppy purchase). The offset changes when frames are skipped. A replay should anchor the two at one known event per screen, e.g. the first purchase, and use the capture's board clock within a level.
 - **Food from Zorf** (two pellets with no click near them) shows up in the capture only. The demo doesn't list game effects, only input, which is what makes it useful: it **removes the guesswork of inferring clicks from state changes**.
 
 So the plan for new recordings is to run with `-record` and a CE capture, and replay from the demo's inputs.
+
+### Tick basis (`traced`, 2026-10-26)
+
+The two counters were swapped in the earlier notes. In `SexyAppBase`:
+- **`app+0x484` counts logic updates.** `UpdateApp` @ `0x004802d0` adds 1 to it.
+- **`app+0x47c` counts frames that slept.** `Process` adds 1 to it at `0x004868ab` before a `Sleep`.
+
+Measured over 1 s with the process suspended for 1 s in the middle: +42 for `0x484` (it caught up), +36 for `0x47c`. The demo stamps events with `0x484` (`WriteDemoTimingHeader` @ `0x004835a0`).
+
+`ce_capture.lua` now also records `0x484` per snapshot as `"u"`.
+- In `sync_01` and `tank1-2_demo_01`, every demo click's tick equals the capture's `u` at that click.
+- Within a level, `u − board clock` is constant (1740 in `tank1-2_demo_01`), so the replay maps a demo tick to the board clock directly.
+- An event at demo tick *T* is handled after update *T*: a food click at *T* shows its pellet (already fallen once) in the snapshot at *T + 1*. So the replay feeds it before update *T + 1*. The snapshot at *T* may have been read before or after the event, so it's masked.
+
+`harness::replay::demo_board_inputs` does this:
+- a left-button down becomes a board click;
+- a left-button up becomes a dialog dismiss (dialog buttons fire on mouse-up; with no dialog it does nothing);
+- moves and recorded I/O are dropped;
+- anything else is reported as unsupported.
+
+`tank_1_2_from_demo` replays a whole 1-2 session (`tank1-2_demo_01`, 5300 ticks, 416 inputs) to game over from the demo's inputs alone, with nothing inferred. It found two behaviours the inference had hidden:
+- the dialog button delay (`dialog.md#button-delay`);
+- the order of the game-over check (`sim/board.md`).
+
+TODO: the dialog button's rect isn't checked yet (a release off the button counts as a dismiss).
 
 The parser used to fail on the last header when the stream ended inside it; a truncated final header is now treated as padding.
 

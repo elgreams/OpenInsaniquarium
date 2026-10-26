@@ -13,9 +13,10 @@
 local APP_PTR      = 0x5eb680
 local GLOBAL_RAND  = 0x5eb928
 local OFF = {
-  -- app+0x47c = logic updates (one per UpdateApp tick; timing.md). +0x484
-  -- is a frame counter and can skip updates when the game catches up.
-  update_count = 0x47c, board = 0x730, app_rand = 0x7b0,
+  -- app+0x47c counts frames that slept (Process), app+0x484 counts logic
+  -- updates (UpdateApp; framework/timing.md). Snapshots are keyed on 0x47c
+  -- (one read per frame) and record 0x484 as "u", the demo's tick basis.
+  update_count = 0x47c, updates = 0x484, board = 0x730, app_rand = 0x7b0,
   money = 0x3f0,
   obj_type = 0x8c,
 }
@@ -277,8 +278,8 @@ while captured < max_ticks and polls < max_ticks * 40 do
     if board and board ~= 0 then
       board_json = string.format('{"money":%s,"clock":%s,"samples":"%s"}', tostring(i32(board + OFF.money)), bclock, samples)
     end
-    emit(string.format('{"tick":%d,"board":%s,"pres":%s,"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
-      t, board_json, presentation(app), table.concat(counts, ","), table.concat(fish, ","),
+    emit(string.format('{"tick":%d,"u":%d,"board":%s,"pres":%s,"counts":{%s},"guppies":[%s],"raw":{%s},"rng_mti":{"app":%d,"global":%d}}',
+      t, i32(app + OFF.updates), board_json, presentation(app), table.concat(counts, ","), table.concat(fish, ","),
       table.concat(raws, ","), ami2 or -1, gmi2 or -1))
     captured = captured + 1
   end
