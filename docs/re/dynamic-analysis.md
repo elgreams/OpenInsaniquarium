@@ -77,6 +77,8 @@ Keep each recording **short and focused on one ability**: one capture of ~2800 t
 
 ### Common hiccups
 
+- **Guppies starve in the first seconds:** the capture was started *after* the start click. The `dofile` call blocks the MCP for 30 s, and nobody feeds the tank meanwhile (1-2's guppies start at hunger ~450–550 and starve in ~16 s). Always start the capture on the Instructions screen (step 4), then click start and launch autoplay **in the same Bash call** (step 5). Size `CAPTURE_TICKS` for the ~1000 help-screen ticks before the level (1-2's first wave comes ~1750 board ticks in: use ~4200 to include it).
+
 - **CE "not responding" / every MCP call times out:** a capture is running. `ce_capture.lua` holds CE's Lua engine for its whole length, so CE can't answer until it finishes. Keep captures short (≤ 3000 ticks), and wait for the file to reach `CAPTURE_TICKS + 1` lines before the next CE call. To write memory meanwhile, write `/proc/<pid>/mem` as root (`sudo python3`, see `/tmp`-style helper: seek to the address, write a little-endian int): same effect as CE, no Lua needed.
 - **A second `dofile(ce_capture.lua)` while one runs** queues behind it: the second capture starts only when the first ends. Don't overlap them.
 - **No pets in the tank after starting:** the chosen bytes were written before entering Adventure (cleared) or on a previous level. Write them on the Instructions screen, just before the start click.

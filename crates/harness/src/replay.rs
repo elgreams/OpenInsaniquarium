@@ -2085,6 +2085,21 @@ pub fn replay_resync_global(
         {
             board.money = m as i32;
         }
+        // The wave countdown pushed by the recorder to bring a wave forward
+        // (`docs/re/dynamic-analysis.md`): it only ever counts down by one,
+        // or jumps up to a new wave's start. A drop of more than 100 in one
+        // tick is the recorder's write. Adopt it.
+        if let Some(c) = t
+            .snapshots
+            .iter()
+            .find(|s| s.tick == board.tick)
+            .and_then(|s| s.state.get("waves"))
+            .and_then(|w| w.get("countdown"))
+            .and_then(Value::as_i64)
+            && i64::from(board.wave_countdown) - c > 100
+        {
+            board.wave_countdown = c as i32;
+        }
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's
         // RNG already includes that click's draws.

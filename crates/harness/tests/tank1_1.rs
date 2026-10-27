@@ -805,6 +805,16 @@ fn nostradamus_sneeze_roll() {
     }
 }
 
+/// Stanley (`stanley_01`): 1-2 with him alone, the wave countdown pushed
+/// to 320, the alien left to him (`--no-shoot`): he grows, throws a ball
+/// every 101 ticks, the balls hit and bounce (pet-stanley.md).
+#[test]
+fn stanley_balls() {
+    if captured("stanley_01") {
+        replay_level("stanley_01", 2, true);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).
@@ -970,7 +980,7 @@ fn pet_screen_matches_original() {
 /// Captures whose pets decide on the global stream (Nostradamus's sneeze):
 /// their replays re-sync it every tick.
 fn needs_global(name: &str) -> bool {
-    name.starts_with("nostradamus")
+    name.starts_with("nostradamus") || name.starts_with("stanley")
 }
 
 fn captured(name: &str) -> bool {
@@ -1078,12 +1088,16 @@ fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> 
         .filter_map(|ct| Some((ct, resync_orig.get(&tick_of(ct)?)?.clone())))
         .collect();
     drop(resync_orig);
+    // Keyed like `by_board_clock`: first tick + (clock − first clock).
+    let clock = |s: &harness::trace::Snapshot| s.state.get("board")?.get("clock")?.as_i64();
+    let base = raw.snapshots.first().and_then(clock).unwrap_or(0);
+    let tick0 = i64::from(raw.snapshots[0].tick);
     let global: std::collections::BTreeMap<u32, _> = raw
         .snapshots
         .iter()
         .filter_map(|s| {
-            let ct = s.state.get("board")?.get("clock")?.as_i64()? as u32;
-            Some((ct, global_orig.get(&s.tick)?.clone()))
+            let t = tick0 + clock(s)? - base;
+            Some((t as u32, global_orig.get(&s.tick)?.clone()))
         })
         .collect();
     drop(global_orig);

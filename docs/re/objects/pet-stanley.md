@@ -18,6 +18,8 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-22 differen
 
 Confidence: everything below is `static` (read from the code; nothing captured yet).
 
+Capture: `stanley_01` (1-2, him alone, the wave countdown pushed to 320 with Cheat Engine, the alien left to him), replayed exactly from the game's own demo: the grow counter 0→10, three balls (colour from the global stream), hits for 15 (50 → 35 → 20 → 5) and bounces. The guppies died before a 4th hit, so the ball kill and the missile shoot-down (kinds 0/1, later tanks) are not covered. `traced` where a section says so, else `static`.
+
 ## Fields used by id 22
 
 As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
@@ -32,7 +34,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
 
 Divisor `+0x180` stays `Fish::Init`'s draw; bounds are a guppy's (floor 370, min x 10, ceiling 95, max x 540). The board's per-id pet counter for id 22 is `board+0x144 + 4·22 = board+0x19c` (`board.md#object-lists`); no reader of it was looked for.
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`) (`+0x220`, `+0x224`, `+0x23c`, `+0x260`, `+0x1c8`).
 
 ## Construction
 
@@ -45,7 +47,7 @@ Divisor `+0x180` stays `Fish::Init`'s draw; bounds are a guppy's (floor 370, min
 
 So adding Stanley costs **9 app draws**, as Itchy; made by Presto (`pet-presto.md#the-change`), 7.
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`).
 
 ## Update (`0x004f7ad0`), id 22
 
@@ -59,7 +61,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 App-stream RNG: the re-roll only. The ability draws from the **global** stream (`Sexy::Rand`, `0x0040f9e0`), at most one draw per tick (a shot and a throw can't happen in the same tick, below).
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`).
 
 ## Abilities (slot 81, `0x004e5900`, id 22)
 
@@ -75,7 +77,7 @@ Each tick, in order:
 
 So with an alien in, a ball goes every 101 ticks (2.8 s at 28 ms/tick), as long as some alien has no ball on it. With one alien that means a new ball only after the last one hit (or left the tank). A shoot-down restarts the 101-tick clock.
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`) for the grow counter, the throw clock and the target. The shoot-down step is `static`.
 
 ## The ball (`Missle`, kind 2)
 
@@ -131,7 +133,7 @@ So a thrown ball starts at rest, accelerates by 0.2 per tick up to 1.8 (4.5 px p
 
 If the alien dies some other way while a ball is still on it, the death releases its `+0x98` missile (slot 76): the ball vanishes. A bounced ball has already been cleared from `+0x98`, so it keeps falling.
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`) for the throw, steering, the 15-HP hit, bounce, gravity, leaving the tank and the countdown freeze. The kill inside the ball's update and the Bilaterus bands are `static`.
 
 ## Shooting down missiles (`0x004e55d0`)
 
@@ -173,7 +175,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`; a turn reachin
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` by `stanley_balls` (`stanley_01`).
 
 ## Drawing (`0x004dfac0`)
 

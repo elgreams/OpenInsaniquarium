@@ -64,6 +64,8 @@ PET_DIALOG = 0x1f
 # Feed only when the hungriest guppy is below N (`--hunger N`, default 450):
 # low values keep guppies hungry enough to drink Nostradamus's potions.
 HUNGER = int(sys.argv[sys.argv.index("--hunger") + 1]) if "--hunger" in sys.argv else 450
+# Leave aliens alone (`--no-shoot`): pets that fight them (Stanley) do it.
+NO_SHOOT = "--no-shoot" in sys.argv
 
 
 def window():
@@ -187,7 +189,7 @@ def main():
             for _ in range(3):
                 click(win, min(max(ax + 80, 10), 630), min(max(ay + 40, 70), 470))
                 time.sleep(0.3)
-        elif st["aliens"]:
+        elif st["aliens"] and not NO_SHOOT:
             # Shoot the alien: click its centre (160x160 widget).
             # A burst of quick clicks (one hit lands per 10-tick cooldown;
             # alien-sylvester.md#hits), then re-read its position.
