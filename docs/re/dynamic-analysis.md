@@ -61,3 +61,5 @@ How `zoo_a_01` and `zoo_b_01` were made (2026-10-26). RE tooling only.
 6. Quit through the menu, so the game writes `popcap.dmo`. Save it as `traces/demos/<name>.dmo` and the capture as `traces/original/<name>.trace.jsonl.zst`. Restore the save.
 
 Replay with `replay_level(name, level, true)` in `tank1_1.rs`, which takes the inputs from the demo.
+
+**Long sessions in several capture chunks:** each `ce_capture.lua` run writes its own header with the full RNG state at its start. When joining chunks into one trace, keep each later chunk's header as a snapshot line carrying `"rng"` (or store the chunks as separate traces). Without it, a chunk after a hole can't be replayed, because the RNG can't be walked across ticks nobody captured. `zoo_e_01` lost its later chunks' headers, so only its first chunk (ticks 2538–11155) is replayable.

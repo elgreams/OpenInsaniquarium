@@ -12,7 +12,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-17 differen
 - Guppy removal: Fish slot 87 @ `0x004df0b0` (vtable `0x00597d54` + `0x15c`); chomp sound `0x00538560`
 - Animation (slot 89) @ `0x004dfc50`, id-0x11 branch; draw body `0x004f8610` case 0x11 → `0x004df810`
 
-Confidence: `static` throughout. No capture with Gash exists yet; the first one should be a level with Gash, a wave and a few guppies, long enough for one snack (≥ 3121 calm ticks).
+Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Gash from the game's own demo (`zoo_e_01`, ~8,600 ticks, 3 waves he fought): construction, the calm clock, the hunt and the alien bite are `traced`. **The guppy snack is `static`**: it happened only in a later capture chunk that can't be replayed (`dynamic-analysis.md`). Drawing and Bilaterus stay `static`.
 
 ## Fields used by id 17
 
@@ -26,7 +26,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 
 Divisor `+0x180` stays the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a guppy's (floor 370, max x 540).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Construction
 
@@ -39,7 +39,7 @@ Divisor `+0x180` stays the `Fish::Init` draw (2.0, 1.8 or 1.6); bounds are a gup
 
 So adding Gash costs **9 app draws**, as Itchy.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Update (`0x004f7ad0`), id 17
 
@@ -55,7 +55,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`); `0x004f7a
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are unchanged and happen whether he hunts or not.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Target (`0x004e5fc0`, id 0x11)
 
@@ -65,7 +65,7 @@ Best = 10000; distances are computed as for Itchy: `dx = trunc((cx_t) − (x + 4
 - **Otherwise**, only if `clock > threshold` and `+0xa0` is non-empty: walk the guppies `+0xa0` in list order; a guppy is a candidate if its `+0xac < 0` (normal live state), centre `wx + 40, wy + 40`. Any stage qualifies (small to king), and Wadsworth's shelter (`pet-wadsworth.md`) is **not** checked: a sheltered guppy can be eaten (only between waves, when the shelter is off anyway).
 - Otherwise no target.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Chase (`0x004e02d0`, id 0x11)
 
@@ -79,13 +79,13 @@ Best = 10000; distances are computed as for Itchy: `dx = trunc((cx_t) − (x + 4
 
 So his top horizontal speed is 9/div against aliens (Itchy: 10/div) and 8/div against guppies.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Attack (`0x004fe740`, id 0x11)
 
 "Near" below means `|(x + 40) − cx| < 30` and `|(y + 40) − cy| < 30`; "contact" means the same with **20** (doubles, strict; `cx, cy` the target centres above).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ### With an alien or Bilaterus present
 
@@ -101,7 +101,7 @@ So his top horizontal speed is 9/div against aliens (Itchy: 10/div) and 8/div ag
 
 So a 130-HP kind-3 alien that he keeps in contact dies in 44 ticks (1.2 s).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ### Without aliens (guppy snack)
 
@@ -118,7 +118,7 @@ The guppy eaten is the first one **in list order** that he touches, not necessar
 
 RNG in the attack: the chomp draw only (plus whatever an alien death draws).
 
-`static`.
+`static` (the snack in `zoo_e_01` is in a chunk that can't be replayed).
 
 ## Animation (`0x004dfc50`), id 17
 
@@ -129,7 +129,7 @@ Turning is Itchy's (turn ±20 on a vx sign change, cel `9 − turn/2` / `turn/2 
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Drawing (`0x004df810`)
 
@@ -147,6 +147,6 @@ There are no separate alien rows. A type-0 shadow follows him.
 
 ## Open questions
 
-- Everything here is static; capture a level with Gash, one wave and guppies over ≥ 3121 calm ticks.
+- The guppy snack still needs a replayable capture (≥ 3121 calm ticks in one capture chunk, or a chunk with its own RNG header).
 - The Bilaterus side (`+0xf4` segment → `+0x158` owner, `0x004fb4c0`) isn't specified anywhere yet; only its cost to the RNG matters for a replay and that is not read here.
 - Whether eating a guppy can end the level (empty tank) is the board's normal empty-tank check, not Gash's code.

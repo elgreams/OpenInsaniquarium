@@ -732,6 +732,18 @@ fn zoo_d_blip_rhubarb_nimbus() {
     }
 }
 
+/// Pet zoo E (`zoo_e_01`): 1-2 with Shrapnel, Gash and Angie: bombs make
+/// corpses for Angie, Gash bites aliens and (once his clock fills) swallows
+/// a guppy; four waves, inputs from the demo (`pet-gash.md`,
+/// `pet-angie.md`). Gash's clock was pushed forward with Cheat Engine to
+/// get a snack inside the capture; the replay adopts those writes.
+#[test]
+fn zoo_e_shrapnel_gash_angie() {
+    if captured("zoo_e_01") {
+        replay_level("zoo_e_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
@@ -906,6 +918,14 @@ fn replay_tank_1(name: &str, level: i32) -> usize {
 /// same session (`traces/demos/<name>.dmo`) instead of inferred from the
 /// capture.
 fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
+    replay_level_chunk(name, level, from_demo, 0)
+}
+
+/// [`replay_level`] for the `chunk`-th run of a capture made of several
+/// chunks joined together (chunks are separated by holes in the board
+/// clock); chunk 0 starts at the level's first tick, later chunks start
+/// mid-level from their first snapshot.
+fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
@@ -923,19 +943,33 @@ fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
     // screen) to the last one. Keyed on the board clock, like the full 1-2
     // replay. A capture holding several levels replays the last one (the
     // board clock restarts at 1).
-    let i = full
+    let mut i = full
         .snapshots
         .iter()
         .rposition(|s| s.state["board"]["clock"].as_i64() == Some(1))
         .or_else(|| full.snapshots.iter().position(board_of))
         .unwrap();
+    for _ in 0..chunk {
+        let c = |k: usize| full.snapshots[k].state["board"]["clock"].as_i64();
+        i = (i + 1..full.snapshots.len())
+            .find(|&k| c(k).zip(c(k - 1)).is_some_and(|(b, a)| b - a > 50))
+            .expect("no such chunk");
+    }
     let from = full.snapshots[i].tick;
+    // Up to the last board tick, or the first hole between joined capture
+    // chunks (the board clock jumping by more than 50: nothing the replay
+    // could follow is in it).
+    let clock_of = |s: &harness::trace::Snapshot| s.state["board"]["clock"].as_i64();
     let to = full.snapshots[i..]
-        .iter()
-        .take_while(|s| board_of(s))
+        .windows(2)
+        .take_while(|w| {
+            board_of(&w[1])
+                && clock_of(&w[0])
+                    .zip(clock_of(&w[1]))
+                    .is_none_or(|(a, b)| b - a <= 50)
+        })
         .last()
-        .unwrap()
-        .tick;
+        .map_or(full.snapshots[i].tick, |w| w[1].tick);
     let raw = window(&full, from, to);
     // The demo's tick basis (`u`, app+0x484) against the board clock.
     let demo_offset = raw.snapshots[0]

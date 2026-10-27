@@ -471,7 +471,7 @@ impl Board {
         // With aliens present, a click on a coin collects it, and is also a
         // shot if it lands inside an alien (`alien-sylvester.md#41`).
         if !self.aliens.is_empty() {
-            if let Some(i) = self.coins.iter().rposition(|c| c.hit(x, y)) {
+            if let Some(i) = self.coins.iter().rposition(|c| !c.collected && c.hit(x, y)) {
                 if self.aliens.iter().any(|a| a.contains(x, y)) {
                     self.shoot(x, y);
                 }
@@ -486,7 +486,11 @@ impl Board {
             return self.shoot(x, y);
         }
         // Pearls are the front-most widgets (pet-niko.md#the-pearl).
-        if let Some(i) = self.pearls.iter().rposition(|c| c.hit(x, y)) {
+        if let Some(i) = self
+            .pearls
+            .iter()
+            .rposition(|c| !c.collected && c.hit(x, y))
+        {
             if !self.pearls[i].collected {
                 self.pearls[i].collect();
                 for p in self.pets.iter_mut().filter(|p| p.id == NIKO) {
@@ -497,9 +501,12 @@ impl Board {
             return ClickResult::CoinCollected;
         }
         // Widgets on top get the click first: coins are in front of fish
-        // and food (z-order), last-added on top.
+        // and food (z-order), last-added on top. A collected coin no longer
+        // takes clicks (`0x004e51f0` clears its widget's mouse flag `+0x55`;
+        // `zoo_e_01` tick 5383: a click on a flying coin fed the guppy
+        // under it).
         // TODO(spec): pets, fish clicks.
-        if let Some(i) = self.coins.iter().rposition(|c| c.hit(x, y)) {
+        if let Some(i) = self.coins.iter().rposition(|c| !c.collected && c.hit(x, y)) {
             let c = &mut self.coins[i];
             if !c.collected {
                 c.collect();

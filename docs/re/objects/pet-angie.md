@@ -10,7 +10,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-18 differen
 - Re-creation: guppy `0x00546fc0` (→ 4-argument `Fish::Fish` @ `0x004eef90`), Oscar `0x00544d80`, Ultravore `0x00544fe0`, Gekko `0x005451c0`, Penta `0x00545360`, Grubber `0x005454f0`, Breeder `0x00547270`
 - Animation (slot 89) @ `0x004dfc50`, id-0x12 branch; draw body `0x004f8610` case 0x12 → `0x004df590`
 
-Confidence: `static` throughout. No capture with Angie exists yet; the first one should be a level with Angie where a guppy starves (or a Shrapnel bomb kills one).
+Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Shrapnel, Gash and Angie from the game's own demo (`zoo_e_01`, its first ~8,600 ticks: Shrapnel's bombs kill guppies and Angie revives them, 4 revivals) and compares the pets, guppies, corpses, sounds and the app RNG every tick. Drawing and the non-guppy revivals stay `static`.
 
 ## Fields used by id 18
 
@@ -24,13 +24,13 @@ On the corpse (`DeadFish`, `fish-guppy.md#dead-fish`): `+0x190` turn/revival cou
 
 Divisor and bounds are `Fish::Init`'s (guppy floor 370, max x 540).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Construction
 
 `Board::AddPet(18, -1, -1)` (`0x00544a90`), app MTRand: 2 position draws (`% 265 + 105`, `% 520 + 20`), `Fish::Init`'s 6 (facing, divisor, hunger, growth, mode, coin interval), no id-18 ctor branch, then a type-0 shadow (1 draw, `% 5`). **9 app draws**, as Itchy.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Update (`0x004f7ad0`), id 18
 
@@ -42,7 +42,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are unchanged.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Target (`0x004e5fc0`, id 0x12)
 
@@ -50,7 +50,7 @@ Best = 10000. Walk `+0x98` in list order; a corpse is a candidate if its life `+
 
 Corpse life drops by 1 every tick while life > 105, and below that only while the corpse is on the floor (y > 370; 300 for kind 6, 365 for kinds 8/9). So a corpse is a valid target for its first 29 ticks, and longer if it is still sinking.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Chase (`0x004e02d0`, id 0x12)
 
@@ -61,7 +61,7 @@ Corpse life drops by 1 every tick while life > 105, and below that only while th
    - Speed bucket `+0x1bc += 1` while below 5.
 3. If there is a target, **attack** (every tick).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Attack (`0x004fe740`, id 0x12): starting a revival
 
@@ -72,7 +72,7 @@ Walk `+0x98` in list order. A corpse is touched when `|(x + 40) − (d.wx + c)| 
 
 No RNG, no sound here.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## The revival (`DeadFish::Update` `0x004f64e0`)
 
@@ -100,7 +100,7 @@ The corpse's update returns right after.
 
 RNG in Angie's own code: none (only the re-roll).
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Animation (`0x004dfc50`), id 18
 
@@ -111,7 +111,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`). When not turn
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_e_shrapnel_gash_angie`).
 
 ## Drawing (`0x004df590`)
 
