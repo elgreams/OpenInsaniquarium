@@ -1897,6 +1897,25 @@ pub fn replay_resync_dirty(
         }
         board.step(step_inputs);
         board.artifacts = Default::default();
+        // A fish pet's timer written by the recorder (Cheat Engine), to get
+        // to an ability inside one capture: the capture's `+0x220` jumps by
+        // more than 100 in one tick, which no pet does on its own. Adopt it.
+        // (The decoded trace keeps the pets as `fish_pets` JSON, `coin_t`.)
+        if let Some(Value::Array(pets)) = t
+            .snapshots
+            .iter()
+            .find(|s| s.tick == board.tick)
+            .and_then(|s| s.state.get("fish_pets"))
+        {
+            for (f, p) in board.fish_pets.iter_mut().zip(pets) {
+                if let Some(c) = p.get("coin_t").and_then(Value::as_i64) {
+                    let c = c as i32;
+                    if c - f.coin_timer > 100 {
+                        f.coin_timer = c;
+                    }
+                }
+            }
+        }
         // Money written by the recorder (Cheat Engine), not by the game: the
         // capture's money jumps up to a round 1000s value with nothing
         // banked. Adopt it so the replay can carry on (RE tooling only).

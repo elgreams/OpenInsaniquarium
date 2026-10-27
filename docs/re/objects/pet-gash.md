@@ -12,7 +12,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-17 differen
 - Guppy removal: Fish slot 87 @ `0x004df0b0` (vtable `0x00597d54` + `0x15c`); chomp sound `0x00538560`
 - Animation (slot 89) @ `0x004dfc50`, id-0x11 branch; draw body `0x004f8610` case 0x11 → `0x004df810`
 
-Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Gash from the game's own demo (`zoo_e_01`, ~8,600 ticks, 3 waves he fought): construction, the calm clock, the hunt and the alien bite are `traced`. **The guppy snack is `static`**: it happened only in a later capture chunk that can't be replayed (`dynamic-analysis.md`). Drawing and Bilaterus stay `static`.
+Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Gash from the game's own demo (`zoo_e_01`, ~8,600 ticks, 3 waves he fought): construction, the calm clock, the hunt and the alien bite are `traced`. The guppy snack is `traced` by `gash_snack` (`gash_snack_01`). Drawing and Bilaterus stay `static`.
 
 ## Fields used by id 17
 
@@ -118,7 +118,7 @@ The guppy eaten is the first one **in list order** that he touches, not necessar
 
 RNG in the attack: the chomp draw only (plus whatever an alien death draws).
 
-`static` (the snack in `zoo_e_01` is in a chunk that can't be replayed).
+`traced` (`gash_snack`: `gash_snack_01`, his clock pushed to 1450 with Cheat Engine; the snack ~170 ticks later, the guppy removed with no corpse and the chomp draw, replayed exactly).
 
 ## Animation (`0x004dfc50`), id 17
 
@@ -147,6 +147,5 @@ There are no separate alien rows. A type-0 shadow follows him.
 
 ## Open questions
 
-- The guppy snack still needs a replayable capture (≥ 3121 calm ticks in one capture chunk, or a chunk with its own RNG header).
 - The Bilaterus side (`+0xf4` segment → `+0x158` owner, `0x004fb4c0`) isn't specified anywhere yet; only its cost to the RNG matters for a replay and that is not read here.
 - Whether eating a guppy can end the level (empty tank) is the board's normal empty-tank check, not Gash's code.

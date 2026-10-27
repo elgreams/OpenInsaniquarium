@@ -744,6 +744,16 @@ fn zoo_e_shrapnel_gash_angie() {
     }
 }
 
+/// Gash's guppy snack (`gash_snack_01`): 1-2 with Gash alone; his hunger
+/// clock pushed to 1450 with Cheat Engine early on, so he swallows a guppy
+/// ~170 ticks later inside one capture (`pet-gash.md#without-aliens-guppy-snack`).
+#[test]
+fn gash_snack() {
+    if captured("gash_snack_01") {
+        replay_level("gash_snack_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are
