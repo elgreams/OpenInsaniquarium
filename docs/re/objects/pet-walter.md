@@ -127,7 +127,7 @@ No RNG.
    | everything else: aliens `0x16`, Bilaterus `0x17`, OtherTypePets `0x14`, Penta `0x08`, Grubber `0x09`, Breeder `0x0a`, coins, food, missiles, shadows, shots | no | |
 
    For each candidate, the **hit test** `0x004e0ed0(s, k)` with `s` = +1 (right) or −1 (left):
-   1. Skip if the object's push timer `+0x20c` > 0 (already knocked), or if it is a FishTypePet with the Presto flag `+0x230` and its raw `+0x28` < 30 (the per-object tick counter Blip's spec also meets, `pet-blip.md`; read here as "changed by Presto under 30 ticks ago").
+   1. Skip if the object's push timer `+0x20c` > 0 (already knocked), or if it is a FishTypePet with the Presto flag `+0x230` and its raw `+0x28` < 30. `+0x28` is the widget's update counter (+1 per update, `WidgetContainer::Update` `0x0046c4f0`, called from `Fish::PreUpdate`), so a pet Presto made fewer than 30 updates ago can't be punched.
    2. Object centre `cx = wx + w/2`, `cy = wy + h/2` (ints, C division). Hit iff `px − 40 < cx < px + 40` and `py − 40 < cy < py + 40` (strict).
    3. On a hit, in order:
       - if `k > 0`: **coin clock `+0x220 = +0x224 − k`**: the object's clock is put `k` ticks short of its interval, so its next coin / bomb / charge / potion comes after `k` more clock ticks (sooner or later than it would have, depending on where the clock was). For a guppy that means a coin 5 ticks later if its stage allows coins; for **Amp** (clock 300 → threshold 3000+, `pet-amp.md`) a punch brings him to **5 calm ticks from fully charged**; Vert's coin and Shrapnel's bomb 5 calm ticks away, Nostradamus's potion 10;
@@ -139,17 +139,20 @@ No RNG.
 
 **What a hit does to the target** (its own update, push-timer step, `fish-guppy.md#fields`): while `+0x20c > 0`: `+0x20c −= 1`, `push *= 0.9`, `x += push`. So a 15 push moves it about 134 px over 50 ticks (10: about 90 px), clamped by its bounds as usual. No damage, no death. A guppy or carnivore hit is not otherwise disturbed (its swim mode keeps running). `+0x210` (180) is the guppy's misc countdown; what reads it was not followed. A **Presto-flagged pet** (other than Presto himself) whose push timer falls below 41, i.e. on the 10th tick after the hit, **reverts to Presto** (`pet-presto.md`, slot 73 with 19: GROW, AddPet at its widget spot, 7 or so app draws). Presto himself (id 19) is just pushed.
 
-**Timeline of one punch** (tick 0 = the click, which runs in input handling before the object updates):
+**Timeline of one punch** (tick 0 = the tick of the click; the click runs in input handling before the object updates, so Walter's tick-0 update already sees the glove and the punch timer 40):
 
-| Tick | Walter `+0x1c8` after anim | Glove |
+| Tick | Walter `+0x1c8` after his animation | Glove |
 |---|---|---|
-| 1–5 | 39..35 | waits at (−200, −200): no move, no countdown, no hits |
-| 6–9 | 34..31 | life 29..26, reach 0 |
-| 10–14 | 30..26 | life 25..21, reach 30 |
-| 15–22 | 25..18 | life 20..13, reach 60 |
-| 23–34 | 17..6 | life 12..1, follows him, no hits |
-| 35 | 5 | life 0: deleted by Walter's update |
-| 40 | 0 | next punch allowed (if not turning or tired) |
+| 0–4 | 39..35 | waits (timer was 40..36 > 35 when it looked): no move, no countdown, no hits; still at (−200, −200) |
+| 5–8 | 34..31 | life 29..26, reach 0 |
+| 9–13 | 30..26 | life 25..21, reach 30 |
+| 14–21 | 25..18 | life 20..13, reach 60 |
+| 22–33 | 17..6 | life 12..1, follows him, no hits |
+| 34 | 5 | life 0: deleted by Walter's update |
+| 39 | 0 | |
+| 40 | | next punch allowed (if not turning or tired) |
+
+The glove positions itself from Walter's widget position, which his update only refreshes at its end (step 13), so it trails his true position by one tick.
 
 So a punch has **17 hit ticks**, each object is hit at most once per glove (the 50-tick push outlasts it), and punches can come at most every 40 ticks. If Walter is removed while the glove lives (Presto's change, or any pet removal), his dtor (`0x004ef750`) deletes the glove with him.
 
@@ -201,7 +204,8 @@ Relative to Walter (left glove at `wx − 60`): the fist goes from `wx + 10` (d 
 ## Open questions
 
 - Everything is static. First to capture: the click gate and direction, the 5-tick wait, the hit window and reach, the 15/10 push from the global stream, the coin-clock jump on guppies, tiring after 5 punches (sink, ZZZ, clicks falling through), the Presto revert.
-- The raw `+0x28` test (Presto pets younger than 30 ticks can't be punched): confirm what `+0x28` counts.
+- The raw `+0x28` age test (Presto pets younger than 30 updates can't be punched): `+0x28` is the base widget update counter; not checked whether anything else writes it.
+- Whether Ultra, Gekko and types `0x22`–`0x24` run the `+0x20c` push step in their own updates (the guppy and Oscar do, via `Fish::Update`); if not, a hit only changes their clock.
 - Readers of the misc timer `+0x210` (set to 180 by a hit): maybe a dazed look or a block on eating; not followed.
 - The byte `+0xf4` gating hits, and the `+0x11c` / board `+0x90` queue removal (emotes).
 - Widget slot 38 call on tiring (`0x0046e370`) and whether `+0x7c` is the hand cursor.
