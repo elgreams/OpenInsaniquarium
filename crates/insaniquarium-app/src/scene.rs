@@ -83,6 +83,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_CLYDE",
     "IMAGE_RUFUS",
     "IMAGE_PRESTO",
+    "IMAGE_BRINKLEY",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -964,6 +965,7 @@ fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
             ("IMAGE_WADSWORTH", col, 2)
         }
         FishKind::Wadsworth => ("IMAGE_WADSWORTH", f.cel, i32::from(f.turn_timer != 0)),
+        FishKind::Brinkley => ("IMAGE_BRINKLEY", f.cel, i32::from(f.turn_timer != 0)),
         _ => ("IMAGE_VERT", f.cel, i32::from(f.turn_timer != 0)),
     };
     let mirror = if row == 1 && f.turn_timer != 0 {

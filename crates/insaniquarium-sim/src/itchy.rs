@@ -31,6 +31,7 @@ pub const NIMBUS: i32 = 15;
 pub const AMP: i32 = 16;
 pub const GASH: i32 = 17;
 pub const ANGIE: i32 = 18;
+pub const BRINKLEY: i32 = 20;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -173,6 +174,13 @@ impl Fish {
         f
     }
 
+    /// `AddPet(20)`'s fish part: no id-20 ctor branch (pet-brinkley.md).
+    pub fn new_brinkley(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Brinkley;
+        f
+    }
+
     /// `AddPet(19)`'s fish part: no id-19 ctor branch (pet-presto.md).
     pub fn new_presto(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -231,6 +239,7 @@ impl Fish {
         let aliens = ctx.aliens;
         match self.kind {
             FishKind::Presto => self.update_presto(rng),
+            FishKind::Brinkley => self.update_brinkley(ctx, rng),
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
             FishKind::Zorf => self.update_zorf(ctx, rng),
@@ -406,7 +415,18 @@ impl Fish {
         self.swim_and_reroll(rng);
         if ctx.aliens.is_empty() {
             self.coin_timer += 1;
-            if self.coin_timer >= self.coin_interval && ctx.hungry {
+            // With Brinkley in the tank (`board+0x194`) every 2nd check
+            // drops even when nobody is hungry (pet-zorf.md#feeding, step 3).
+            let mut drop = ctx.hungry;
+            if self.coin_timer >= self.coin_interval && ctx.brinkley {
+                self.count_240 += 1;
+                if self.count_240 % 2 != 0 && !ctx.hungry {
+                    self.coin_timer = 0;
+                } else {
+                    drop = true;
+                }
+            }
+            if self.coin_timer >= self.coin_interval && drop {
                 self.coin_timer = -10;
                 let motion = if self.vx < 0.0 { 1 } else { 2 };
                 out.food = Some((self.widget_x + 15, self.widget_y + 10, motion));
@@ -511,6 +531,13 @@ impl Fish {
         self.drift_by_vx_bucket();
         self.clamp_pet();
         self.edge_steer();
+        self.swim_anim(div, wrap, fast_at);
+        self.update_facing();
+        self.integrate();
+    }
+
+    /// The animation step of [`Self::swim_tail`]: turn, else the cycle.
+    fn swim_anim(&mut self, div: i32, wrap: i32, fast_at: i32) {
         if self.facing > 0.0 && self.vx < 0.0 {
             self.turn_timer = 20;
         } else if self.facing < 0.0 && self.vx > 0.0 {
@@ -533,8 +560,6 @@ impl Fish {
             }
             self.cel = self.swim_cycle / div;
         }
-        self.update_facing();
-        self.integrate();
     }
 
     /// Seymour (pet-seymour.md): swims, no ability; cel = cycle / 8 (the
@@ -588,6 +613,123 @@ impl Fish {
         self.swim_and_reroll(rng);
         self.swim_tail(2, 19, 1);
         PetFishOut::default()
+    }
+
+    /// Brinkley (pet-brinkley.md#update-0x004f7ad0-id-20): with the tank
+    /// calm, food in it and his digest cooldown at 0 he chases the nearest
+    /// pellet and eats the first he touches (the board removes it, slurps
+    /// and makes every 3rd pellet a rising coin); else he swims. An extra,
+    /// undivided sink by |vx| follows the drift. Cel = cycle / 4.
+    fn update_brinkley(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        if self.timer_23c != 0 {
+            self.timer_23c -= 1;
+        }
+        if ctx.aliens.is_empty() && !ctx.foods.is_empty() && self.timer_23c == 0 {
+            self.chase_eat(ctx, &mut out);
+        } else {
+            self.swim_modes_calm();
+        }
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        let s = self.vx.abs();
+        #[allow(clippy::float_cmp)]
+        if s == 0.0 {
+            self.y += 1.0;
+        } else if s <= 1.0 {
+            self.y += 0.75;
+        } else if s <= 3.0 {
+            self.y += 0.5;
+        }
+        self.clamp_pet();
+        self.edge_steer();
+        self.swim_anim(4, 39, 1);
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
+    /// Brinkley's chase (`0x004e02d0`/`0x004e5fc0`, id 20) and eat
+    /// (`0x004fe740`): the nearest pellet of any kind; steering every 5th
+    /// tick; the first pellet within his mouth box is eaten.
+    fn chase_eat(&mut self, ctx: PetCtx<'_>, out: &mut PetFishOut) {
+        let (px, py) = (self.x + 40.0, self.y + 40.0);
+        let mut best = 10_000;
+        let mut target = None;
+        for f in ctx.foods {
+            let dx = (px - f64::from(f.widget_x + 20)) as i32;
+            let dy = (py - f64::from(f.widget_y + 20)) as i32;
+            let d = (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
+            if d < best {
+                best = d;
+                target = Some((f.widget_x, f.widget_y));
+            }
+        }
+        let Some((w, h)) = target else { return };
+        if self.mode_timer >= 5 {
+            self.mode_timer = 0;
+            let (cx, w) = (self.x + 40.0, f64::from(w));
+            if cx > w + 28.0 && self.vx > -3.0 {
+                self.vx = -1.0;
+            } else if cx < w + 12.0 && self.vx < 3.0 {
+                self.vx = 1.0;
+            } else if cx > w + 24.0 && self.vx > -3.0 {
+                self.vx = -0.1;
+            } else if cx < w + 16.0 && self.vx < 3.0 {
+                self.vx = 0.1;
+            } else if cx > w + 20.0 && self.vx > -3.0 {
+                self.vx = -0.05;
+            } else if cx < w + 20.0 && self.vx < 3.0 {
+                self.vx = 0.05;
+            }
+            let (cy, h) = (self.y + 40.0, f64::from(h));
+            if cy > h + 26.0 && self.vy > -2.0 {
+                self.vy = -0.6;
+            } else if cy < h + 14.0 && self.vy < 2.5 {
+                self.vy = 1.0;
+            } else if cy > h + 20.0 && self.vy > -2.0 {
+                self.vy = -0.3;
+            } else if cy < h + 20.0 && self.vy < 2.5 {
+                self.vy = 0.5;
+            }
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        out.eat = ctx.foods.iter().position(|f| {
+            let (fx, fy) = (f64::from(f.widget_x), f64::from(f.widget_y));
+            fx + 5.0 < px && px < fx + 35.0 && fy < py && py < fy + 35.0
+        });
+    }
+
+    /// Brinkley ate a pellet: count it, start digesting; every 3rd pellet
+    /// is a rising coin at (wx + 5, wy − 10), by the count.
+    pub fn brinkley_ate(&mut self) -> Option<(i32, i32, i32)> {
+        self.count_240 += 1;
+        self.timer_23c = 45;
+        let n = self.count_240;
+        if n % 3 != 0 {
+            return None;
+        }
+        let kind = if n % 135 == 0 {
+            14
+        } else if n % 45 == 0 {
+            13
+        } else if n % 15 == 0 {
+            11
+        } else {
+            10
+        };
+        Some((self.widget_x + 5, self.widget_y - 10, kind))
     }
 
     /// Blip (pet-blip.md): Itchy's swimming; on the first update past
@@ -1187,6 +1329,8 @@ pub struct PetFishOut {
     /// its rising kind), and pellet `i` (re-dropped at y, tossed).
     pub toss_coin: Option<(usize, i32)>,
     pub toss_food: Option<(usize, i32)>,
+    /// Brinkley eats pellet `i` (removed; slurp; `brinkley_ate`).
+    pub eat: Option<usize>,
 }
 
 /// What a fish-shaped pet's update reads from the board.
@@ -1202,6 +1346,8 @@ pub struct PetCtx<'a> {
     pub reveal_due: bool,
     /// The dead fish (`+0x98`), for Angie.
     pub corpses: &'a [crate::fish::DeadFish],
+    /// Some Brinkley is in the tank (`board+0x194 > 0`), for Zorf.
+    pub brinkley: bool,
 }
 
 impl PetCtx<'_> {

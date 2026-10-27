@@ -66,6 +66,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 19, Presto: swims; right-click to change him
     /// into another pet (`pet-presto.md`).
     Presto,
+    /// `Sexy::FishTypePet` id 20, Brinkley: sinks, eats pellets, a rising
+    /// coin every 3rd (`pet-brinkley.md`).
+    Brinkley,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +166,10 @@ pub struct Fish {
     pub recharge: i32,
     /// FishTypePet `+0x248`: smoke-puff counter (0 → 20, flagged pets).
     pub puff: i32,
+    /// FishTypePet `+0x23c`: a countdown (Brinkley's digest cooldown).
+    pub timer_23c: i32,
+    /// FishTypePet `+0x240`: a counter (Brinkley's pellets eaten).
+    pub count_240: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -286,6 +293,8 @@ impl Fish {
             presto: false,
             recharge: 0,
             puff: 0,
+            timer_23c: 0,
+            count_240: 0,
             widget_x: x,
             widget_y: y,
         };

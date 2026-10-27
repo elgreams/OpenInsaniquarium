@@ -53,6 +53,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 18 => FishKind::Angie,
             0x15 if rd_i32(b, 0x234) == 16 => FishKind::Amp,
             0x15 if rd_i32(b, 0x234) == 19 => FishKind::Presto,
+            0x15 if rd_i32(b, 0x234) == 20 => FishKind::Brinkley,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -105,6 +106,16 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         },
         puff: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x24c {
             rd_i32(b, 0x248)
+        } else {
+            0
+        },
+        timer_23c: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x244 {
+            rd_i32(b, 0x23c)
+        } else {
+            0
+        },
+        count_240: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x244 {
+            rd_i32(b, 0x240)
         } else {
             0
         },
@@ -546,7 +557,7 @@ fn fish_json(f: &Fish) -> Value {
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
-        "presto": [f.presto, f.recharge, f.puff],
+        "presto": [f.presto, f.recharge, f.puff], "t23c": f.timer_23c, "c240": f.count_240,
     })
 }
 
@@ -1939,6 +1950,16 @@ pub fn replay_resync_dirty(
                     let c = c as i32;
                     if c - f.coin_timer > 100 {
                         f.coin_timer = c;
+                    }
+                }
+                // Brinkley's pellet count `+0x240` pushed to just before a
+                // rare coin (pet-brinkley.md#recording): it only ever rises
+                // by 1 on its own.
+                if let Some(c) = p.get("c240").and_then(Value::as_i64) {
+                    let c = c as i32;
+                    if f.kind == insaniquarium_sim::fish::FishKind::Brinkley && c - f.count_240 > 1
+                    {
+                        f.count_240 = c;
                     }
                 }
             }

@@ -460,6 +460,7 @@ impl Board {
             crate::itchy::MERYL => Fish::new_meryl(a, _b, rng),
             PRESTO => Fish::new_presto(a, _b, rng),
             crate::itchy::ITCHY => Fish::new_itchy(a, _b, rng),
+            crate::itchy::BRINKLEY => Fish::new_brinkley(a, _b, rng),
             // TODO(spec): pets 20–23 (bonus-pets-plan.md).
             _ => {
                 self.rng.next_range(5);
@@ -491,6 +492,7 @@ impl Board {
             K::Gash => GASH,
             K::Angie => ANGIE,
             K::Presto => crate::presto::PRESTO,
+            K::Brinkley => BRINKLEY,
             _ => ITCHY,
         }
     }
@@ -1901,6 +1903,10 @@ impl Board {
                 foods: &self.foods,
                 reveal_due: hidden && self.level_ticks > 200,
                 corpses: &self.dead_fish,
+                brinkley: self
+                    .fish_pets
+                    .iter()
+                    .any(|f| f.kind == crate::fish::FishKind::Brinkley),
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
@@ -1992,6 +1998,19 @@ impl Board {
             }
             if out.charged {
                 self.play(0x11a, Sound::Eel2);
+            }
+            if let Some(fi) = out.eat {
+                // Brinkley (`0x004fe740`, pet-brinkley.md#eat): slurp (one
+                // draw unless throttled), the pellet goes, every 3rd is a
+                // rising coin. Coins come after `+0xb4`: it updates this tick.
+                if self.sample_ready(0x138, 3) {
+                    let s = Sound::slurp(self.rng.next_range(5));
+                    self.sounds.push(s.into());
+                }
+                self.foods.remove(fi);
+                if let Some((x, y, kind)) = self.fish_pets[i].brinkley_ate() {
+                    self.coins.push(Coin::new(x, y, kind));
+                }
             }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));
