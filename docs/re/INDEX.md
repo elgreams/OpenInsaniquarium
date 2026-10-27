@@ -16,6 +16,7 @@ The status column is a summary. **Confidence is marked per section in each spec*
 | framework | `framework/dialog.md` | traced (hint timing); drawing confirmed | In-tank message boxes (`MoneyDialog`): panel as a 3×3 tiled box, fonts, colours, size/position, the board dialogs' texts |
 | framework | `framework/demo-recording.md` | draft | `-record`/`-play` functional; tick-indexed input bitstream |
 | objects | `objects/fish-guppy.md` | traced (tank 1) | Guppy fields, ctor RNG order (6 draws), swim modes, 21-tick reroll, animation/turn/cel rules, draw-sheet selection; `DeadFish` (sink/fade). Replays bit-exact vs original |
+| objects | `objects/bonus-pets-plan.md` | plan | Presto (19) build steps and the bonus pets 20–23 (Brinkley, Nostradamus, Stanley, Walter): what's known, the order of work, pitfalls |
 | objects | `objects/pet-stinky.md` | traced (tank 1-2) | Stinky the snail (OtherTypePet id 0): ctor draws, floor wander with 21-tick reroll, coin chase/collect (banks + points-sound draw), shell while aliens, animation |
 | objects | `objects/pet-niko.md` | traced (tank 1-3) | Niko (pet 1): fixed spot per backdrop, pearl every ~69 s (timer 1233/1450 + `r % 50`), updates first (behind the overlay), the pearl coin (kind 15, list `+0xec`, $250) |
 | objects | `objects/pet-itchy.md` | traced (tank 1-4) | Itchy (FishTypePet id 2): guppy swim modes when calm; with an alien, steers every 5th tick and stabs it for 1 HP/tick inside a 20-px box; 9 construction draws |
