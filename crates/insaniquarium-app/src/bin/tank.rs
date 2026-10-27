@@ -450,6 +450,17 @@ fn mouse(
         }
         return;
     };
+    if board.pet_dialog.is_some() {
+        // PRESTO CHANGE-O: it takes every press and release
+        // (pet-presto.md#the-petdialog-0x005355c0).
+        if buttons.just_pressed(MouseButton::Left) || buttons.just_pressed(MouseButton::Right) {
+            sim.pending.push(Input::Click { x, y });
+        }
+        if buttons.just_released(MouseButton::Left) || buttons.just_released(MouseButton::Right) {
+            sim.pending.push(Input::Release { x, y });
+        }
+        return;
+    }
     if board.dialog.is_some() {
         // Only the dialog's button closes it, on release (`dialog.md`).
         // Before its image exists, any click does.
@@ -463,6 +474,9 @@ fn mouse(
     }
     if buttons.just_pressed(MouseButton::Left) {
         sim.pending.push(Input::Click { x, y });
+    }
+    if buttons.just_pressed(MouseButton::Right) {
+        sim.pending.push(Input::RightClick { x, y });
     }
 }
 

@@ -71,7 +71,9 @@ impl Game {
 
     fn level_board(p: &Profile, rng: MtRand, global_rng: MtRand) -> Board {
         // TODO(spec): bonus rounds (`0x00537e20`) after each tank's 5th level.
-        Board::start_level(rng, global_rng, p.tank, p.level, &p.level_pets())
+        let mut b = Board::start_level(rng, global_rng, p.tank, p.level, &p.level_pets());
+        b.owned = p.pets;
+        b
     }
 
     /// `App::NextLevel` (`hatch-screen.md`): clear the chosen pets, then the

@@ -155,12 +155,13 @@ impl Fish {
             && (self.widget_y..self.widget_y + 80).contains(&y)
     }
 
-    /// `AddPet(17)`'s fish part: hunger clock −1550, threshold 1570 (no
-    /// RNG). `coin_timer` is the clock, `coin_interval` the threshold.
-    pub fn new_gash(x: i32, y: i32, rng: &mut MtRand) -> Self {
+    /// `AddPet(17)`'s fish part: hunger clock −1550 (1520 when made by
+    /// Presto), threshold 1570 (no RNG). `coin_timer` is the clock,
+    /// `coin_interval` the threshold.
+    pub fn new_gash(x: i32, y: i32, rng: &mut MtRand, presto: bool) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
         f.kind = FishKind::Gash;
-        f.coin_timer = -1550;
+        f.coin_timer = if presto { 1520 } else { -1550 };
         f.coin_interval = 1570;
         f
     }
@@ -170,6 +171,18 @@ impl Fish {
         let mut f = Fish::new_itchy(x, y, rng);
         f.kind = FishKind::Angie;
         f
+    }
+
+    /// `AddPet(19)`'s fish part: no id-19 ctor branch (pet-presto.md).
+    pub fn new_presto(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Presto;
+        f
+    }
+
+    /// Widget width: Amp's is 160, every other fish pet's 80.
+    pub fn widget_w(&self) -> i32 {
+        if self.kind == FishKind::Amp { 160 } else { 80 }
     }
 
     /// `AddPet(12)`'s fish part: no id-12 ctor branch.
@@ -202,8 +215,22 @@ impl Fish {
     /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
     /// board must apply.
     pub fn update_fish_pet(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let out = self.update_fish_pet_kind(ctx, rng);
+        // Presto pets (pet-presto.md#update-0x004f7ad0-id-19): the recharge
+        // counts down, the smoke puff counts up to 20.
+        if self.recharge != 0 {
+            self.recharge -= 1;
+        }
+        if self.presto && self.puff < crate::presto::PUFF {
+            self.puff += 1;
+        }
+        out
+    }
+
+    fn update_fish_pet_kind(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
         let aliens = ctx.aliens;
         match self.kind {
+            FishKind::Presto => self.update_presto(rng),
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
             FishKind::Zorf => self.update_zorf(ctx, rng),
@@ -551,6 +578,14 @@ impl Fish {
                 self.mode = rng.next_range(9) as i32 + 1;
             }
         }
+        self.swim_tail(2, 19, 1);
+        PetFishOut::default()
+    }
+
+    /// Presto (pet-presto.md#update-0x004f7ad0-id-19): always swims (no
+    /// gate or ability branch); cel = cycle / 2.
+    fn update_presto(&mut self, rng: &mut MtRand) -> PetFishOut {
+        self.swim_and_reroll(rng);
         self.swim_tail(2, 19, 1);
         PetFishOut::default()
     }

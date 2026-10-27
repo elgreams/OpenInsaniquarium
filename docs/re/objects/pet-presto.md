@@ -45,6 +45,17 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`): the gate 
 
 `static`.
 
+## How a right-click reaches him
+
+Presto (like every pet) isn't mouse-visible (`+0x55` = byte `0x005e8f14`, 0), so a right-click lands on whatever mouse-visible widget is on top: a coin, a guppy, food or the board. All of them pass a right-click (negative click count) to **`0x0053bfb0(x, y)`** in tank coordinates (`Coin` slot 55 `0x004e5450`, `Food` `0x004d62f0`, `Breeder`, the board's own mouse-down `0x00543f00` when `y > 40`):
+
+1. `0x00539630(x, y)` (re-entry guard `0x005e9630`): walk `+0xb4` in list order for the **first pet with the Presto flag `+0x230` whose 80 × 80 widget rect contains the point** (slot 69, `Widget::Contains`); if none, the same over `+0xb0` with flag `+0x1c8`. If one is found, call its mouse-down (slot 54) with the pet-relative point and click count −1, and return true.
+2. If no flagged pet was hit: play **`SOUND_TAPGLASS`** directly through the app (`app` slot 54 with `0x005e8b68`; not the board's throttled sample table, so no `samples` entry). In the Virtual Tank (`app+0x87c == 5`) the fish also react (not followed).
+
+Unflagged pets are skipped: a right-click on a pet without the flag is just a glass tap.
+
+`static`.
+
 ## Right-click (`0x004fb680`, first block)
 
 Slot 54 passes the click to `0x004fb680`; a negative click count is the **right button**. For a right-click:
@@ -60,11 +71,27 @@ Either way the click is consumed (returns true). Left clicks on a flagged FishTy
 
 ## The PetDialog (`0x005355c0`)
 
-Title **"PRESTO CHANGE-O"**, button "CANCEL", 640 × 480. It lays out **24 pet buttons** (50 × 50): a column at x 10 from y 120 down (50 px apart), a row along the bottom from x 62 (52 px apart), and a column on the right going up. Button `i` is enabled iff the profile owns pet `i` (`profile = [app+0x8b8]`, byte `profile + i`; `screens/hatch-screen.md`). So the choice is any owned pet, **including Presto (19) and pets already in the tank** (duplicates are allowed).
+Title **"PRESTO CHANGE-O"**, button "CANCEL", a `MoneyDialog` with id `0x1f`, **not modal**, at (0, 0) and 640 × 480: it covers the whole screen, so it takes every mouse event while it is up. `0x0054c6f0` adds it with `AddDialog` (`0x0047ac40`) directly, not through `DoDialog`, so there is **no 30-tick button delay** (`framework/dialog.md#button-delay`).
 
-A pick is a mouse-down and mouse-up on the same enabled button (slot 56 `0x00532a90` with the hit test `0x005329f0`). Then `0x0054b450(i)`: close dialog `0x1f`; if `i ≥ 0`, a pet was stored in `app+0x8b4` and the board exists, find the Presto pet with `0x00539540` (the **first** pet in `+0xb4` with `+0x230` set, else the first in `+0xb0` with `+0x1c8` set; not necessarily the one clicked, but there is only one Presto) and call its slot 73 with `i`. Clear `app+0x8b4`. CANCEL closes without a change.
+**The board keeps running under it.** `AddDialog` calls `WinFishApp` slot 81 (`0x0054cf90`), which pauses the board only if `0x0054cf40` says so: when one of the screens `app+0x80c/0x810/0x824/0x828` is up, or when the first dialog's id is **neither 0x1f nor 0x20**. So fish swim, coins fall and aliens attack while the player chooses.
 
-Whether the board is paused while the dialog is up is the generic dialog behaviour (not checked here).
+**24 pet buttons** (50 × 50), button `i` for pet `i`:
+
+| Buttons | x | y |
+|---|---|---|
+| 0–6 | 10 | 120, 170, …, 420 |
+| 7–17 | 62, 114, …, 582 (52 apart) | 420 |
+| 18–23 | 582 | 370, 320, …, 120 |
+
+Button `i` is enabled iff the profile owns pet `i` (`profile = [app+0x8b8]`, byte `profile + i` via `0x00501410`; `screens/hatch-screen.md`). So the choice is any owned pet, **including Presto (19) and pets already in the tank** (duplicates are allowed). The CANCEL button (a `DialogButton`, child widget) is at **(270, 30)**, 100 wide, the button image's height (`PetDialog` resize `0x005313d0`).
+
+Mouse handling (the hit test `0x005329f0` finds the first button, in index order, whose rect holds the point; −1 if there is none or it is disabled):
+
+- **Down** (slot 55 `0x00532a60`): pressed `+0x15c` = hover `+0x158` = hit. Any button, so a right-button down counts too.
+- **Up** (slot 57 `0x00532a90`): hover = hit; if hit == pressed and pressed ≠ −1, **`0x0054b450(hit)`**; pressed = −1.
+- CANCEL (button id `0xbd7` in `WinFishApp` slot 3 `0x00552a8a`): `0x0054b450(−1)`.
+
+`0x0054b450(i)`: close dialog `0x1f`; if `i ≥ 0`, a pet was stored in `app+0x8b4` and the board exists, find the Presto pet with `0x00539540` (the **first** pet in `+0xb4` with `+0x230` set, else the first in `+0xb0` with `+0x1c8` set; not necessarily the one clicked, but there is only one Presto) and call its slot 73 with `i`. Clear `app+0x8b4`.
 
 `static`.
 

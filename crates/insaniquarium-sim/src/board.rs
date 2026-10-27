@@ -24,6 +24,13 @@ pub const DIALOG_BUTTON_DELAY: i32 = 30;
 pub enum Input {
     /// Mouse-down at board coordinates.
     Click { x: i32, y: i32 },
+    /// Right-button down at board coordinates (pet-presto.md).
+    RightClick { x: i32, y: i32 },
+    /// Left-button up at board coordinates: closes a board dialog through
+    /// its button, or picks in the PRESTO CHANGE-O dialog.
+    Release { x: i32, y: i32 },
+    /// Right-button up: only the PRESTO CHANGE-O dialog takes it.
+    RightRelease { x: i32, y: i32 },
     /// Dismiss the current modal dialog (its default button).
     DismissDialog,
     /// Press a shop button directly (same as clicking it).
@@ -131,6 +138,12 @@ pub struct Board {
     /// Board updates since the dialog opened: its button ignores clicks
     /// until [`DIALOG_BUTTON_DELAY`] (dialog.md#button-delay).
     pub dialog_age: i32,
+    /// The PRESTO CHANGE-O dialog (id `0x1f`), if open. The board keeps
+    /// running under it (pet-presto.md#the-petdialog-0x005355c0).
+    pub pet_dialog: Option<crate::presto::PetDialog>,
+    /// The profile's owned pets (`[app+0x8b8] + id`): the dialog's
+    /// enabled buttons.
+    pub owned: [bool; crate::profile::PET_COUNT],
     /// Paused by focus loss or the menu ("Game Paused", dialog 18): board
     /// clicks are swallowed until it's resumed.
     pub focus_paused: bool,
@@ -239,6 +252,8 @@ impl Board {
             arrow_food_quality: false,
             dialog: None,
             dialog_age: 0,
+            pet_dialog: None,
+            owned: [false; crate::profile::PET_COUNT],
             focus_paused: false,
             hints: [false; HINTS],
             message: Message::default(),
@@ -372,88 +387,207 @@ impl Board {
     }
 
     /// `Board::AddPet(id, -1, -1)` (`0x00544a90`): 2 position draws, the
-    /// pet ctor, then the shadow draw. TODO(spec): pets other than Stinky.
+    /// pet ctor, then the shadow draw. Presto (19) is always flagged.
     pub fn add_pet(&mut self, id: i32) {
-        let a = self.rng.next_range(265) as i32 + 105;
-        let _b = self.rng.next_range(520) as i32 + 20;
-        // The pet's Shadow ctor draws its floor y (`board.md#shadows`); a
-        // type-1 shadow (Stinky) keeps it.
-        if id == STINKY {
-            let mut p = Pet::stinky(a, _b, &mut self.rng);
-            p.shadow_y = self.rng.next_range(5) as i32 + 410;
-            self.pets.push(p);
-        } else if id == NIKO {
-            // Niko gets no shadow (`0x00544800` skips pet id 1), so no draw:
-            // `tank1-3_full_01` starts with 3 shadows for 2 guppies + Stinky.
-            // The backdrop `+0x3e8` SetupShop picks per tank (`0x00541200`).
-            let backdrop = match self.tank {
-                3 => 4,
-                4 => 5,
-                5 => 6,
-                t => t,
-            };
-            self.pets.push(Pet::niko(a, _b, backdrop, &mut self.rng));
-        } else if matches!(
+        self.add_pet_at(id, None, id == crate::presto::PRESTO);
+    }
+
+    /// `Board::AddPet(id, x, y, presto)`: with a position there are no
+    /// position draws (Presto's change, pet-presto.md#the-change). A
+    /// flagged pet keeps its position (no floor or fixed spot), starts with
+    /// the 360-tick recharge (0 for Presto) and the smoke puff.
+    pub fn add_pet_at(&mut self, id: i32, at: Option<(i32, i32)>, presto: bool) {
+        use crate::presto::{PRESTO, RECHARGE};
+        let (a, _b) = at.unwrap_or_else(|| {
+            let a = self.rng.next_range(265) as i32 + 105;
+            let b = self.rng.next_range(520) as i32 + 20;
+            (a, b)
+        });
+        let recharge = if presto && id != PRESTO { RECHARGE } else { 0 };
+        if matches!(
             id,
-            crate::pet::CLYDE | crate::pet::RUFUS | crate::pet::RHUBARB
+            STINKY | NIKO | crate::pet::CLYDE | crate::pet::RUFUS | crate::pet::RHUBARB
         ) {
             let mut p = match id {
+                // The backdrop `+0x3e8` SetupShop picks per tank (`0x00541200`).
+                NIKO => {
+                    let backdrop = match self.tank {
+                        3 => 4,
+                        4 => 5,
+                        5 => 6,
+                        t => t,
+                    };
+                    Pet::niko(a, _b, backdrop, &mut self.rng)
+                }
                 crate::pet::CLYDE => Pet::clyde(a, _b, &mut self.rng),
                 crate::pet::RUFUS => Pet::rufus(a, _b, &mut self.rng),
-                _ => Pet::rhubarb(a, _b, &mut self.rng),
+                crate::pet::RHUBARB => Pet::rhubarb(a, _b, &mut self.rng),
+                _ => Pet::stinky(a, _b, &mut self.rng),
             };
-            p.shadow_y = self.rng.next_range(5) as i32 + 410;
+            if presto {
+                // The ctor's floor y and Niko's fixed spot (`0x004d89f0`)
+                // only apply to unflagged pets.
+                (p.x, p.y) = (f64::from(a), f64::from(_b));
+                (p.widget_x, p.widget_y) = (a, _b);
+                p.presto = true;
+                p.countdown_1ac = recharge;
+            }
+            // Niko gets no shadow (`0x00544800` skips pet id 1), so no draw:
+            // `tank1-3_full_01` starts with 3 shadows for 2 guppies + Stinky.
+            // The others' type-1 Shadow ctor draws its floor y (`board.md#shadows`).
+            if id != NIKO {
+                p.shadow_y = self.rng.next_range(5) as i32 + 410;
+            }
             self.pets.push(p);
-        } else if id == crate::itchy::ITCHY {
-            // `FishTypePet` (pet-itchy.md#construction): `Fish::Init`'s 6
-            // draws, then a type-0 shadow (one draw).
-            self.fish_pets.push(Fish::new_itchy(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::PREGO {
-            self.fish_pets.push(Fish::new_prego(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::VERT {
-            self.fish_pets.push(Fish::new_vert(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::ZORF {
-            self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::AMP {
-            // A type-2 shadow; still one draw.
-            self.fish_pets.push(Fish::new_amp(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::GASH {
-            self.fish_pets.push(Fish::new_gash(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::ANGIE {
-            self.fish_pets.push(Fish::new_angie(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::BLIP {
-            self.fish_pets.push(Fish::new_blip(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::NIMBUS {
-            self.fish_pets.push(Fish::new_nimbus(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::SEYMOUR {
-            self.fish_pets.push(Fish::new_seymour(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::SHRAPNEL {
-            self.fish_pets
-                .push(Fish::new_shrapnel(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::GUMBO {
-            self.fish_pets.push(Fish::new_gumbo(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::WADSWORTH {
-            self.fish_pets
-                .push(Fish::new_wadsworth(a, _b, &mut self.rng));
-            self.rng.next_range(5);
-        } else if id == crate::itchy::MERYL {
-            self.fish_pets.push(Fish::new_meryl(a, _b, &mut self.rng));
-            self.rng.next_range(5);
+            return;
+        }
+        // `FishTypePet` (pet-itchy.md#construction): `Fish::Init`'s 6 draws,
+        // the id's ctor branch, then the shadow (one draw for every type).
+        let rng = &mut self.rng;
+        let mut f = match id {
+            crate::itchy::PREGO => Fish::new_prego(a, _b, rng),
+            crate::itchy::VERT => Fish::new_vert(a, _b, rng),
+            crate::itchy::ZORF => Fish::new_zorf(a, _b, rng),
+            crate::itchy::AMP => Fish::new_amp(a, _b, rng),
+            crate::itchy::GASH => Fish::new_gash(a, _b, rng, presto),
+            crate::itchy::ANGIE => Fish::new_angie(a, _b, rng),
+            crate::itchy::BLIP => Fish::new_blip(a, _b, rng),
+            crate::itchy::NIMBUS => Fish::new_nimbus(a, _b, rng),
+            crate::itchy::SEYMOUR => Fish::new_seymour(a, _b, rng),
+            crate::itchy::SHRAPNEL => Fish::new_shrapnel(a, _b, rng),
+            crate::itchy::GUMBO => Fish::new_gumbo(a, _b, rng),
+            crate::itchy::WADSWORTH => Fish::new_wadsworth(a, _b, rng),
+            crate::itchy::MERYL => Fish::new_meryl(a, _b, rng),
+            PRESTO => Fish::new_presto(a, _b, rng),
+            crate::itchy::ITCHY => Fish::new_itchy(a, _b, rng),
+            // TODO(spec): pets 20–23 (bonus-pets-plan.md).
+            _ => {
+                self.rng.next_range(5);
+                return;
+            }
+        };
+        f.presto = presto;
+        f.recharge = recharge;
+        self.fish_pets.push(f);
+        self.rng.next_range(5);
+    }
+
+    /// The pet id of fish pet `f` (`+0x234`).
+    fn fish_pet_id(f: &Fish) -> i32 {
+        use crate::fish::FishKind as K;
+        use crate::itchy::*;
+        match f.kind {
+            K::Prego => PREGO,
+            K::Vert => VERT,
+            K::Zorf => ZORF,
+            K::Meryl => MERYL,
+            K::Wadsworth => WADSWORTH,
+            K::Seymour => SEYMOUR,
+            K::Shrapnel => SHRAPNEL,
+            K::Gumbo => GUMBO,
+            K::Blip => BLIP,
+            K::Nimbus => NIMBUS,
+            K::Amp => AMP,
+            K::Gash => GASH,
+            K::Angie => ANGIE,
+            K::Presto => crate::presto::PRESTO,
+            _ => ITCHY,
+        }
+    }
+
+    /// `0x004f2650`: false (and BUZZER + "Recharging..." over the widget)
+    /// while a Presto pet is recharging.
+    fn presto_ready(&mut self, recharge: i32, wx: i32, wy: i32, w: i32) -> bool {
+        if recharge < 1 {
+            return true;
+        }
+        self.play(0x112, Sound::Buzzer);
+        // `0x005444e0`: a kind-16 rising `Coin` carrying the text (colour
+        // 2), on the notes list.
+        let mut c = Coin::new(wx + w / 2 - 20, wy - 10, 16);
+        c.text = Some("Recharging...");
+        self.notes.push(c);
+        false
+    }
+
+    /// A right-click in the tank (`0x0053bfb0`, pet-presto.md#how-a-right-
+    /// click-reaches-him): the first Presto-flagged pet under the point
+    /// gets it, else the glass is tapped.
+    fn right_click(&mut self, x: i32, y: i32) {
+        // TODO(spec): a right-click on a shop button.
+        if self.shop.hit(x, y).is_some() {
+            return;
+        }
+        let hit =
+            |wx: i32, wy: i32, w: i32| (wx..wx + w).contains(&x) && (wy..wy + 80).contains(&y);
+        if let Some(i) = self
+            .fish_pets
+            .iter()
+            .position(|f| f.presto && hit(f.widget_x, f.widget_y, f.widget_w()))
+        {
+            let f = &self.fish_pets[i];
+            let (r, wx, wy, w) = (f.recharge, f.widget_x, f.widget_y, f.widget_w());
+            if self.presto_ready(r, wx, wy, w) {
+                self.pet_dialog = Some(crate::presto::PetDialog::new());
+            }
+            return;
+        }
+        if let Some(i) = self
+            .pets
+            .iter()
+            .position(|p| p.presto && hit(p.widget_x, p.widget_y, 80))
+        {
+            let p = &self.pets[i];
+            let (r, wx, wy) = (p.countdown_1ac, p.widget_x, p.widget_y);
+            if self.presto_ready(r, wx, wy, 80) {
+                self.pet_dialog = Some(crate::presto::PetDialog::new());
+            }
+            return;
+        }
+        // The board itself only passes right-clicks below y 40
+        // (`0x00543f00`); objects pass theirs wherever they are.
+        if y > 40 {
+            self.sounds.push(Sound::TapGlass.into());
+        }
+    }
+
+    /// A pick in the PRESTO CHANGE-O dialog (`0x0054b450` → slot 73,
+    /// pet-presto.md#the-change): the first Presto pet (`0x00539540`) is
+    /// replaced by a new, flagged pet `n` at its widget position.
+    pub fn presto_change(&mut self, n: i32) {
+        let fish = self.fish_pets.iter().position(|f| f.presto);
+        let (old_id, recharge, wx, wy, w) = if let Some(i) = fish {
+            let f = &self.fish_pets[i];
+            (
+                Self::fish_pet_id(f),
+                f.recharge,
+                f.widget_x,
+                f.widget_y,
+                f.widget_w(),
+            )
+        } else if let Some(i) = self.pets.iter().position(|p| p.presto) {
+            let p = &self.pets[i];
+            (p.id, p.countdown_1ac, p.widget_x, p.widget_y, 80)
         } else {
-            // TODO(spec): other pets.
-            self.rng.next_range(5);
+            return;
+        };
+        if n == old_id || !self.presto_ready(recharge, wx, wy, w) {
+            return;
+        }
+        self.play(0x122, Sound::Grow);
+        self.add_pet_at(n, Some((wx, wy)), true);
+        // Remove the old pet (`0x00541d90`); its shadow goes with it.
+        if let Some(i) = fish {
+            let old = self.fish_pets.remove(i);
+            // `0x004d6250`: a sheltering Wadsworth releases his guppies,
+            // Meryl's song stops.
+            match old.kind {
+                crate::fish::FishKind::Wadsworth if old.blink => self.shelter = None,
+                crate::fish::FishKind::Meryl => self.song = false,
+                _ => {}
+            }
+        } else if let Some(i) = self.pets.iter().position(|p| p.presto) {
+            self.pets.remove(i);
         }
     }
 
@@ -1040,20 +1174,50 @@ impl Board {
         self.sounds.clear();
         self.music = None;
         for i in inputs {
+            // The PRESTO CHANGE-O dialog covers the screen: it takes every
+            // mouse event while it is up (pet-presto.md#the-petdialog-0x005355c0).
+            if let Some(d) = &mut self.pet_dialog {
+                match *i {
+                    Input::Click { x, y } | Input::RightClick { x, y } => d.down(&self.owned, x, y),
+                    Input::Release { x, y } | Input::RightRelease { x, y } => {
+                        use crate::presto::DialogPick;
+                        match d.up(&self.owned, x, y) {
+                            DialogPick::None => {}
+                            DialogPick::Cancel => self.pet_dialog = None,
+                            DialogPick::Pet(n) => {
+                                self.pet_dialog = None;
+                                self.presto_change(n);
+                            }
+                        }
+                    }
+                    Input::SetPaused(p) => {
+                        self.paused = p;
+                        self.focus_paused = p;
+                    }
+                    Input::DismissDialog | Input::Buy(_) => {}
+                }
+                continue;
+            }
             match *i {
                 // The focus-loss pause is the "Game Paused" dialog (id 18,
                 // `zoo_b_01`): clicks go to it, not the board.
                 Input::Click { x, y } if self.dialog.is_none() && !self.focus_paused => {
                     self.click(x, y);
                 }
-                Input::Click { .. } => {}
+                Input::RightClick { x, y } if self.dialog.is_none() && !self.focus_paused => {
+                    self.right_click(x, y);
+                }
+                Input::Click { .. } | Input::RightClick { .. } => {}
                 // The "Game Paused" dialog's button resumes the board (the
                 // button rect isn't checked yet, as for board dialogs).
-                Input::DismissDialog if self.focus_paused && self.dialog.is_none() => {
+                Input::DismissDialog | Input::Release { .. }
+                    if self.focus_paused && self.dialog.is_none() =>
+                {
                     self.paused = false;
                     self.focus_paused = false;
                 }
-                Input::DismissDialog => self.dismiss_dialog(),
+                Input::DismissDialog | Input::Release { .. } => self.dismiss_dialog(),
+                Input::RightRelease { .. } => {}
                 Input::Buy(slot) if self.dialog.is_none() => {
                     self.purchase(slot);
                 }
@@ -1928,6 +2092,49 @@ mod tests {
         b.tutorial = true;
         b.add_random_guppy();
         b
+    }
+
+    #[test]
+    fn presto_changes_into_an_owned_pet_and_recharges() {
+        use crate::presto::{PRESTO, button_pos};
+        let mut b = Board::new(MtRand::new(1), MtRand::new(2));
+        b.owned[PRESTO as usize] = true;
+        b.owned[crate::itchy::VERT as usize] = true;
+        b.add_pet(PRESTO);
+        b.add_random_guppy();
+        let p = &b.fish_pets[0];
+        assert!(p.presto && p.recharge == 0);
+        let (x, y) = (p.widget_x + 40, p.widget_y + 40);
+        b.step(&[Input::RightClick { x, y }]);
+        assert!(b.pet_dialog.is_some());
+        // The board keeps running under the dialog.
+        let clock = b.clock;
+        b.step(&[]);
+        assert!(!b.paused && b.clock == clock + 1);
+        let (bx, by) = button_pos(crate::itchy::VERT as usize);
+        let draws = b.rng.state().1;
+        b.step(&[
+            Input::Click {
+                x: bx + 5,
+                y: by + 5,
+            },
+            Input::Release {
+                x: bx + 5,
+                y: by + 5,
+            },
+        ]);
+        assert!(b.pet_dialog.is_none());
+        assert_eq!(b.fish_pets.len(), 1);
+        let v = &b.fish_pets[0];
+        assert!(v.is_vert() && v.presto);
+        // `Fish::Init`'s 6 draws and the shadow's, no position draws.
+        assert_ne!(b.rng.state().1, draws);
+        assert_eq!(v.recharge, crate::presto::RECHARGE - 1);
+        // Too early: BUZZER and "Recharging...", no dialog.
+        let (x, y) = (v.widget_x + 40, v.widget_y + 40);
+        b.step(&[Input::RightClick { x, y }]);
+        assert!(b.pet_dialog.is_none());
+        assert_eq!(b.notes.last().and_then(|n| n.text), Some("Recharging..."));
     }
 
     #[test]

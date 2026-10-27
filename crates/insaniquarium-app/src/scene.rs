@@ -82,6 +82,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_WADSWORTH",
     "IMAGE_CLYDE",
     "IMAGE_RUFUS",
+    "IMAGE_PRESTO",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -281,6 +282,10 @@ pub struct Fonts {
     tank_label: Option<((i32, i32), Arc<Rgba>)>,
     money: Option<(i32, Arc<Rgba>)>,
     dialog: Option<(Dialog, Arc<Rgba>)>,
+    /// The PRESTO CHANGE-O dialog for an owned-pets set (pet-presto.md).
+    pet_dialog: Option<([bool; 24], Arc<Rgba>)>,
+    /// "Presto" label in green and red (pet-presto.md#drawing).
+    presto_label: Option<[Arc<Rgba>; 2]>,
     /// The dialog's button rect in screen pixels (x, y, w, h).
     dialog_button: Option<(i32, i32, i32, i32)>,
     /// Hatch screen for a pet: title bar with "You have found:", the name,
@@ -337,6 +342,8 @@ impl Fonts {
             tank_label: None,
             money: None,
             dialog: None,
+            pet_dialog: None,
+            presto_label: None,
             dialog_button: None,
             hatch: None,
             pets_bg: None,
@@ -416,6 +423,19 @@ impl Fonts {
             && let Some(f) = &self.font
         {
             self.money = Some((money, Arc::new(f.render(money.to_string().as_bytes()))));
+        }
+        if b.pet_dialog.is_some()
+            && self.pet_dialog.as_ref().is_none_or(|x| x.0 != b.owned)
+            && let Some(df) = &self.dialog_fonts
+            && let Some(img) = render_pet_dialog(images, df, &b.owned)
+        {
+            self.pet_dialog = Some((b.owned, Arc::new(img)));
+        }
+        if self.presto_label.is_none()
+            && let Some(f) = &self.small
+        {
+            let img = Arc::new(f.render(b"Presto"));
+            self.presto_label = Some([img.clone(), img]);
         }
         match b.dialog {
             Some(d) if self.dialog.as_ref().is_none_or(|x| x.0 != d) => {
@@ -526,6 +546,37 @@ impl Fonts {
         }
         if let Some((_, img)) = &self.dialog {
             text(img, DIALOG_POS.0, DIALOG_POS.1, 12.0, [255; 3]);
+        }
+        // "Presto" under each changed pet: green, the recharging part red
+        // (`0x004f2450`; the clip isn't modelled, the label turns red while
+        // recharging). `static`, not frame-checked.
+        if let Some([img, _]) = &self.presto_label {
+            let flagged = b
+                .fish_pets
+                .iter()
+                .filter(|f| f.presto && f.kind != FishKind::Presto)
+                .map(|f| (f.widget_x, f.widget_y, f.widget_w(), f.recharge))
+                .chain(
+                    b.pets
+                        .iter()
+                        .filter(|p| p.presto)
+                        .map(|p| (p.widget_x, p.widget_y, 80, p.countdown_1ac)),
+                );
+            for (wx, wy, w, r) in flagged {
+                let x = wx + (w - img.width as i32) / 2;
+                let y = wy + 80 - 2 - img.height as i32 + 4;
+                let c = if r > 0 {
+                    [255, 0x33, 0x33]
+                } else {
+                    [0xaa, 0xff, 0xaa]
+                };
+                text(img, x as f32, y as f32, 3.9, c);
+            }
+        }
+        if b.pet_dialog.is_some()
+            && let Some((_, img)) = &self.pet_dialog
+        {
+            text(img, 0.0, 0.0, 12.5, [255; 3]);
         }
         out
     }
@@ -921,6 +972,84 @@ fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
         mirror
     };
     Cel::new(image, col, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
+/// Presto (`0x004dfbb0`, pet-presto.md#drawing): row 1 while turning
+/// (mirrored iff turn > 0), else row 0 with the guppy mirror rule.
+fn presto_cel(f: &Fish, z: f32) -> Cel {
+    let mirror = match f.turn_timer {
+        t if t > 0 => true,
+        t if t < 0 => false,
+        _ => f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0),
+    };
+    let row = i32::from(f.turn_timer != 0);
+    Cel::new("IMAGE_PRESTO", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
+/// The PRESTO CHANGE-O dialog (`PetDialog::Draw` @ `0x00535800`): a dark
+/// frame around a 500 × 340 window, white outlines, the yellow title, a
+/// `PETBTNU` button with the 40 × 40 thumbnail for every owned pet, and
+/// CANCEL. `static`, not frame-checked.
+fn render_pet_dialog(
+    img: &GameImages,
+    [head, _, btn]: &[ImageFont; 3],
+    owned: &[bool; 24],
+) -> Option<Rgba> {
+    use insaniquarium_sim::presto::{CANCEL, CANCEL_H, button_pos};
+    let mut out = Rgba::new_transparent(WIDTH, HEIGHT);
+    let mut fill = |x: i32, y: i32, w: i32, h: i32, c: [u8; 4]| {
+        for j in y.max(0)..(y + h).min(HEIGHT as i32) {
+            for i in x.max(0)..(x + w).min(WIDTH as i32) {
+                out.pixels[(j as u32 * WIDTH + i as u32) as usize] = c;
+            }
+        }
+    };
+    // Colour 0xb0000000: black at alpha 0xb0, on the four margins.
+    let dark = [0, 0, 0, 0xb0];
+    fill(0, 0, 70, 480, dark);
+    fill(570, 0, 70, 480, dark);
+    fill(70, 0, 500, 70, dark);
+    fill(70, 410, 500, 70, dark);
+    let white = [255, 255, 255, 255];
+    for (x, y, w, h) in [(0, 0, 639, 479), (70, 70, 500, 340)] {
+        fill(x, y, w + 1, 1, white);
+        fill(x, y + h, w + 1, 1, white);
+        fill(x, y, 1, h + 1, white);
+        fill(x + w, y, 1, h + 1, white);
+    }
+    let title = b"PRESTO CHANGE-O";
+    head.draw(
+        &mut out,
+        title,
+        (640 - head.width(title)) / 2,
+        head.ascent() + 5,
+        [255, 255, 0],
+    );
+    let up = img.get("IMAGE_PETBTNU")?;
+    let all = (0, 0, WIDTH as i32, HEIGHT as i32);
+    for (i, pet) in crate::assets::PETS.iter().enumerate() {
+        if !owned[i] {
+            continue;
+        }
+        let (x, y) = button_pos(i);
+        out.blit(
+            up,
+            (0, 0, up.width as i32, up.height as i32),
+            (x, y),
+            [255; 3],
+            all,
+        );
+        if let Some(t) = img.pet_thumbnails.get(&format!("IMAGE_{pet}")) {
+            out.blit(t, (0, 0, 40, 40), (x + 5, y + 5), [255; 3], all);
+        }
+    }
+    let button = img.get("IMAGE_DIALOGBUTTON")?;
+    let normal = button.crop(0, 0, button.width / 3, button.height);
+    let r = (CANCEL.0, CANCEL.1, CANCEL.2, CANCEL_H);
+    out.draw_image_box(&normal, r);
+    let (lx, ly) = button_label_origin(btn, b"CANCEL", r);
+    btn.draw(&mut out, b"CANCEL", lx, ly, [255, 255, 100]);
+    Some(out)
 }
 
 /// Prego (`0x004df230`, pet-prego.md#drawing): row and cel by the birth
@@ -1485,8 +1614,24 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
         cels.push(match f.kind {
             FishKind::Prego => prego_cel(f, z),
             FishKind::Itchy => itchy_cel(f, !b.aliens.is_empty(), z),
+            FishKind::Presto => presto_cel(f, z),
             _ => fish_pet_cel(f, z),
         });
+        // The smoke puff over a new Presto pet (pet-presto.md#drawing).
+        if f.presto && f.puff < insaniquarium_sim::presto::PUFF {
+            cels.push(
+                Cel::new(
+                    "IMAGE_PRESTO",
+                    f.puff / 2,
+                    2,
+                    f.widget_x,
+                    f.widget_y,
+                    z + 0.0005,
+                )
+                .tint([175; 3])
+                .additive(),
+            );
+        }
     }
     for (i, s) in b.shots.iter().enumerate() {
         shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);

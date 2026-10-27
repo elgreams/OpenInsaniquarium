@@ -13,6 +13,7 @@ pub mod message;
 pub mod music;
 pub mod pet;
 pub mod pet_screen;
+pub mod presto;
 pub mod profile;
 pub mod shop;
 pub mod sound;

@@ -52,6 +52,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 17 => FishKind::Gash,
             0x15 if rd_i32(b, 0x234) == 18 => FishKind::Angie,
             0x15 if rd_i32(b, 0x234) == 16 => FishKind::Amp,
+            0x15 if rd_i32(b, 0x234) == 19 => FishKind::Presto,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -96,6 +97,17 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         misc_timer: rd_i32(b, 0x210),
         coin_timer: rd_i32(b, 0x220),
         coin_interval: rd_i32(b, 0x224),
+        presto: rd_i32(b, 0x8c) == 0x15 && b.get(0x230).is_some_and(|&v| v != 0),
+        recharge: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x23c {
+            rd_i32(b, 0x238)
+        } else {
+            0
+        },
+        puff: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x24c {
+            rd_i32(b, 0x248)
+        } else {
+            0
+        },
         clicks: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x264 {
             rd_i32(b, 0x260)
         } else {
@@ -152,6 +164,7 @@ pub fn coin_from_raw(b: &[u8]) -> Coin {
         floor_time: rd_i32(b, 0x19c),
         multiplier: rd_i32(b, 0x1c0),
         risen: b[0x168] != 0,
+        text: None,
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -196,6 +209,7 @@ pub fn pet_from_raw(b: &[u8]) -> Pet {
         counter_1a8: rd_i32(b, 0x1a8),
         countdown_1ac: rd_i32(b, 0x1ac),
         slow: b[0x1b0] != 0,
+        presto: b.get(0x1c8).is_some_and(|&v| v != 0),
         shell: rd_i32(b, 0x1b4),
         pearl_taken: b[0x1c0] != 0,
         unk_1b8: rd_i32(b, 0x1b8),
@@ -473,6 +487,11 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         if let Some(c) = b.get("clock").and_then(Value::as_i64) {
             board.clock = c as i32;
         }
+        if let Some(o) = b.get("owned").and_then(Value::as_str).and_then(hex_bytes) {
+            for (flag, &v) in board.owned.iter_mut().zip(&o) {
+                *flag = v != 0;
+            }
+        }
         if let Some(v) = b.get("ticks").and_then(Value::as_i64) {
             board.level_ticks = v as i32;
         }
@@ -526,6 +545,7 @@ fn fish_json(f: &Fish) -> Value {
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
+        "presto": [f.presto, f.recharge, f.puff],
     })
 }
 
@@ -534,7 +554,7 @@ fn pet_json(p: &Pet) -> Value {
         "id": p.id, "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy, "facing": p.facing,
         "tvx": p.target_vx, "mode": p.mode,
         "timers": [p.counter, p.reroll_timer, p.counter_1a8, p.countdown_1ac, p.shell],
-        "pearl_taken": p.pearl_taken,
+        "pearl_taken": p.pearl_taken, "presto": p.presto,
         "anim": [p.turn, p.anim, p.cel], "widget": [p.widget_x, p.widget_y],
     })
 }
@@ -1969,15 +1989,17 @@ pub fn replay_idle(t: &Trace) -> Result<Trace, ReplayError> {
 ///
 /// - Left-button down (single or double click) → [`Input::Click`]. The board
 ///   ignores it while a dialog is up.
-/// - Left-button up → [`Input::DismissDialog`]: dialog buttons fire on
-///   mouse-up, and dismissing with no dialog open does nothing. TODO: check
-///   the dialog's button rect (`dialog.md`); a release off the button
+/// - Left-button up → [`Input::Release`]: dialog buttons fire on
+///   mouse-up, and a release with no dialog open does nothing. TODO: check
+///   the board dialog's button rect (`dialog.md`); a release off the button
 ///   doesn't close the original's dialog.
+/// - Right-button down / up → [`Input::RightClick`] / [`Input::RightRelease`]
+///   (Presto, `pet-presto.md`).
 /// - Focus loss → [`Input::SetPaused`]`(true)`; focus regained and keys →
 ///   nothing (the board has no keyboard handling).
 /// - Moves, mouse enter/leave and recorded I/O don't touch the board.
 ///
-/// Anything else in `from..=to` (right clicks, keys, focus changes) is
+/// Anything else in `from..=to` (middle clicks, minimising) is
 /// returned in `unsupported`, so a replay can refuse it rather than drift.
 pub fn demo_board_inputs(
     demo: &crate::demo::Demo,
@@ -2019,7 +2041,20 @@ pub fn demo_board_inputs_mapped(
                 if down {
                     Input::Click { x, y }
                 } else {
-                    Input::DismissDialog
+                    Input::Release { x, y }
+                }
+            }
+            DemoEvent::MouseButton {
+                button: MouseButton::Right,
+                down,
+                x,
+                y,
+                ..
+            } => {
+                if down {
+                    Input::RightClick { x, y }
+                } else {
+                    Input::RightRelease { x, y }
                 }
             }
             // Focus loss pauses the board; regaining focus doesn't resume

@@ -63,6 +63,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 16, Amp: charges, then three clicks zap
     /// every guppy into a $200 coin (`pet-amp.md`).
     Amp,
+    /// `Sexy::FishTypePet` id 19, Presto: swims; right-click to change him
+    /// into another pet (`pet-presto.md`).
+    Presto,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,6 +156,13 @@ pub struct Fish {
     pub blink: bool,
     /// Amp's clicks while charged (`+0x260`, 0..2).
     pub clicks: i32,
+    /// FishTypePet `+0x230`: the Presto flag (Presto himself and every pet
+    /// he turns into; pet-presto.md#fields).
+    pub presto: bool,
+    /// FishTypePet `+0x238`: Presto recharge (360 → 0, one per tick).
+    pub recharge: i32,
+    /// FishTypePet `+0x248`: smoke-puff counter (0 → 20, flagged pets).
+    pub puff: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -273,6 +283,9 @@ impl Fish {
             coin_interval: 0,
             blink: false,
             clicks: 0,
+            presto: false,
+            recharge: 0,
+            puff: 0,
             widget_x: x,
             widget_y: y,
         };

@@ -52,6 +52,8 @@ pub struct Pet {
     pub countdown_1ac: i32,
     /// `+0x1b0`
     pub slow: bool,
+    /// `+0x1c8`: the Presto flag (pet-presto.md#fields).
+    pub presto: bool,
     /// `+0x1b4`: Stinky's shell counter (hiding while > 0); Niko's pearl
     /// timer.
     pub shell: i32,
@@ -110,6 +112,7 @@ impl Pet {
             counter_1a8: 0,
             countdown_1ac: 0,
             slow: false,
+            presto: false,
             shell: 0,
             pearl_taken: false,
             unk_1b8: 0,
@@ -190,6 +193,11 @@ impl Pet {
         rng: &mut MtRand,
         out: &mut PetOut,
     ) {
+        // A Presto-made pet sinks to its floor (pet-stinky.md#update, step 2;
+        // ids 0, 1, 7, 14).
+        if self.presto && matches!(self.id, STINKY | NIKO | RUFUS | RHUBARB) && self.y < 380.0 {
+            self.vy += 0.1;
+        }
         match self.id {
             NIKO => return self.update_niko(rng, out),
             CLYDE => return self.update_clyde(coins, rng, out),

@@ -67,6 +67,9 @@ pub struct Coin {
     /// `+0x168`: a rising coin (kinds 5, 8–14, 0x12) has reached the top
     /// and now falls like any coin (pet-nimbus.md).
     pub risen: bool,
+    /// Kind 16 only: floating text instead of a note (`0x005444e0`, e.g.
+    /// Presto's "Recharging...").
+    pub text: Option<&'static str>,
     /// `+0x30`, `+0x34`: truncated position.
     pub widget_x: i32,
     pub widget_y: i32,
@@ -104,6 +107,7 @@ impl Coin {
             floor_time: 0,
             multiplier: 1,
             risen: false,
+            text: None,
             widget_x: x,
             widget_y: y,
         }

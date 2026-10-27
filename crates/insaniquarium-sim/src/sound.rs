@@ -47,6 +47,7 @@ pub enum Sound {
     Eel1,
     Eel2,
     Eel3,
+    TapGlass,
 }
 
 impl Sound {
@@ -96,6 +97,7 @@ impl Sound {
             Sound::Eel1 => 0x119,
             Sound::Eel2 => 0x11a,
             Sound::Eel3 => 0x11b,
+            Sound::TapGlass => 0x141,
         }
     }
 
@@ -108,7 +110,14 @@ impl Sound {
             Sound::Slurp | Sound::Slurp2 | Sound::Slurp3 => Some(0x138),
             Sound::Points | Sound::Points2 | Sound::Points3 | Sound::Points4 => Some(0x12c),
             Sound::Chomp | Sound::Chomp2 => Some(0x113),
-            Sound::Splash | Sound::Splash2 | Sound::Splash3 | Sound::Roar | Sound::Hatch => None,
+            // The glass tap plays through the app, not the board's table
+            // (pet-presto.md#how-a-right-click-reaches-him).
+            Sound::Splash
+            | Sound::Splash2
+            | Sound::Splash3
+            | Sound::Roar
+            | Sound::Hatch
+            | Sound::TapGlass => None,
             s => Some(s.sample_id()),
         }
     }
@@ -158,6 +167,7 @@ impl Sound {
             Sound::Eel1 => "SOUND_EEL1",
             Sound::Eel2 => "SOUND_EEL2",
             Sound::Eel3 => "SOUND_EEL3",
+            Sound::TapGlass => "SOUND_TAPGLASS",
         }
     }
 

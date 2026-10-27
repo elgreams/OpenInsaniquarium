@@ -280,6 +280,12 @@ while captured < max_ticks and polls < max_ticks * 40 do
         readFloat(board + 0x3d8), readFloat(board + 0x3dc), readFloat(board + 0x3e0))
       -- Hint bytes +0x4b0..+0x4e5 (one-time hint flags; dialog.md).
       bclock = bclock .. string.format(',"hints":"%s"', hex_block(board + 0x4b0, 0x36))
+      -- Owned pets (profile +0x00..+0x17): the PetDialog's enabled buttons
+      -- (pet-presto.md#the-petdialog-0x005355c0).
+      local prof = u32(app + 0x8b8)
+      if prof and prof ~= 0 then
+        bclock = bclock .. string.format(',"owned":"%s"', hex_block(prof, 24))
+      end
     end
     local board_json = "null"
     if board and board ~= 0 then
