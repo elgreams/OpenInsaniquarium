@@ -34,7 +34,7 @@ Confidence: `traced` overall, per section below. The capture `traces/original/pe
 | `+0x130` | **most pets you may choose** | `min(profile+0xb4, owned count)`, capped at 4 outside Virtual Tank |
 | `+0x134` | **fade countdown** | 0 |
 
-`profile+0xb4` is 3 for a fresh profile, so the max is 3. What raises it is unknown.
+`profile+0xb4` is 3 for a fresh profile, so the max is 3. The Bonus screen's 5th and 6th purchases raise it to 4 and 7 (`bonus-screen.md#the-offer-0x00516f70-from-the-ctor`, `static`).
 
 No pet starts chosen: the constructor clears `profile+0x5a + id` for all 24 ids.
 

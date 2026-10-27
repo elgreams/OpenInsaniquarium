@@ -4,7 +4,7 @@ Status: plan only, no claims about the game. What is already known is cited. `st
 
 ## What we know
 
-- Ids **20 BRINKLEY the Scuba Diving Elephant**, **21 NOSTRADAMUS the Nose**, **22 STANLEY the Startlingly Small Sea Serpent**, **23 WALTER the Penguin** have hatch-screen names and text but are **not awarded by egg pieces**: they're unlocked by `0x005172e0` (`screens/hatch-screen.md#pet-award-table-adventure-first-play-through`). How (secret code, Virtual Tank purchase, game completion) is the first open question.
+- Ids **20 BRINKLEY the Scuba Diving Elephant**, **21 NOSTRADAMUS the Nose**, **22 STANLEY the Startlingly Small Sea Serpent**, **23 WALTER the Penguin** have hatch-screen names and text but are **not awarded by egg pieces**: they're unlocked by `0x005172e0`: they are **bought with shells on the Bonus screen**, one per purchase in id order, for 20 000 / 25 000 / 30 000 / 35 000 shells (`screens/bonus-screen.md`, `static`).
 - All four are `FishTypePet` (AddPet makes an `OtherTypePet` only for ids 0, 1, 5, 7, 14).
 - Code paths already seen for them in other pets' specs (all `static`):
   - **20 Brinkley:** board counter `board+0x194`; Zorf drops pellets every 2nd check while he is in (`pet-zorf.md#feeding`); type-1 shadow (`pet-amp.md#construction`); shares Nimbus's animation branch (`pet-nimbus.md#animation`).
@@ -22,7 +22,7 @@ Status: plan only, no claims about the game. What is already known is cited. `st
    - the PRESTO CHANGE-O dialog (lists owned pets; a pick is a click on the dialog) as a board dialog;
    - the replacement: remove the pet, `AddPet(n, wx, wy, flag 1)` with no position draws, recharge 360, puff 0, the "Presto" label;
    - record: 1-2 with Presto, right-click him, pick 2–3 different pets in turn.
-2. **Find the unlock** (`0x005172e0` and its callers): needed to own them legitimately; for recordings, the CE profile edit (owned bytes 20–23) is enough.
+2. ~~Find the unlock~~: done, `screens/bonus-screen.md`. For recordings, the CE profile edit (owned bytes 20–23) is enough.
 3. **Spec 20–23** in one agent run, one pet per commit (Brinkley, Nostradamus, Stanley, Walter).
 4. **Build** them and record one zoo: 1-2 with Brinkley + Nostradamus + Stanley (Walter needs Presto: record him with Presto in a second session). Push timers with CE where an ability is slow, inside one capture chunk (`dynamic-analysis.md`: keep each chunk's header when joining).
 5. Promote specs, update `INDEX.md`, `ROADMAP.md`.
