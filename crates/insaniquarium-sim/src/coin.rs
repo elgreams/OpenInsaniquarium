@@ -68,8 +68,11 @@ pub struct Coin {
     /// and now falls like any coin (pet-nimbus.md).
     pub risen: bool,
     /// Kind 16 only: floating text instead of a note (`0x005444e0`, e.g.
-    /// Presto's "Recharging...").
+    /// Presto's "Recharging..."), drawn in colour `+0x1a0` (0 = the note).
     pub text: Option<&'static str>,
+    /// `+0x1a0`: kind 16's text colour; non-zero puts the coin on the
+    /// `+0xec` list and lets it rise to y −50.
+    pub colour: i32,
     /// `+0x30`, `+0x34`: truncated position.
     pub widget_x: i32,
     pub widget_y: i32,
@@ -108,6 +111,7 @@ impl Coin {
             multiplier: 1,
             risen: false,
             text: None,
+            colour: 0,
             widget_x: x,
             widget_y: y,
         }
@@ -187,6 +191,18 @@ impl Coin {
                     CoinStep::Keep
                 };
             }
+        }
+        if self.kind == 16 && !self.collected {
+            // Kind-16 path (`0x004f51e6`): +0x19c counts up; gone past 100
+            // (past 50 for colours ≥ 3) or above y 50 (−50 with a colour).
+            self.floor_time += 1;
+            let top = if self.colour != 0 { -50.0 } else { 50.0 };
+            if (self.colour >= 3 && self.floor_time > 50) || self.floor_time > 100 || self.y < top {
+                return CoinStep::Remove;
+            }
+            self.y -= 1.0;
+            self.widget_y = self.y as i32;
+            return CoinStep::Keep;
         }
         if self.kind == kind::PEARL && !self.collected {
             // A pearl only waits (`+0x48`, our floor time), then vanishes.

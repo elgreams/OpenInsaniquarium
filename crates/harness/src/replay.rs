@@ -165,6 +165,7 @@ pub fn coin_from_raw(b: &[u8]) -> Coin {
         multiplier: rd_i32(b, 0x1c0),
         risen: b[0x168] != 0,
         text: None,
+        colour: if b.len() > 0x1a4 { rd_i32(b, 0x1a0) } else { 0 },
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }

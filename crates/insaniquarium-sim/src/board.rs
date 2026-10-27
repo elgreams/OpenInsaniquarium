@@ -502,11 +502,13 @@ impl Board {
             return true;
         }
         self.play(0x112, Sound::Buzzer);
-        // `0x005444e0`: a kind-16 rising `Coin` carrying the text (colour
-        // 2), on the notes list.
+        // `0x005444e0`: a kind-16 rising `Coin` carrying the text in
+        // colour 2, which puts it on the `+0xec` list (`AddGameObject`
+        // @ `0x00543182`). It isn't mouse-visible.
         let mut c = Coin::new(wx + w / 2 - 20, wy - 10, 16);
         c.text = Some("Recharging...");
-        self.notes.push(c);
+        c.colour = 2;
+        self.pearls.push(c);
         false
     }
 
@@ -680,7 +682,7 @@ impl Board {
         if let Some(i) = self
             .pearls
             .iter()
-            .rposition(|c| !c.collected && c.hit(x, y))
+            .rposition(|c| !c.collected && c.kind != 16 && c.hit(x, y))
         {
             if !self.pearls[i].collected {
                 self.pearls[i].collect();
@@ -2134,7 +2136,7 @@ mod tests {
         let (x, y) = (v.widget_x + 40, v.widget_y + 40);
         b.step(&[Input::RightClick { x, y }]);
         assert!(b.pet_dialog.is_none());
-        assert_eq!(b.notes.last().and_then(|n| n.text), Some("Recharging..."));
+        assert_eq!(b.pearls.last().and_then(|n| n.text), Some("Recharging..."));
     }
 
     #[test]

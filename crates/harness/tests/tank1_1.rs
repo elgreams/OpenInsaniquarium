@@ -754,6 +754,18 @@ fn gash_snack() {
     }
 }
 
+/// Presto (`presto_01`): 1-2 with Presto alone. He is right-clicked and
+/// changed into Itchy, Shrapnel, Stinky and back into Presto, each pet
+/// right-clicked once while recharging (BUZZER) (pet-presto.md). The
+/// stored capture ends before the Menu click that quit the session (the
+/// in-game menu isn't modelled).
+#[test]
+fn presto_changes() {
+    if captured("presto_01") {
+        replay_level("presto_01", 2, true);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

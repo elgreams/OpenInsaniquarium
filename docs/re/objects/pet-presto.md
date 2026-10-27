@@ -12,7 +12,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-19 / Presto
 - Revert on a punch: Update `0x004f7ad0`, push-timer step; the glove `BoxingGlove::Update` @ `0x004e9a60` → `0x004e0ed0`
 - Drawing: draw body `0x004f8610` case 0x13 → `0x004dfbb0` with `IMAGE_PRESTO`; puff and label at the end of `0x004f8610`; label `0x004f2450`
 
-Confidence: `static` throughout. No capture with Presto exists yet; the first one should right-click him, pick a pet, and right-click the new pet before and after the recharge.
+Confidence per section below. `presto_01` (1-2, Presto alone; replayed by `presto_changes` in `crates/harness/tests/tank1_1.rs` from the game's own demo) right-clicks him, changes him into Itchy, Shrapnel, Stinky and back into Presto, and right-clicks each changed pet once while it recharges. The punch revert (pet 23) and the drawing are not covered. `traced` where a section says so, else `static`.
 
 ## Fields
 
@@ -23,17 +23,17 @@ Confidence: `static` throughout. No capture with Presto exists yet; the first on
 | `+0x248` | int | puff counter (Ghidra `offset_0x1c`): 0 at construction, +1 per tick while < 20, for flagged pets (and id 21) |
 | `+0x20c` | int | the Fish push timer (set by the boxing glove) |
 
-On an `OtherTypePet` (Stinky, Niko, Rufus, Clyde, Rhubarb) the same roles are played by byte `+0x1c8` (flag) and int `+0x1ac` (recharge) (`0x004f3a00`, `0x00539540`; that ctor wasn't read).
+On an `OtherTypePet` (Stinky, Niko, Rufus, Clyde, Rhubarb) the same roles are played by byte `+0x1c8` (flag), int `+0x1ac` (recharge, 360 unless id 19, 0 in the Virtual Tank) and `+0x1a8` (puff). Its ctor (`0x004eb5c0`) skips the floor y of ids 0/7/14 and Niko's fixed spot when flagged, and its update (`0x004f2e80`) makes flagged ids 0, 1, 7, 14 sink (`vy += 0.1` while y < 380).
 
 Pet ctors that branch on the flag: Gash's hunger clock starts at **1520** instead of −1550 (`pet-gash.md`), so a fresh Gash made by Presto is hungry after 51 calm ticks.
 
-`static`.
+`traced` by `presto_changes` (`presto_01`): the flag and recharge on fish pets and on Stinky (`+0x1c8`/`+0x1ac`), the puff counter.
 
 ## Construction
 
 `Board::AddPet(19, -1, -1)`: the flag is forced to 1, then the usual **9 app draws** (2 position, 6 `Fish::Init`, 1 type-0 shadow, `% 5`). No id-19 ctor branch; recharge 0 (id 19), puff counter 0.
 
-`static`.
+`traced` by `presto_changes` (`presto_01`) (his draws at level start).
 
 ## Update (`0x004f7ad0`), id 19
 
@@ -43,7 +43,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`): the gate 
 - **Recharge:** `+0x238 −= 1` while non-zero (Itchy's step 9).
 - **Punch revert** (in step 7, the push timer): after the push timer is decremented, if the pet is flagged, its id isn't 19 and the new timer value is < 41 (so from the 10th tick of a 50-tick glove push), set `+0x238 = 0` and call slot 73 with **19** (the change below): it turns back into Presto, and its update returns at once.
 
-`static`.
+`traced` by `presto_changes` (`presto_01`) for swimming, the puff and the recharge. The punch revert is `static`.
 
 ## How a right-click reaches him
 
@@ -54,7 +54,7 @@ Presto (like every pet) isn't mouse-visible (`+0x55` = byte `0x005e8f14`, 0), so
 
 Unflagged pets are skipped: a right-click on a pet without the flag is just a glass tap.
 
-`static`.
+`traced` by `presto_changes` (`presto_01`) for the lookup (right-clicks on Presto pets, every one landing on him). The glass tap isn't compared (no sample-table entry); the Virtual Tank branch is `static`.
 
 ## Right-click (`0x004fb680`, first block)
 
@@ -67,7 +67,7 @@ Slot 54 passes the click to `0x004fb680`; a negative click count is the **right 
 
 Either way the click is consumed (returns true). Left clicks on a flagged FishTypePet take the normal pet path (Amp's zap, Walter's glove; nothing for Presto).
 
-`static`.
+`traced` by `presto_changes` (`presto_01`): BUZZER (sample table) and the "Recharging..." `Coin`, which is kind 16 with colour 2 (`+0x1a0`), so `AddGameObject` (`0x00543182`) puts it on the **`+0xec`** list (with pearls), not `+0xe8`. It rises 1 px a tick and is removed after 100 ticks (`0x004f51e6`: past 50 for colours ≥ 3; above y −50 with a colour, 50 without).
 
 ## The PetDialog (`0x005355c0`)
 
@@ -93,7 +93,7 @@ Mouse handling (the hit test `0x005329f0` finds the first button, in index order
 
 `0x0054b450(i)`: close dialog `0x1f`; if `i ≥ 0`, a pet was stored in `app+0x8b4` and the board exists, find the Presto pet with `0x00539540` (the **first** pet in `+0xb4` with `+0x230` set, else the first in `+0xb0` with `+0x1c8` set; not necessarily the one clicked, but there is only one Presto) and call its slot 73 with `i`. Clear `app+0x8b4`.
 
-`static`.
+`traced` by `presto_changes` (`presto_01`): the board kept running under the dialog (no paused ticks), and picks counted on mouse-up with no button delay (one pick ~0.6 s after the dialog opened). CANCEL and the right button inside the dialog are `static`.
 
 ## The change (slot 73, `0x004f89a0`)
 
@@ -109,7 +109,7 @@ Called with the new id `n` (from the dialog, or 19 from the punch revert):
 
 Nothing else is carried over: timers, hunger clocks, charges and modes start fresh (e.g. Amp's charge restarts at 300, Shrapnel's bomb counter at 0). The swap happens during input handling, so the new pet gets its first update in the same tick (`sim/board.md#tick-order`).
 
-`static`.
+`traced` by `presto_changes` (`presto_01`) for FishTypePet → FishTypePet (Itchy, Shrapnel), FishTypePet → OtherTypePet (Stinky, kept at Presto's position: neither floor y nor shadow-first), OtherTypePet → Presto, the GROW sample, the draws and list order. The Wadsworth/Meryl hand-over and step 6 are `static`.
 
 ## Drawing
 
@@ -123,8 +123,8 @@ For flagged pets other than Presto, a **label** (`0x004f2450`): the text "Presto
 
 ## Open questions
 
-- Everything is static. Capture a right-click, a pick, the GROW stamp and the new pet's draws, and a BUZZER click during the recharge.
-- Whether the PetDialog pauses the board (so whether a pick and its draws land on a paused tick).
-- The OtherTypePet side (`+0x1c8`/`+0x1ac`, its ctor with the flag) wasn't read.
+- Niko made by Presto: the fixed spot is skipped for a flagged pet (`0x004d89f0`), and Niko never gets a shadow; neither is captured.
+- CANCEL, and a right-button pick inside the dialog.
+- The in-game Menu click (`presto_01` was cut before it): the menu isn't modelled.
 - The boxing glove (pet 23) and the `+0x260`/`+0x264` hand-over belong to that pet's spec.
 - The earlier specs' "drop-in flag/countdown" for `+0x230`/`+0x238` should be renamed "Presto flag / recharge" when they are next edited.

@@ -55,6 +55,12 @@ NO_COINS = "--no-coins" in sys.argv
 FEED_LOW = "--feed-low" in sys.argv
 # Click a charged Amp three times once N guppies are in (`--zap-amp N`).
 ZAP_AMP = int(sys.argv[sys.argv.index("--zap-amp") + 1]) if "--zap-amp" in sys.argv else 0
+# Presto (`--presto 0,11,C,19`): right-click the Presto pet once it is
+# recharged and pick these pets in turn in the PRESTO CHANGE-O dialog ("C"
+# = CANCEL). After each change, one early right-click (BUZZER).
+PRESTO = (sys.argv[sys.argv.index("--presto") + 1].split(",")
+          if "--presto" in sys.argv else [])
+PET_DIALOG = 0x1f
 
 
 def window():
@@ -69,12 +75,12 @@ def window():
     raise SystemExit("game window not found")
 
 
-def click(win, gx, gy):
+def click(win, gx, gy, button=1):
     w, ox, oy = win
     subprocess.run(["xdotool", "windowactivate", "--sync", w])
     subprocess.run(["xdotool", "mousemove", str(ox + gx), str(oy + gy)])
     time.sleep(0.05)
-    subprocess.run(["xdotool", "click", "1"])
+    subprocess.run(["xdotool", "click", str(button)])
     # Park the cursor outside the window so it can't hover-trigger anything.
     subprocess.run(["xdotool", "mousemove", str(ox - 200), str(oy + 100)])
 
@@ -99,6 +105,10 @@ def read_state():
             st["coins"].append(tuple(map(int, p[1:4])))
         elif p[0] == "P":
             st.setdefault("pets", []).append(tuple(map(int, p[1:6])))
+            if len(p) >= 8 and int(p[6]):
+                st["presto"] = (int(p[2]), int(p[3]), int(p[7]), int(p[1]))
+        elif p[0] == "Q" and len(p) >= 6 and int(p[4]) and "presto" not in st:
+            st["presto"] = (int(p[2]), int(p[3]), int(p[5]), int(p[1]))
         elif p[0] == "O":
             st["oscars"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
@@ -119,6 +129,9 @@ def main():
     bought_carnivore = False
     bought_weapon = 0
     bought_quantity = 0
+    picks = list(PRESTO)
+    presto_at = time.time() + 5  # next right-click on the Presto pet
+    buzzed = True
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -128,6 +141,32 @@ def main():
             print("level complete")
             return
         now = time.time()
+        if any(d[0] == PET_DIALOG for d in st["dialogs"]):
+            # PRESTO CHANGE-O: pick the next pet (pet-presto.md#the-petdialog-0x005355c0).
+            pick = picks.pop(0) if picks else "C"
+            if pick == "C":
+                click(win, 320, 46)
+            else:
+                i = int(pick)
+                bx, by = ((10, 120 + 50 * i) if i <= 6 else
+                          (62 + 52 * (i - 7), 420) if i <= 17 else (582, 370 - 50 * (i - 18)))
+                click(win, bx + 25, by + 25)
+            print("presto pick", pick, flush=True)
+            presto_at = now + 3
+            buzzed = pick == "C"
+            time.sleep(0.6)
+            continue
+        if picks and "presto" in st and now >= presto_at and not st["aliens"] and not st["dialogs"]:
+            px, py, recharge, pid = st["presto"]
+            w = 160 if pid == 16 else 80
+            if recharge == 0 or not buzzed:
+                # Early once (BUZZER, "Recharging..."), then when ready.
+                click(win, px + w // 2, py + 40, button=3)
+                print("presto right-click", pid, "recharge", recharge, flush=True)
+                buzzed = True
+                presto_at = now + (2 if recharge == 0 else 4)
+                time.sleep(0.35)
+                continue
         if st["dialogs"]:
             # A board dialog (DANGER!, ...): click its button, centred along
             # the bottom (framework/dialog.md: inset 36, button 33 high).
