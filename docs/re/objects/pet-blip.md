@@ -15,7 +15,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-13 differen
   - board draw `0x0053f5f0` @ `0x0053ffc3` (reticles).
 - Animation `0x004dfc50`: default branch; draw body `0x004f8610` case 13 → generic pet draw `0x004dfbb0` with `IMAGE_BLIP`
 
-Confidence: everything here is `static` (read from code only; no capture with Blip yet).
+Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: the shop reveal at tick 201, SONAR at countdown 225 and the spawn at y 280 on both waves) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
 
 ## Fields used by id 13
 
@@ -23,13 +23,13 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`). Divisor `+0x180` is the `Fish::
 
 The board counter `board+0x178` is incremented by `Board::AddGameObject` (`0x00542ee0`, type 0x15 → `board+0x144 + 4·id`) and decremented by the list removal `0x00541d90`, as for Seymour (`pet-seymour.md`).
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Construction
 
 `Board::AddPet(13, -1, -1)` (`0x00544a90`): **9 app draws**, as Itchy (2 position, 6 `Fish::Init`, 1 type-0 shadow). No id-13 ctor code.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Update (`0x004f7ad0`), id 13
 
@@ -49,7 +49,7 @@ As Itchy's update, with:
 
 RNG: only the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0).
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Effects on other objects
 
@@ -67,7 +67,7 @@ All gated on `board+0x178 ≠ 0`; none draws RNG.
 
 Fish, coins and food are otherwise unaffected.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Drawing (`0x004dfbb0`)
 
@@ -83,4 +83,4 @@ The generic pet draw (`pet-vert.md#drawing-0x004dfbb0`) with `IMAGE_BLIP` (globa
 - `+0x148` and `board+0x4ff` in the hunger-marker test (from stage 3 on the marker needs `board+0x4ff`).
 - Whether the shop reveal also shows its pop animation sound per button (`RefreshSlotButton` with popAnim 1).
 - First capture: tank 3-5 or later with Blip chosen; check the shop at tick 201 and the alien spawn y (280).
-- **Zoo D (`zoo_d_01`, 1-2 with Blip, Rhubarb and Nimbus):** the replay (`zoo_d_blip_rhubarb_nimbus`, ignored for now) matches for 1,930 ticks, through the shop reveal at tick 201, the SONAR at countdown 225, the spawn at y 280 and the first Sylvester wave, then diverges at the first alien's death (clock ~1931; the original draws 4 more app numbers there). Nimbus hadn't tossed a coin yet and Rhubarb hadn't snapped by then, so neither is covered.
+- `zoo_d_01` (the first zoo D recording) has a catch-up burst at its first alien death where the capture read the board clock one update ahead of the objects for ~5 reads; it was re-recorded as `zoo_d_02`.

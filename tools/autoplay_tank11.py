@@ -48,6 +48,11 @@ EGG_PRICE = int(sys.argv[sys.argv.index("--egg") + 1]) if "--egg" in sys.argv el
 # Never buy egg pieces (`--no-egg`): for recordings that must not end the
 # level (pet zoos on 1-2, where the egg costs 500, not the 1-1 default).
 NO_EGG = "--no-egg" in sys.argv
+# Leave coins alone (`--no-coins`): pets that move coins (Nimbus) need them.
+NO_COINS = "--no-coins" in sys.argv
+# Drop food near the floor (`--feed-low`): guppies follow it down, where
+# floor pets (Rhubarb) can reach them.
+FEED_LOW = "--feed-low" in sys.argv
 
 
 def window():
@@ -172,9 +177,10 @@ def main():
             # Pets that move coins (Nimbus) can keep the coin branch busy
             # forever: feed hungry guppies first.
             g = min(st["guppies"], key=lambda g: g[2])
-            click(win, min(max(g[0] + 40, 40), 580), min(max(g[1] - 20, 75), 390))
+            y = 385 if FEED_LOW else min(max(g[1] - 20, 75), 390)
+            click(win, min(max(g[0] + 40, 40), 580), y)
             last_feed = now
-        elif any(c[2] == 0 for c in st["coins"]):
+        elif not NO_COINS and any(c[2] == 0 for c in st["coins"]):
             c = max((c for c in st["coins"] if c[2] == 0), key=lambda c: c[1])
             click(win, c[0] + 36, min(c[1] + 36, 440))
         elif (st["guppies"] and st["foods"] <= bought_quantity and now - last_feed > 0.8

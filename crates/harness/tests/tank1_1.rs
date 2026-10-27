@@ -722,13 +722,13 @@ fn zoo_c_seymour_shrapnel_gumbo() {
     }
 }
 
-/// Pet zoo D (`zoo_d_01`): 1-2 with Blip, Rhubarb and Nimbus, three waves,
-/// inputs from the demo (`pet-blip.md`, `pet-rhubarb.md`, `pet-nimbus.md`).
+/// Pet zoo D (`zoo_d_02`): 1-2 with Blip, Rhubarb and Nimbus, two waves,
+/// food dropped low so Rhubarb snaps, coins left for Nimbus; inputs from
+/// the demo (`pet-blip.md`, `pet-rhubarb.md`, `pet-nimbus.md`).
 #[test]
-#[ignore = "diverges at tick 8622, 1,930 ticks in (first alien death): see pet-blip.md open questions"]
 fn zoo_d_blip_rhubarb_nimbus() {
-    if captured("zoo_d_01") {
-        replay_level("zoo_d_01", 2, true);
+    if captured("zoo_d_02") {
+        replay_level("zoo_d_02", 2, true);
     }
 }
 

@@ -1895,6 +1895,22 @@ pub fn replay_resync_dirty(
         }
         board.step(step_inputs);
         board.artifacts = Default::default();
+        // Money written by the recorder (Cheat Engine), not by the game: the
+        // capture's money jumps up to a round 1000s value with nothing
+        // banked. Adopt it so the replay can carry on (RE tooling only).
+        if let Some(m) = t
+            .snapshots
+            .iter()
+            .find(|s| s.tick == board.tick)
+            .and_then(|s| s.state.get("board"))
+            .and_then(|b| b.get("money"))
+            .and_then(Value::as_i64)
+            && m >= 1000
+            && m % 1000 == 0
+            && m - i64::from(board.money) >= 500
+        {
+            board.money = m as i32;
+        }
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's
         // RNG already includes that click's draws.

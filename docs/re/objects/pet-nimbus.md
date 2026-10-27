@@ -11,7 +11,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-15 differen
 - Animation (slot 89) `0x004dfc50` (ids 15 and 20 share a branch); draw body `0x004f8610` case 15 → generic pet draw `0x004dfbb0` with `IMAGE_NIMBUS`
 - Readers of the toss flags: `Coin::Update` `0x004f5050` (rising kinds), `Food::Update` `0x004f8aa0` (tossed byte `+0x190`)
 
-Confidence: everything here is `static` (read from code only; no capture with Nimbus yet).
+Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: thousands of coin and pellet tosses) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
 
 ## Fields used by id 15
 
@@ -25,7 +25,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
 | `+0x1b0` | mode timer, doubles as the 5-tick steering clock | |
 | `+0x245` | slow byte; only the Virtual Tank sleepy helper sets it | 0 |
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Construction
 
@@ -38,7 +38,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
 
 **9 app draws**, the same as Itchy. The random y is pulled up to 320 by the first update's clamp when it is above that.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Update (`0x004f7ad0`), id 15
 
@@ -57,7 +57,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 RNG: the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0), as Itchy, plus the 1 food-ctor draw per tossed pellet (below). The chase, the target search and the coin toss draw nothing.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Chase
 
@@ -92,7 +92,7 @@ RNG: the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0), as Itchy, plus the 1
    The 36 lines his centre up with a coin's centre (72-px widget); for 40-px food the same offsets put him 16 px right of and below its centre. No speed-bucket change.
 4. **Toss** (`0x004fe740`, id 15), every tick there is a target (steering tick or not).
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Toss (`0x004fe740`, id 15)
 
@@ -106,7 +106,7 @@ RNG: the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0), as Itchy, plus the 1
 
 So per tick: at most one coin and at most one pellet; 0 draws for the coin, 1 for the pellet.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Effects on other objects
 
@@ -120,7 +120,7 @@ So per tick: at most one coin and at most one pellet; 0 draws for the coin, 1 fo
 - **Food** (replaced at `0x004ff276`..`0x004ff2aa`): the new pellet has the tossed byte `+0x190 = 1` (`Food::Food`'s 4th argument). `Food::Update` (`0x004f8aa0`) moves a tossed pellet up with the same table until y < 120, then sets `+0x184` and lets it sink at 1.5/tick as usual. (`food.md` lists `+0x190`/`+0x184` as the "drop from above" variant: Nimbus is its source.) Its fade and floor rules are the normal ones once it sinks.
 - **Fish, aliens:** none.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Animation (`0x004dfc50`), id 15
 
@@ -131,7 +131,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`). When not turn
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Drawing (`0x004dfbb0`)
 
@@ -142,7 +142,7 @@ The generic pet draw (`pet-vert.md#drawing-0x004dfbb0`) with `IMAGE_NIMBUS` (glo
 ## Open questions
 
 - Whether a removal by `0x004d9570`/`0x004d5510` takes the object out of its board list at once. If the food stays counted until later, a toss with the food limit already reached would hit the "You can only drop …" path, which also refunds the food price (`0x0053c280`) and drops nothing; that would eat the pellet.
-- Whether the new pellet updates in the toss tick (food sits before `+0xb4` in the z-order, but `AddFood` rebuilds the z-order; see `board.md` on objects created during the pass).
+- The new pellet **does** update in the toss tick (`zoo_d_02` tick 2665: anim 1 and y − 8 on its first read).
 - The coin's raw `+0x28` (copied to the new coin) and the app byte `app+0x358` that gates the 2160 test: probably a Virtual Tank/trial tag; never seen set.
 - Potions (food kind 2) are never targeted but can be tossed if he passes one while chasing something else.
 - Tank 5 skips the gate, so there he only swims (divisor stays at its last value, 0.5 from the ctor).

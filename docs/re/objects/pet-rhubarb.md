@@ -10,7 +10,7 @@ Same class, fields and update skeleton as Stinky (`pet-stinky.md`), Clyde (`pet-
 - Animation `0x004eb7c0` (id-14 path)
 - Draw (slot 26) `0x004f37c0` → `0x004f3590` case 14
 
-Confidence: everything here is `static` (read from code only; no capture with Rhubarb yet).
+Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: 53 snaps flinging guppies) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
 
 ## Fields used by id 14
 
@@ -24,7 +24,7 @@ As Rufus's table (`pet-rufus.md#fields-used-by-id-7`), with these differences:
 | `+0x1a0` | walk animation counter (0..39) | 0 |
 | `+0x1b4` | **snap counter**: 20 when a snap starts, −1 per tick to 0 | 0 |
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Construction
 
@@ -38,7 +38,7 @@ As Rufus's table (`pet-rufus.md#fields-used-by-id-7`), with these differences:
 
 **5 app draws.** Divisor 2.0 (`0x005c3cc8`). No other id-14 ctor code.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Update (`0x004f2e80`), id 14
 
@@ -67,7 +67,7 @@ Same skeleton as Rufus's update (`pet-rufus.md#update-0x004f2e80-id-7`). Differe
 
 RNG per tick, in order: the snap's launch draws in step 3 (one per flung fish, see below), then the reroll in step 4 (`% 10`, then `% 9` w.p. 1/10). All app MTRand.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Snap
 
@@ -91,7 +91,7 @@ The chase `0x004ebc80` (id 14), every non-tank-5 tick:
 
 Note the two thresholds differ: the target needs `wy > 260` (250), the snap `wy > 270` (260). A fish with `260 < wy ≤ 270` is chased but never snapped at.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Effects on other objects
 
@@ -101,7 +101,7 @@ Applied in `0x004e7c30` (id-14 branch, from `0x004e7e5a`):
 - **Breeders** (`+0xc0`): vy `+0x170` = −20 / −30, and **`+0x1d8`** = 50 (the breeder's own layout; assumed to be its damp timer, unconfirmed).
 - **Aliens, Bilaterus, coins, food:** none. Rhubarb does no damage.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Animation
 
@@ -118,7 +118,7 @@ Applied in `0x004e7c30` (id-14 branch, from `0x004e7e5a`):
    This is Rufus's walk with the direction reversed (his cycle runs forward when he walks left). There is no idle animation: standing still (vx = 0) still advances the cycle by 1.
 3. Missile overlay counter (`+0x98`) as every pet.
 
-`static`.
+`traced` (`zoo_d_blip_rhubarb_nimbus`).
 
 ## Clicks
 

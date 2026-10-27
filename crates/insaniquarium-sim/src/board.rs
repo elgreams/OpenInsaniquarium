@@ -944,6 +944,9 @@ impl Board {
         }
         let mut food = Food::new_pellet(x, y, level, &mut self.rng);
         food.tossed = true;
+        // Made during the object pass: it updates this tick (board.md;
+        // `zoo_d_02` tick 2665 shows anim 1 and y − 8 on its first read).
+        food.update();
         self.foods.push(food);
         if self.sample_ready(0x118, 3) {
             self.sounds.push(Sound::DropFood.into());
