@@ -32,6 +32,7 @@ pub const AMP: i32 = 16;
 pub const GASH: i32 = 17;
 pub const ANGIE: i32 = 18;
 pub const BRINKLEY: i32 = 20;
+pub const NOSTRADAMUS: i32 = 21;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -181,6 +182,15 @@ impl Fish {
         f
     }
 
+    /// `AddPet(21)`'s fish part: `Fish::Init`'s 6 draws, then the potion
+    /// interval `r % 300 + 300` (pet-nostradamus.md#construction).
+    pub fn new_nostradamus(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Nostradamus;
+        f.coin_interval = rng.next_range(300) as i32 + 300;
+        f
+    }
+
     /// `AddPet(19)`'s fish part: no id-19 ctor branch (pet-presto.md).
     pub fn new_presto(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -240,6 +250,7 @@ impl Fish {
         match self.kind {
             FishKind::Presto => self.update_presto(rng),
             FishKind::Brinkley => self.update_brinkley(ctx, rng),
+            FishKind::Nostradamus => self.update_nostradamus(ctx, rng),
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
             FishKind::Zorf => self.update_zorf(ctx, rng),
@@ -750,6 +761,35 @@ impl Fish {
             10
         };
         Some((wx + 5, wy - 10, kind))
+    }
+
+    /// Nostradamus (pet-nostradamus.md#update-0x004f7ad0-id-21): always
+    /// swims; the re-roll also fires below floor − 50; every `+0x224` calm
+    /// ticks a potion at (wx + 15, wy + 10); the puff runs for every nose.
+    fn update_nostradamus(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 || self.y > f64::from(self.floor_y - 50) {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        if ctx.aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer >= self.coin_interval {
+                self.coin_timer = 0;
+                out.potion = Some((self.widget_x + 15, self.widget_y + 10));
+            }
+        }
+        if !self.presto && self.puff < crate::presto::PUFF {
+            self.puff += 1;
+        }
+        self.swim_tail(2, 19, 1);
+        out
     }
 
     /// Blip (pet-blip.md): Itchy's swimming; on the first update past
@@ -1351,6 +1391,8 @@ pub struct PetFishOut {
     pub toss_food: Option<(usize, i32)>,
     /// Brinkley eats pellet `i` (removed; slurp; `brinkley_ate`).
     pub eat: Option<usize>,
+    /// Nostradamus drops a potion at this spot (`0x005434e0`).
+    pub potion: Option<(i32, i32)>,
 }
 
 /// What a fish-shaped pet's update reads from the board.

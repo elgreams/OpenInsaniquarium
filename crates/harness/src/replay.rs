@@ -54,6 +54,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 16 => FishKind::Amp,
             0x15 if rd_i32(b, 0x234) == 19 => FishKind::Presto,
             0x15 if rd_i32(b, 0x234) == 20 => FishKind::Brinkley,
+            0x15 if rd_i32(b, 0x234) == 21 => FishKind::Nostradamus,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -1874,13 +1875,56 @@ fn mti_at(t: &Trace, tick: u32) -> Option<usize> {
         .map(|m| m as usize)
 }
 
+/// The global MTRand state after every snapshot tick of `full`, stepped by
+/// each snapshot's `rng_mti.global` draw count from the header state (as
+/// [`rebase_rng`] does for one tick). The board's cosmetic bubbles draw from
+/// this stream and aren't modelled, so a replay that needs a global-stream
+/// decision (Nostradamus's sneeze) re-syncs it before each tick.
+pub fn global_states(full: &Trace) -> BTreeMap<u32, MtRand> {
+    let mut out = BTreeMap::new();
+    let Some(mut rng) = full.header.rng.get("global").map(rng_from) else {
+        return out;
+    };
+    let mut prev = rng.state().1;
+    for s in &full.snapshots {
+        let Some(m) = s
+            .state
+            .get("rng_mti")
+            .and_then(|r| r.get("global"))
+            .and_then(Value::as_u64)
+        else {
+            continue;
+        };
+        let m = m as usize;
+        for _ in 0..(m + 624 - prev) % 624 {
+            rng.next_u31();
+        }
+        prev = m;
+        out.insert(s.tick, rng.clone());
+    }
+    out
+}
+
 /// [`replay_resync`], skipping re-syncs on `dirty` (mid-frame) ticks.
 pub fn replay_resync_dirty(
+    board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+    resync: &BTreeMap<u32, MtRand>,
+    dirty: &[u32],
+) -> Result<Trace, ReplayError> {
+    replay_resync_global(board, t, inputs, resync, dirty, &BTreeMap::new())
+}
+
+/// [`replay_resync_dirty`], also setting the global stream to `global[tick]`
+/// after each tick that has an entry (keyed like `t`).
+pub fn replay_resync_global(
     mut board: Board,
     t: &Trace,
     inputs: &BTreeMap<u32, Vec<Input>>,
     resync: &BTreeMap<u32, MtRand>,
     dirty: &[u32],
+    global: &BTreeMap<u32, MtRand>,
 ) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
@@ -1947,6 +1991,9 @@ pub fn replay_resync_dirty(
         }
         board.step(step_inputs);
         board.artifacts = Default::default();
+        if let Some(g) = global.get(&board.tick) {
+            board.global_rng = g.clone();
+        }
         // A fish pet's timer written by the recorder (Cheat Engine), to get
         // to an ability inside one capture: the capture's `+0x220` jumps by
         // more than 100 in one tick, which no pet does on its own. Adopt it.

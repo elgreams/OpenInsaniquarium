@@ -224,6 +224,8 @@ pub struct Board {
     pub warps: Vec<Warp>,
     /// `board+0x98`: dead guppies sinking (cosmetic, no RNG).
     pub dead_fish: Vec<DeadFish>,
+    /// `board+0x2b4`: screen-shake timer (−1 per update while non-zero).
+    pub shake: i32,
     /// `+0x3d8..+0x3e0`: x of the three tank-light bands (cosmetic;
     /// board.md#tank-lighting).
     pub light_x: [f32; 3],
@@ -291,6 +293,7 @@ impl Board {
             music: None,
             warps: Vec::new(),
             dead_fish: Vec::new(),
+            shake: 0,
             light_x: [0.0; 3],
         }
     }
@@ -461,6 +464,7 @@ impl Board {
             PRESTO => Fish::new_presto(a, _b, rng),
             crate::itchy::ITCHY => Fish::new_itchy(a, _b, rng),
             crate::itchy::BRINKLEY => Fish::new_brinkley(a, _b, rng),
+            crate::itchy::NOSTRADAMUS => Fish::new_nostradamus(a, _b, rng),
             // TODO(spec): pets 20–23 (bonus-pets-plan.md).
             _ => {
                 self.rng.next_range(5);
@@ -493,6 +497,7 @@ impl Board {
             K::Angie => ANGIE,
             K::Presto => crate::presto::PRESTO,
             K::Brinkley => BRINKLEY,
+            K::Nostradamus => NOSTRADAMUS,
             _ => ITCHY,
         }
     }
@@ -708,6 +713,19 @@ impl Board {
                 let kind = c.kind;
                 self.play_collect_sound(kind);
             }
+            return ClickResult::CoinCollected;
+        }
+        // A potion (food kind 2) is mouse-visible: in front of the board,
+        // behind the guppies in z-order; a guppy click over it also picks
+        // it up first (`0x00539f30`). Either way the first potion in list
+        // order under the point (pet-nostradamus.md#the-potion-food-kind-2).
+        if let Some(i) = self
+            .foods
+            .iter()
+            .position(|f| f.kind == 2 && !f.carried && f.hit(x, y))
+        {
+            self.foods[i].carried = true;
+            self.play_collect_sound(1);
             return ClickResult::CoinCollected;
         }
         // Food lockout after a kill only covers clicks within 50 px of the
@@ -981,6 +999,37 @@ impl Board {
         }
     }
 
+    /// The Sneeze of Power (`0x00543f40`, pet-nostradamus.md#sneeze-of-power-0x00543f40).
+    /// All draws on the global stream; the bubbles are cosmetic (their own
+    /// draws aren't modelled, as for every board bubble).
+    fn sneeze(&mut self) {
+        if self.global_rng.next_range(100) >= 50 {
+            return;
+        }
+        let mut noses = 0;
+        for f in self
+            .fish_pets
+            .iter()
+            .filter(|f| f.kind == crate::fish::FishKind::Nostradamus)
+        {
+            noses += 1;
+            let _ = (f.widget_x, f.widget_y);
+            for _ in 0..5 {
+                self.global_rng.next_range(21);
+                self.global_rng.next_range(21);
+            }
+        }
+        self.shake = 30;
+        self.play(0x110, Sound::Bubbles);
+        for _ in 0..noses.min(5) {
+            // A queued SOUND_SNEEZE, delay `r % 150 + 100` (not modelled).
+            self.global_rng.next_range(150);
+        }
+        self.wave_countdown = 635;
+        self.music = Some(Music::Tank);
+        self.show_message("Attack Postponed by Sneeze of Power!", false, -1);
+    }
+
     /// Wave countdown (`Board::Update` `0x005481c4`..`0x00548e05`), tank 1.
     fn update_waves(&mut self) {
         if self.wave_2c4 != 0 {
@@ -1030,6 +1079,16 @@ impl Board {
                     self.rng.next_range(450) as i32 + 20,
                     self.rng.next_range(195) as i32 + 105,
                 );
+            }
+            // Sneeze of Power (`0x00543f40`, pet-nostradamus.md): with a
+            // nose in, a 50 % chance (global stream) to postpone the wave.
+            30 if self.tank != 5
+                && self
+                    .fish_pets
+                    .iter()
+                    .any(|f| f.kind == crate::fish::FishKind::Nostradamus) =>
+            {
+                self.sneeze();
             }
             // `0x0054b1a0(1, 1, 0)`: the alien song moves on to its fight
             // section as the alien arrives.
@@ -1580,6 +1639,7 @@ impl Board {
         };
         let mut stage_ups = Vec::new();
         let mut new_dead = Vec::new();
+        let mut noses = Vec::new();
         let mut world = World {
             foods: &mut self.foods,
             coins: &mut self.coins,
@@ -1595,6 +1655,7 @@ impl Board {
             dead_fish: &mut new_dead,
             guppies: &[],
             eaten: &mut Vec::new(),
+            potions: &mut noses,
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
             song: self.song,
@@ -1611,6 +1672,7 @@ impl Board {
         for s in stage_ups {
             self.on_stage_up(s);
         }
+        self.fish_pets.append(&mut noses);
         self.dead_fish.extend(new_dead);
     }
 
@@ -1646,6 +1708,11 @@ impl Board {
         }
         if self.money_flash > 0 {
             self.money_flash -= 1;
+        }
+        // TODO(spec): the shake decrement (`0x0054786c`) runs earlier in
+        // the update than the flash; no RNG either way.
+        if self.shake != 0 {
+            self.shake -= 1;
         }
         self.move_lights();
         self.shop.tick();
@@ -1758,13 +1825,23 @@ impl Board {
         self.update_dead_aliens();
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
-        self.foods.retain_mut(|f| f.update() == FoodStep::Keep);
+        let mut potion_money = 0;
+        self.foods.retain_mut(|f| match f.update() {
+            FoodStep::Keep => true,
+            FoodStep::Remove => false,
+            FoodStep::Bank => {
+                potion_money += 1;
+                false
+            }
+        });
+        self.money = (self.money + potion_money).min(9_999_999);
         let env = FishEnv {
             paused: self.paused,
             has_aliens: self.has_aliens,
         };
         let mut stage_ups = Vec::new();
         let mut new_dead = Vec::new();
+        let mut noses = Vec::new();
         let mut world = World {
             foods: &mut self.foods,
             coins: &mut self.coins,
@@ -1780,6 +1857,7 @@ impl Board {
             dead_fish: &mut new_dead,
             guppies: &[],
             eaten: &mut Vec::new(),
+            potions: &mut noses,
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
             song: self.song,
@@ -1815,6 +1893,17 @@ impl Board {
         }
         for s in stage_ups {
             self.on_stage_up(s);
+        }
+        // Noses made from guppies join `+0xb4` and update in this pass
+        // (pet-nostradamus.md#the-potion-food-kind-2). If no fish is left,
+        // a random guppy is added (`0x005392a0`).
+        let made_nose = !noses.is_empty();
+        self.fish_pets.append(&mut noses);
+        if made_nose {
+            let left = self.guppies.iter().filter(|f| !f.dead).count() + self.carnivores.len();
+            if left == 0 {
+                self.add_random_guppy();
+            }
         }
         // Starved guppies leave a corpse (`Fish::Die` → `AddDeadFish`).
         // New corpses join the end of the update list, so they also update
@@ -2018,6 +2107,12 @@ impl Board {
                 if let Some((x, y, kind)) = self.fish_pets[i].brinkley_ate(pre_wx, pre_wy) {
                     self.coins.push(Coin::new(x, y, kind));
                 }
+            }
+            if let Some((x, y)) = out.potion {
+                // Straight onto `+0xac` (no AddFood limit or sound). Food
+                // comes before `+0xb4` in z-order: it first updates next tick.
+                self.foods
+                    .push(crate::food::Food::new_potion(x, y, &mut self.rng));
             }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));

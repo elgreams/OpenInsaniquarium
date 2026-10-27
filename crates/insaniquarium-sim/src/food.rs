@@ -43,6 +43,8 @@ pub struct Food {
 pub enum FoodStep {
     Keep,
     Remove,
+    /// A carried potion reached the counter: remove it, bank $1.
+    Bank,
 }
 
 impl Food {
@@ -79,9 +81,33 @@ impl Food {
         f
     }
 
-    /// Can a guppy eat this (`0x004d5f20`, pellet case)?
-    pub fn edible(&self) -> bool {
-        !self.carried && self.delay == 0 && self.kind == 0
+    /// Nostradamus's potion (`0x005434e0` → `Food::Food(x, y, 0, 0, 2)`,
+    /// pet-nostradamus.md#potion-clock-slot-81-0x004e5900-id-21): kind 2,
+    /// edible after 20 ticks, clickable. One app draw.
+    pub fn new_potion(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Food::new_pellet(x, y, 0, rng);
+        f.kind = 2;
+        f.delay = 20;
+        f
+    }
+
+    /// Can a fish with this stage and hunger eat it (`0x004d5f20`)? A
+    /// potion only when stage < 3 and hunger < 108.
+    pub fn edible_by(&self, stage: i32, hunger: i32) -> bool {
+        if self.carried || self.delay != 0 {
+            return false;
+        }
+        match self.kind {
+            0 => true,
+            2 => stage < 3 && hunger < 108,
+            _ => false,
+        }
+    }
+
+    /// Does a click land on this 40 × 40 widget?
+    pub fn hit(&self, x: i32, y: i32) -> bool {
+        (self.widget_x..self.widget_x + 40).contains(&x)
+            && (self.widget_y..self.widget_y + 40).contains(&y)
     }
 
     /// `Food::Update` (`0x004f8aa0`), basic pellet.
@@ -101,7 +127,27 @@ impl Food {
                 FoodStep::Keep
             };
         }
-        // TODO(spec): carried food.
+        if self.carried {
+            // A clicked potion glides to the money counter, 1/7 of the way
+            // a tick; banked ($1) once above y 40 (pet-nostradamus.md#the-potion-food-kind-2).
+            if self.x > 550.0 {
+                self.x -= (self.x - 550.0) / 7.0;
+            } else if self.x < 550.0 {
+                self.x += (550.0 - self.x) / 7.0;
+            }
+            if self.y > 30.0 {
+                self.y -= (self.y - 30.0) / 7.0;
+            } else if self.y < 30.0 {
+                self.y += (30.0 - self.y) / 7.0;
+            }
+            self.widget_x = self.x as i32;
+            self.widget_y = self.y as i32;
+            return if self.widget_y < 40 {
+                FoodStep::Bank
+            } else {
+                FoodStep::Keep
+            };
+        }
         if self.tossed && !self.risen {
             // Tossed by Nimbus: rise until y 120, then fall.
             if self.y < 120.0 {

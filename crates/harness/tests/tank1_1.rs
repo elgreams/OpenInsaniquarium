@@ -947,6 +947,12 @@ fn pet_screen_matches_original() {
     assert_eq!((raw, fish), (1, 2));
 }
 
+/// Captures whose pets decide on the global stream (Nostradamus's sneeze):
+/// their replays re-sync it every tick.
+fn needs_global(name: &str) -> bool {
+    name.starts_with("nostradamus")
+}
+
 fn captured(name: &str) -> bool {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"));
@@ -1035,6 +1041,13 @@ fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> 
     let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
     let originals: Vec<u32> = debris.iter().filter_map(|&ct| tick_of(ct)).collect();
     let resync_orig = deviation_resyncs(&full, &originals);
+    // The global stream after each tick, for replays whose pets decide on
+    // it (Nostradamus's sneeze): keyed by the board clock below.
+    let global_orig = if needs_global(name) {
+        harness::replay::global_states(&full)
+    } else {
+        Default::default()
+    };
     let rng0: Vec<_> = ["app", "global"]
         .iter()
         .map(|s| (s.to_string(), rebase_rng(&full, s, from).unwrap()))
@@ -1045,6 +1058,15 @@ fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> 
         .filter_map(|ct| Some((ct, resync_orig.get(&tick_of(ct)?)?.clone())))
         .collect();
     drop(resync_orig);
+    let global: std::collections::BTreeMap<u32, _> = raw
+        .snapshots
+        .iter()
+        .filter_map(|s| {
+            let ct = s.state.get("board")?.get("clock")?.as_i64()? as u32;
+            Some((ct, global_orig.get(&s.tick)?.clone()))
+        })
+        .collect();
+    drop(global_orig);
     let mut t = harness::replay::by_board_clock(&raw);
     drop(raw);
     t.header.rng.extend(rng0);
@@ -1078,12 +1100,13 @@ fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> 
         sh.revealed = board.shop.revealed;
         sh
     };
-    let mut actual = harness::replay::replay_resync_dirty(
+    let mut actual = harness::replay::replay_resync_global(
         board,
         &expected,
         &inferred.inputs,
         &resync,
         &inferred.dirty,
+        &global,
     )
     .unwrap();
     harness::replay::mask_rng_sounds(&mut actual, &expected);

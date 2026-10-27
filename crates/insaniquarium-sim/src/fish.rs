@@ -69,6 +69,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 20, Brinkley: sinks, eats pellets, a rising
     /// coin every 3rd (`pet-brinkley.md`).
     Brinkley,
+    /// `Sexy::FishTypePet` id 21, Nostradamus: potions turn hungry guppies
+    /// into noses; the Sneeze of Power postpones waves (`pet-nostradamus.md`).
+    Nostradamus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -206,6 +209,9 @@ pub struct World<'a> {
     pub guppies: &'a [Fish],
     /// Guppies eaten this tick (indices into `guppies`).
     pub eaten: &'a mut Vec<usize>,
+    /// Noses made this tick by guppies drinking a potion (the board adds
+    /// them to the fish pets).
+    pub potions: &'a mut Vec<Fish>,
     /// Effect shots (the gore burst).
     pub shots: &'a mut Vec<crate::alien::Shot>,
     /// Replay-only artifact draws (`Board::artifacts`).
@@ -873,7 +879,7 @@ impl Fish {
             let dx = (f64::from(f.widget_x + 20) - (self.x + 40.0)) as i32;
             let dy = (f64::from(f.widget_y + 20) - (self.y + 40.0)) as i32;
             let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-            if f.edible() && d < best {
+            if f.edible_by(self.stage, self.hunger) && d < best {
                 best = d;
                 found = Some(i);
             }
@@ -893,8 +899,22 @@ impl Fish {
             let f = &w.foods[i];
             let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
             let bite = wx + 35.0 > cx && wx + 5.0 < cx && wy + 35.0 > cy && wy < cy;
-            if bite && f.edible() {
+            if bite && f.edible_by(self.stage, self.hunger) {
                 let food = w.foods.remove(i);
+                if food.kind == 2 {
+                    // A potion (`Fish::Eat`, pet-nostradamus.md): slurp,
+                    // then the guppy goes and a nose takes its place.
+                    // `AddPet(21, wx, wy)` happens right here, inside this
+                    // guppy's update: 6 + 1 + 1 draws (no position draws).
+                    w.play_slurp();
+                    let mut nose = Fish::new_nostradamus(self.widget_x, self.widget_y, w.rng);
+                    nose.count_240 = 1;
+                    w.rng.next_range(5);
+                    w.potions.push(nose);
+                    self.dead = true;
+                    self.eaten = true;
+                    return;
+                }
                 self.eat(&food, w);
                 if self.eat_timer == 0 {
                     self.eat_timer = 8;
@@ -906,7 +926,7 @@ impl Fish {
                 && wx - 10.0 < cx
                 && wy + 40.0 > cy
                 && wy - 5.0 < cy
-                && f.edible()
+                && f.edible_by(self.stage, self.hunger)
             {
                 self.eat_timer = 20;
             }

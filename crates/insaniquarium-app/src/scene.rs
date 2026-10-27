@@ -84,6 +84,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_RUFUS",
     "IMAGE_PRESTO",
     "IMAGE_BRINKLEY",
+    "IMAGE_NOSTRADAMUS",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -966,6 +967,7 @@ fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
         }
         FishKind::Wadsworth => ("IMAGE_WADSWORTH", f.cel, i32::from(f.turn_timer != 0)),
         FishKind::Brinkley => ("IMAGE_BRINKLEY", f.cel, i32::from(f.turn_timer != 0)),
+        FishKind::Nostradamus => ("IMAGE_NOSTRADAMUS", f.cel, i32::from(f.turn_timer != 0)),
         _ => ("IMAGE_VERT", f.cel, i32::from(f.turn_timer != 0)),
     };
     let mirror = if row == 1 && f.turn_timer != 0 {
@@ -1620,7 +1622,8 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             _ => fish_pet_cel(f, z),
         });
         // The smoke puff over a new Presto pet (pet-presto.md#drawing).
-        if f.presto && f.puff < insaniquarium_sim::presto::PUFF {
+        if (f.presto || f.kind == FishKind::Nostradamus) && f.puff < insaniquarium_sim::presto::PUFF
+        {
             cels.push(
                 Cel::new(
                     "IMAGE_PRESTO",
