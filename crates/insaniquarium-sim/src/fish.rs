@@ -72,6 +72,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 21, Nostradamus: potions turn hungry guppies
     /// into noses; the Sneeze of Power postpones waves (`pet-nostradamus.md`).
     Nostradamus,
+    /// `Sexy::FishTypePet` id 22, Stanley: grows with an alien in, throws
+    /// balls at it (`pet-stanley.md`).
+    Stanley,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -173,6 +176,8 @@ pub struct Fish {
     pub timer_23c: i32,
     /// FishTypePet `+0x240`: a counter (Brinkley's pellets eaten).
     pub count_240: i32,
+    /// FishTypePet `+0x260`: Stanley's grow counter (0..10).
+    pub grow: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -301,6 +306,7 @@ impl Fish {
             puff: 0,
             timer_23c: 0,
             count_240: 0,
+            grow: 0,
             widget_x: x,
             widget_y: y,
         };

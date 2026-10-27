@@ -187,6 +187,8 @@ pub struct Board {
     pub has_aliens: bool,
     /// `board+0xb8`: aliens.
     pub aliens: Vec<Alien>,
+    /// `board+0xdc`: missiles (Stanley's balls for now).
+    pub missiles: Vec<crate::missile::Missile>,
     /// `board+0xd8`: shots (click flashes, effect sparks).
     pub shots: Vec<Shot>,
     /// `board+0x9c`: dead aliens.
@@ -294,6 +296,7 @@ impl Board {
             warps: Vec::new(),
             dead_fish: Vec::new(),
             shake: 0,
+            missiles: Vec::new(),
             light_x: [0.0; 3],
         }
     }
@@ -465,6 +468,7 @@ impl Board {
             crate::itchy::ITCHY => Fish::new_itchy(a, _b, rng),
             crate::itchy::BRINKLEY => Fish::new_brinkley(a, _b, rng),
             crate::itchy::NOSTRADAMUS => Fish::new_nostradamus(a, _b, rng),
+            crate::itchy::STANLEY => Fish::new_stanley(a, _b, rng),
             // TODO(spec): pets 20–23 (bonus-pets-plan.md).
             _ => {
                 self.rng.next_range(5);
@@ -498,6 +502,7 @@ impl Board {
             K::Presto => crate::presto::PRESTO,
             K::Brinkley => BRINKLEY,
             K::Nostradamus => NOSTRADAMUS,
+            K::Stanley => STANLEY,
             _ => ITCHY,
         }
     }
@@ -760,6 +765,11 @@ impl Board {
     /// guppy): drop food where the guppy was clicked; a click on its body
     /// makes the pellet inedible for a while.
     fn click_guppy(&mut self, i: usize, x: i32, y: i32) -> ClickResult {
+        // No pellet while a missile (a Stanley ball) is in the tank
+        // (`food.md#clicking-on-a-guppy-fish-mouse-down-slot-55-0x004e4c10`).
+        if !self.missiles.is_empty() {
+            return ClickResult::Ignored;
+        }
         let f = &self.guppies[i];
         let (lx, ly) = (x - f.widget_x, y - f.widget_y);
         let (ax, ay) = (f64::from(lx) + f.x, f64::from(ly) + f.y);
@@ -885,19 +895,67 @@ impl Board {
         );
     }
 
+    /// The missile pass (`+0xdc`, right after the fish pets in z-order).
+    /// Stanley's ball: a hit does 15 HP; at 0 the alien dies inside the
+    /// ball's update (pet-stanley.md#the-ball-missle-kind-2).
+    fn update_missiles(&mut self) {
+        let mut i = 0;
+        while i < self.missiles.len() {
+            let target = self.missiles[i]
+                .target
+                .and_then(|t| self.aliens.get(t))
+                .map(|a| (a.widget_x, a.widget_y));
+            let aliens = !self.aliens.is_empty();
+            match self.missiles[i].update(target, aliens) {
+                crate::missile::MissileStep::Keep => i += 1,
+                crate::missile::MissileStep::Remove => {
+                    self.missiles.remove(i);
+                    self.end_of_wave_check();
+                }
+                crate::missile::MissileStep::Hit { target, damage } => {
+                    i += 1;
+                    self.play(0x136, Sound::Sfx);
+                    self.aliens[target].health -= f64::from(damage);
+                    if self.aliens[target].health <= 0.0 {
+                        let n = self.dead_aliens.len();
+                        self.kill_alien(target);
+                        self.update_dead_aliens_from(n);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `0x00539c90`: with no missile, alien or Bilaterus left, the wave is
+    /// over (food lockout 36, tank music, guppies mouse-visible again).
+    fn end_of_wave_check(&mut self) {
+        if self.missiles.is_empty() && self.aliens.is_empty() {
+            self.food_lockout = 36;
+            self.has_aliens = false;
+            self.music = Some(Music::Tank);
+        }
+    }
+
     /// `Alien` death (`0x004f9c70`), kind 1.
     fn kill_alien(&mut self, i: usize) {
         let a = self.aliens.remove(i);
+        // The alien's attached missile goes with it (slot 76); later aliens
+        // shift down one in the list.
+        self.missiles.retain(|m| m.target != Some(i));
+        for m in &mut self.missiles {
+            if let Some(t) = &mut m.target
+                && *t > i
+            {
+                *t -= 1;
+            }
+        }
         let (ix, iy) = (a.widget_x, a.widget_y);
         // Diamond drop.
         let mut c = Coin::new(ix + 25, iy + 25, crate::coin::kind::DIAMOND);
         c.vy = -1.0;
         self.coins.push(c);
-        if self.aliens.is_empty() {
-            self.food_lockout = 36;
-            self.has_aliens = false;
-            self.music = Some(Music::Tank);
-        }
+        // `0x00539c90`: the wave ends once no alien and no missile is left.
+        self.end_of_wave_check();
         // Debris (§4.3 step 5). Bubbles draw the global stream (not modelled).
         let n = self.rng.next_u31() & 1;
         for _ in 0..n {
@@ -1035,7 +1093,9 @@ impl Board {
         if self.wave_2c4 != 0 {
             self.wave_2c4 -= 1;
         }
-        if !self.aliens.is_empty() || self.wave_kind == 0 {
+        // Skipped while any alien or missile (Stanley's balls) exists
+        // (`alien-sylvester.md#per-tick-countdown`, step 2).
+        if !self.aliens.is_empty() || !self.missiles.is_empty() || self.wave_kind == 0 {
             return;
         }
         self.wave_countdown -= 1;
@@ -1991,6 +2051,7 @@ impl Board {
                 .iter()
                 .zip(&self.shop.revealed)
                 .any(|(p, &r)| p.is_some() && !r);
+            let balled: Vec<usize> = self.missiles.iter().filter_map(|m| m.target).collect();
             let ctx = crate::itchy::PetCtx {
                 aliens: &self.aliens,
                 hungry,
@@ -2003,6 +2064,7 @@ impl Board {
                     .fish_pets
                     .iter()
                     .any(|f| f.kind == crate::fish::FishKind::Brinkley),
+                balled: &balled,
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
@@ -2116,6 +2178,17 @@ impl Board {
                 f.update();
                 self.foods.push(f);
             }
+            if let Some((x, y, t)) = out.ball {
+                // `0x00544130`: onto `+0xdc` (after `+0xb4` in z-order, so it
+                // updates this tick), the alien's `+0x98` set; GROW gap 3.
+                self.missiles.push(crate::missile::Missile::new_ball(
+                    x,
+                    y,
+                    t,
+                    &mut self.global_rng,
+                ));
+                self.play(0x122, Sound::Grow);
+            }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));
                 self.play(0x143, Sound::Unleash);
@@ -2136,6 +2209,7 @@ impl Board {
                 self.fish_pets[i].finish_prego(out.birth.is_some(), n);
             }
         }
+        self.update_missiles();
         // Revived guppies are the last ones before this tick's births.
         let n_rev = std::mem::take(&mut self.revived).len();
         let first_born = born.first().copied().unwrap_or(self.guppies.len());

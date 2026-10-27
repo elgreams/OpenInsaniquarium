@@ -55,6 +55,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 19 => FishKind::Presto,
             0x15 if rd_i32(b, 0x234) == 20 => FishKind::Brinkley,
             0x15 if rd_i32(b, 0x234) == 21 => FishKind::Nostradamus,
+            0x15 if rd_i32(b, 0x234) == 22 => FishKind::Stanley,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -120,7 +121,12 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         } else {
             0
         },
-        clicks: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x264 {
+        clicks: if rd_i32(b, 0x8c) == 0x15 && rd_i32(b, 0x234) != 22 && b.len() > 0x264 {
+            rd_i32(b, 0x260)
+        } else {
+            0
+        },
+        grow: if rd_i32(b, 0x8c) == 0x15 && rd_i32(b, 0x234) == 22 {
             rd_i32(b, 0x260)
         } else {
             0
@@ -571,6 +577,7 @@ fn fish_json(f: &Fish) -> Value {
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
         "presto": [f.presto, f.recharge, f.puff], "t23c": f.timer_23c, "c240": f.count_240,
+        "grow": f.grow,
     })
 }
 
@@ -611,6 +618,35 @@ pub fn warp_from_raw(b: &[u8]) -> Warp {
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
+}
+
+/// A missile from its raw bytes (pet-stanley.md#the-ball-missle-kind-2).
+/// The target is a pointer in the capture: it is kept as "has a target".
+pub fn missile_from_raw(b: &[u8]) -> insaniquarium_sim::missile::Missile {
+    insaniquarium_sim::missile::Missile {
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x168),
+        vy: rd_f64(b, 0x170),
+        launch: rd_i32(b, 0x17c),
+        spin: rd_i32(b, 0x180),
+        divisor: rd_f64(b, 0x188),
+        bounced: b[0x190] != 0,
+        cel: rd_i32(b, 0x194),
+        kind: rd_i32(b, 0x19c),
+        row: rd_i32(b, 0x1a0),
+        target: (rd_i32(b, 0x1a4) != 0).then_some(0),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+    }
+}
+
+fn missile_json(m: &insaniquarium_sim::missile::Missile) -> Value {
+    json!({
+        "x": m.x, "y": m.y, "vx": m.vx, "vy": m.vy, "launch": m.launch, "spin": m.spin,
+        "div": m.divisor, "bounced": m.bounced, "cel": m.cel, "kind": m.kind, "row": m.row,
+        "targeted": m.target.is_some(), "widget": [m.widget_x, m.widget_y],
+    })
 }
 
 fn shot_json(s: &Shot) -> Value {
@@ -687,6 +723,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "shots".into(),
         Value::Array(board.shots.iter().map(shot_json).collect()),
+    );
+    state.insert(
+        "missiles".into(),
+        Value::Array(board.missiles.iter().map(missile_json).collect()),
     );
     state.insert(
         "dead_aliens".into(),
@@ -781,6 +821,13 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .map(|b| alien_json(&alien_from_raw(b)))
                 .collect();
             s.state.insert("aliens".into(), Value::Array(aliens));
+            if raw_present(&s) {
+                let missiles = raw_list(&s, "missile")
+                    .iter()
+                    .map(|b| missile_json(&missile_from_raw(b)))
+                    .collect();
+                s.state.insert("missiles".into(), Value::Array(missiles));
+            }
             let shots = raw_list(&s, "shot")
                 .iter()
                 .map(|b| shot_json(&shot_from_raw(b)))

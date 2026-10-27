@@ -33,6 +33,7 @@ pub const GASH: i32 = 17;
 pub const ANGIE: i32 = 18;
 pub const BRINKLEY: i32 = 20;
 pub const NOSTRADAMUS: i32 = 21;
+pub const STANLEY: i32 = 22;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -191,6 +192,14 @@ impl Fish {
         f
     }
 
+    /// `AddPet(22)`'s fish part: the throw interval 100 (no RNG).
+    pub fn new_stanley(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Stanley;
+        f.coin_interval = 100;
+        f
+    }
+
     /// `AddPet(19)`'s fish part: no id-19 ctor branch (pet-presto.md).
     pub fn new_presto(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -251,6 +260,7 @@ impl Fish {
             FishKind::Presto => self.update_presto(rng),
             FishKind::Brinkley => self.update_brinkley(ctx, rng),
             FishKind::Nostradamus => self.update_nostradamus(ctx, rng),
+            FishKind::Stanley => self.update_stanley(ctx, rng),
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
             FishKind::Zorf => self.update_zorf(ctx, rng),
@@ -789,6 +799,104 @@ impl Fish {
             self.puff += 1;
         }
         self.swim_tail(2, 19, 1);
+        out
+    }
+
+    /// Stanley (pet-stanley.md#update-0x004f7ad0-id-22): always swims; his
+    /// abilities run every tick: the grow counter follows the aliens, and
+    /// every 101 ticks a ball goes at the nearest alien without one.
+    fn update_stanley(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        if self.timer_23c != 0 {
+            self.timer_23c -= 1;
+        }
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        // Slot 81, every tick (`0x004f8182`).
+        if !ctx.aliens.is_empty() {
+            if self.grow < 10 {
+                self.grow += 1;
+            }
+        } else if self.grow > 0 {
+            self.grow -= 1;
+        }
+        self.coin_timer += 1;
+        // TODO(spec): shooting down alien missiles (kinds 0/1, tank 2+).
+        if self.coin_timer > self.coin_interval {
+            self.coin_timer = 0;
+            if self.timer_23c == 0 {
+                self.timer_23c = 50;
+            }
+            // Target (`0x004e5fc0`, id 22): the nearest alien with no ball.
+            let (px, py) = (self.x + 40.0, self.y + 40.0);
+            let mut best = 10_000;
+            let mut target = None;
+            for (i, a) in ctx.aliens.iter().enumerate() {
+                if ctx.balled.contains(&i) {
+                    continue;
+                }
+                let dx = (px - f64::from(a.widget_x + 80)) as i32;
+                let dy = (py - f64::from(a.widget_y + 80)) as i32;
+                let d =
+                    (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
+                if d < best {
+                    best = d;
+                    target = Some(i);
+                }
+            }
+            if let Some(t) = target {
+                let bx = if self.vx >= 0.0 {
+                    self.widget_x + 40
+                } else {
+                    self.widget_x
+                };
+                out.ball = Some((bx, self.widget_y, t));
+                self.eat_timer = 10;
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        // Animation, id 22: the grow frames, then the throw, then the swim
+        // cycle (cel = cycle / 4).
+        if self.facing > 0.0 && self.vx < 0.0 {
+            self.turn_timer = 20;
+        } else if self.facing < 0.0 && self.vx > 0.0 {
+            self.turn_timer = -20;
+        }
+        if self.turn_timer != 0 {
+            self.turn_timer -= self.turn_timer.signum();
+            if self.turn_timer == 0 {
+                self.eat_timer = 0;
+            }
+        }
+        if self.turn_timer > 0 {
+            self.cel = 9 - self.turn_timer / 2;
+        } else if self.turn_timer < 0 {
+            self.cel = self.turn_timer / 2 + 9;
+        } else if (1..=9).contains(&self.grow) {
+            self.cel = self.grow;
+        } else if self.eat_timer > 0 {
+            self.eat_timer -= 1;
+            self.cel = self.eat_timer;
+        } else {
+            self.swim_cycle += if self.anim_frame < 2 { 1 } else { 2 };
+            if self.swim_cycle > 39 {
+                self.swim_cycle = 0;
+            }
+            self.cel = self.swim_cycle / 4;
+        }
+        self.update_facing();
+        self.integrate();
         out
     }
 
@@ -1393,6 +1501,8 @@ pub struct PetFishOut {
     pub eat: Option<usize>,
     /// Nostradamus drops a potion at this spot (`0x005434e0`).
     pub potion: Option<(i32, i32)>,
+    /// Stanley throws a ball from (x, y) at alien `i` (`0x00544130`).
+    pub ball: Option<(i32, i32, usize)>,
 }
 
 /// What a fish-shaped pet's update reads from the board.
@@ -1410,6 +1520,8 @@ pub struct PetCtx<'a> {
     pub corpses: &'a [crate::fish::DeadFish],
     /// Some Brinkley is in the tank (`board+0x194 > 0`), for Zorf.
     pub brinkley: bool,
+    /// Aliens with a ball on them (`+0x98`), for Stanley.
+    pub balled: &'a [usize],
 }
 
 impl PetCtx<'_> {

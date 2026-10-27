@@ -49,6 +49,7 @@ pub enum Sound {
     Eel3,
     TapGlass,
     Treasure,
+    Sfx,
 }
 
 impl Sound {
@@ -100,6 +101,7 @@ impl Sound {
             Sound::Eel3 => 0x11b,
             Sound::TapGlass => 0x141,
             Sound::Treasure => 0x142,
+            Sound::Sfx => 0x136,
         }
     }
 
@@ -171,6 +173,7 @@ impl Sound {
             Sound::Eel3 => "SOUND_EEL3",
             Sound::TapGlass => "SOUND_TAPGLASS",
             Sound::Treasure => "SOUND_TREASURE",
+            Sound::Sfx => "SOUND_SFX",
         }
     }
 

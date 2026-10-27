@@ -85,6 +85,8 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_PRESTO",
     "IMAGE_BRINKLEY",
     "IMAGE_NOSTRADAMUS",
+    "IMAGE_STANLEY",
+    "IMAGE_BALLS",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -978,6 +980,25 @@ fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
     Cel::new(image, col, row, f.widget_x, f.widget_y, z).mirror(mirror)
 }
 
+/// Stanley (`0x004dfac0`, pet-stanley.md#drawing-0x004dfac0): rows 0/1
+/// small, 2/3/4 big (alien in), 5 growing. `static`, not frame-checked.
+fn stanley_cel(f: &Fish, alarmed: bool, z: f32) -> Cel {
+    let turning = f.turn_timer != 0;
+    let row = if (!alarmed && f.grow != 0) || (alarmed && f.grow < 10) {
+        5
+    } else if alarmed && f.eat_timer != 0 {
+        4
+    } else {
+        i32::from(turning) + if alarmed { 2 } else { 0 }
+    };
+    let mirror = if matches!(row, 1 | 3) {
+        f.turn_timer > 0
+    } else {
+        f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0)
+    };
+    Cel::new("IMAGE_STANLEY", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
 /// Presto (`0x004dfbb0`, pet-presto.md#drawing): row 1 while turning
 /// (mirrored iff turn > 0), else row 0 with the guppy mirror rule.
 fn presto_cel(f: &Fish, z: f32) -> Cel {
@@ -1619,6 +1640,7 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             FishKind::Prego => prego_cel(f, z),
             FishKind::Itchy => itchy_cel(f, !b.aliens.is_empty(), z),
             FishKind::Presto => presto_cel(f, z),
+            FishKind::Stanley => stanley_cel(f, !b.aliens.is_empty(), z),
             _ => fish_pet_cel(f, z),
         });
         // The smoke puff over a new Presto pet (pet-presto.md#drawing).
@@ -1637,6 +1659,17 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
                 .additive(),
             );
         }
+    }
+    // Missiles (`+0xdc`, after the fish pets): Stanley's balls.
+    for (i, m) in b.missiles.iter().enumerate() {
+        cels.push(Cel::new(
+            "IMAGE_BALLS",
+            m.cel,
+            m.row,
+            m.widget_x,
+            m.widget_y,
+            2.77 + i as f32 * 0.001,
+        ));
     }
     for (i, s) in b.shots.iter().enumerate() {
         shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);

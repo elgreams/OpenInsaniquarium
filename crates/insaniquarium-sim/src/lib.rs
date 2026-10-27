@@ -10,6 +10,7 @@ pub mod game;
 pub mod hatch;
 pub mod itchy;
 pub mod message;
+pub mod missile;
 pub mod music;
 pub mod pet;
 pub mod pet_screen;
