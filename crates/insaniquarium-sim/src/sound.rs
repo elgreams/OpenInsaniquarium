@@ -44,6 +44,9 @@ pub enum Sound {
     Unleash,
     Sonar,
     Heal,
+    Eel1,
+    Eel2,
+    Eel3,
 }
 
 impl Sound {
@@ -90,6 +93,9 @@ impl Sound {
             Sound::Unleash => 0x143,
             Sound::Sonar => 0x13c,
             Sound::Heal => 0x125,
+            Sound::Eel1 => 0x119,
+            Sound::Eel2 => 0x11a,
+            Sound::Eel3 => 0x11b,
         }
     }
 
@@ -149,6 +155,9 @@ impl Sound {
             Sound::Unleash => "SOUND_UNLEASH",
             Sound::Sonar => "SOUND_SONAR",
             Sound::Heal => "SOUND_HEAL",
+            Sound::Eel1 => "SOUND_EEL1",
+            Sound::Eel2 => "SOUND_EEL2",
+            Sound::Eel3 => "SOUND_EEL3",
         }
     }
 

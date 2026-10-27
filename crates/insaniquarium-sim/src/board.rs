@@ -418,6 +418,10 @@ impl Board {
         } else if id == crate::itchy::ZORF {
             self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
             self.rng.next_range(5);
+        } else if id == crate::itchy::AMP {
+            // A type-2 shadow; still one draw.
+            self.fish_pets.push(Fish::new_amp(a, _b, &mut self.rng));
+            self.rng.next_range(5);
         } else if id == crate::itchy::GASH {
             self.fish_pets.push(Fish::new_gash(a, _b, &mut self.rng));
             self.rng.next_range(5);
@@ -453,6 +457,38 @@ impl Board {
         }
     }
 
+    /// Amp's zap (`0x004fb680`, pet-amp.md#the-zap): every live guppy dies
+    /// (a corpse that updates this tick) and drops a $200 kind-5 coin (up
+    /// to the cap), with a spark each; a free guppy if the tank is empty.
+    fn amp_zap(&mut self, amp: usize) {
+        let n = self.guppies.len() as i32;
+        let cap = ((n - 20) / 2 + 20).max(20);
+        let victims = std::mem::take(&mut self.guppies);
+        for (i, g) in victims.iter().enumerate() {
+            let mut corpse = DeadFish::from_fish(g);
+            corpse.update();
+            self.dead_fish.push(corpse);
+            if (i as i32) < cap {
+                self.coins
+                    .push(Coin::new((g.x + 15.0) as i32, (g.y + 10.0) as i32, 5));
+            }
+            let s = self.rng.next_range(3) as i32 + 3;
+            self.add_effect_shot(g.x as i32, g.y as i32, s);
+        }
+        // TODO(spec): id-21 pets the zap also takes.
+        if self.guppies.is_empty() && self.carnivores.is_empty() {
+            self.add_random_guppy();
+        }
+        self.play(0x119, Sound::Eel1);
+        if !victims.is_empty() {
+            self.play(0x117, Sound::Die);
+        }
+        let f = &mut self.fish_pets[amp];
+        f.coin_interval += 200;
+        f.coin_timer = -20;
+        f.clicks = 0;
+    }
+
     /// `Board::AddGuppyAt` (`0x00546ef0`): constructed in place, plus shadow.
     pub fn add_guppy_at(&mut self, x: i32, y: i32) {
         let mut f = Fish::new(x, y, &mut self.rng);
@@ -467,6 +503,27 @@ impl Board {
         // purchase on mouse-down (shop-bar.md#input-path).
         if let Some(slot) = self.shop.hit(x, y) {
             return self.purchase(slot);
+        }
+        // Coins are above the pets in z-order: a coin under the cursor takes
+        // the click before a charged Amp does.
+        let coin_on_top = self.coins.iter().any(|c| !c.collected && c.hit(x, y));
+        if !coin_on_top {
+            // A charged Amp is mouse-visible and sits above the guppies
+            // (`+0xb4`; pet-amp.md#clicks): clicks 1 and 2 crackle, the third
+            // zaps the tank.
+            if let Some(i) = self
+                .fish_pets
+                .iter()
+                .rposition(|f| f.amp_charged() && f.amp_hit(x, y))
+            {
+                if self.fish_pets[i].clicks < 2 {
+                    self.fish_pets[i].clicks += 1;
+                    self.play(0x11b, Sound::Eel3);
+                } else {
+                    self.amp_zap(i);
+                }
+                return ClickResult::Ignored;
+            }
         }
         // With aliens present, a click on a coin collects it, and is also a
         // shot if it lands inside an alien (`alien-sylvester.md#41`).
@@ -1766,6 +1823,9 @@ impl Board {
                 // (the normal drop path: limit check, 1 draw, DROPFOOD).
                 let f = self.foods.remove(fi);
                 self.add_tossed_food(f.widget_x, y, f.level);
+            }
+            if out.charged {
+                self.play(0x11a, Sound::Eel2);
             }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));

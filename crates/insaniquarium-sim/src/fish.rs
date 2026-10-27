@@ -60,6 +60,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 18, Angie: revives dead fish
     /// (`pet-angie.md`).
     Angie,
+    /// `Sexy::FishTypePet` id 16, Amp: charges, then three clicks zap
+    /// every guppy into a $200 coin (`pet-amp.md`).
+    Amp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,6 +151,8 @@ pub struct Fish {
     pub widget_y: i32,
     /// FishTypePet `+0x244`: Meryl's blink flag (1 from the ctor).
     pub blink: bool,
+    /// Amp's clicks while charged (`+0x260`, 0..2).
+    pub clicks: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -267,6 +272,7 @@ impl Fish {
             coin_timer: 0,
             coin_interval: 0,
             blink: false,
+            clicks: 0,
             widget_x: x,
             widget_y: y,
         };

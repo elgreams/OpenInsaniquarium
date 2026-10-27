@@ -28,6 +28,7 @@ pub const SHRAPNEL: i32 = 11;
 pub const GUMBO: i32 = 12;
 pub const BLIP: i32 = 13;
 pub const NIMBUS: i32 = 15;
+pub const AMP: i32 = 16;
 pub const GASH: i32 = 17;
 pub const ANGIE: i32 = 18;
 
@@ -131,6 +132,29 @@ impl Fish {
         f
     }
 
+    /// `AddPet(16)`'s fish part: divisor 0.5, max x 460, charge clock 300
+    /// of 3000 (no RNG).
+    pub fn new_amp(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Amp;
+        f.divisor = 0.5;
+        f.max_x = 460;
+        f.coin_timer = 300;
+        f.coin_interval = 3000;
+        f
+    }
+
+    /// Amp is charged: his widget takes clicks.
+    pub fn amp_charged(&self) -> bool {
+        self.kind == FishKind::Amp && self.coin_timer >= self.coin_interval
+    }
+
+    /// Does a click land on Amp's 160 × 80 widget?
+    pub fn amp_hit(&self, x: i32, y: i32) -> bool {
+        (self.widget_x..self.widget_x + 160).contains(&x)
+            && (self.widget_y..self.widget_y + 80).contains(&y)
+    }
+
     /// `AddPet(17)`'s fish part: hunger clock −1550, threshold 1570 (no
     /// RNG). `coin_timer` is the clock, `coin_interval` the threshold.
     pub fn new_gash(x: i32, y: i32, rng: &mut MtRand) -> Self {
@@ -192,6 +216,7 @@ impl Fish {
             FishKind::Nimbus => self.update_nimbus(ctx, rng),
             FishKind::Gash => self.update_gash(ctx, rng),
             FishKind::Angie => self.update_angie(ctx, rng),
+            FishKind::Amp => self.update_amp(ctx, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
                 ..Default::default()
@@ -828,6 +853,35 @@ impl Fish {
         }
     }
 
+    /// Amp (pet-amp.md): calm swimming without the vx drift (vy clamped to
+    /// ±0.5); the charge clock runs on calm ticks and EEL2 plays when it
+    /// fills. Cel = cycle / 2, the cycle stepping 1 every tick.
+    fn update_amp(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.swim_and_reroll(rng);
+        if ctx.aliens.is_empty() {
+            self.coin_timer += 1;
+            if self.coin_timer == self.coin_interval {
+                out.charged = true;
+            }
+        }
+        self.damping_timers();
+        #[allow(clippy::manual_clamp)]
+        {
+            if self.vy > 0.5 {
+                self.vy = 0.5;
+            } else if self.vy < -0.5 {
+                self.vy = -0.5;
+            }
+        }
+        self.clamp_pet();
+        self.edge_steer();
+        self.animate_pet(true);
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
     /// Angie (pet-angie.md): with any corpse in the tank she homes on the
     /// nearest fresh one (life > 95) and starts its revival on touch.
     fn update_angie(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
@@ -1085,6 +1139,8 @@ pub struct PetFishOut {
     pub shelter: Option<bool>,
     /// Shrapnel drops a bomb at this widget position.
     pub bomb: Option<(i32, i32)>,
+    /// Amp's charge filled this tick (EEL2).
+    pub charged: bool,
     /// Blip reveals every shop slot (once, at level tick 201).
     pub reveal_shop: bool,
     /// Gash bites alien `i` (3 HP; dies at 0) / swallows guppy `i`.

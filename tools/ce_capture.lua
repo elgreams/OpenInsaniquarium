@@ -232,6 +232,11 @@ while captured < max_ticks and polls < max_ticks * 40 do
         for _, o in ipairs(vec_ptrs(u32(board + 0xa4))) do
           gf:write(string.format("O %d %d %d\n", i32(o + 0x30), i32(o + 0x34), i32(o + 0x9c)))
         end
+        -- Fish-shaped pets: "P id x y timer interval" (Amp's charge, ...).
+        for _, o in ipairs(vec_ptrs(u32(board + 0xb4))) do
+          gf:write(string.format("P %d %d %d %d %d\n", i32(o + 0x234), i32(o + 0x30), i32(o + 0x34),
+            i32(o + 0x220), i32(o + 0x224)))
+        end
         gf:write(string.format("R %s\n", hex_block(board + 0x3a4, 12)))
         -- Open dialogs: id, x, y, w, h (to click their button).
         for _, n in ipairs(map_nodes(u32(app + 0x328), 0x15)) do

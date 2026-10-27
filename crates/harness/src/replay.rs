@@ -51,6 +51,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 15 => FishKind::Nimbus,
             0x15 if rd_i32(b, 0x234) == 17 => FishKind::Gash,
             0x15 if rd_i32(b, 0x234) == 18 => FishKind::Angie,
+            0x15 if rd_i32(b, 0x234) == 16 => FishKind::Amp,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -95,6 +96,11 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         misc_timer: rd_i32(b, 0x210),
         coin_timer: rd_i32(b, 0x220),
         coin_interval: rd_i32(b, 0x224),
+        clicks: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x264 {
+            rd_i32(b, 0x260)
+        } else {
+            0
+        },
         // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
         blink: rd_i32(b, 0x8c) == 0x15
             && match rd_i32(b, 0x234) {
@@ -519,7 +525,7 @@ fn fish_json(f: &Fish) -> Value {
         "timers": [f.timer_108, f.timer_10c, f.timer_f8, f.fade, f.vy_damp_timer,
                    f.push_timer, f.misc_timer],
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
-        "widget": [f.widget_x, f.widget_y], "blink": f.blink,
+        "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
     })
 }
 

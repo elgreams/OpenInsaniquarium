@@ -53,6 +53,8 @@ NO_COINS = "--no-coins" in sys.argv
 # Drop food near the floor (`--feed-low`): guppies follow it down, where
 # floor pets (Rhubarb) can reach them.
 FEED_LOW = "--feed-low" in sys.argv
+# Click a charged Amp three times once N guppies are in (`--zap-amp N`).
+ZAP_AMP = int(sys.argv[sys.argv.index("--zap-amp") + 1]) if "--zap-amp" in sys.argv else 0
 
 
 def window():
@@ -95,6 +97,8 @@ def read_state():
             st["guppies"].append(tuple(map(int, p[1:4])))
         elif p[0] == "C":
             st["coins"].append(tuple(map(int, p[1:4])))
+        elif p[0] == "P":
+            st.setdefault("pets", []).append(tuple(map(int, p[1:6])))
         elif p[0] == "O":
             st["oscars"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
@@ -131,8 +135,16 @@ def main():
             click(win, dx + dw // 2, dy + dh - 36 - 16)
             time.sleep(0.4)
             continue
+        amp = [q for q in st.get("pets", []) if q[0] == 16 and q[3] >= q[4]]
         if st["paused"]:
             click(win, *RESUME)
+        elif ZAP_AMP and amp and not st["aliens"] and len(st["guppies"]) >= ZAP_AMP:
+            # A charged Amp (`--zap-amp N`, once N guppies are in): three
+            # clicks on his middle zap the tank (pet-amp.md#clicks).
+            _, ax, ay, _, _ = amp[0]
+            for _ in range(3):
+                click(win, min(max(ax + 80, 10), 630), min(max(ay + 40, 70), 470))
+                time.sleep(0.3)
         elif st["aliens"]:
             # Shoot the alien: click its centre (160x160 widget).
             # A burst of quick clicks (one hit lands per 10-tick cooldown;
