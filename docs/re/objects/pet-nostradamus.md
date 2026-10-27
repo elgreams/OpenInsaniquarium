@@ -7,6 +7,8 @@ Nostradamus swims like a guppy but keeps off the bottom. He has two powers:
 
 He is a bonus pet, bought with shells (`screens/bonus-screen.md`). Noses made from guppies carry a flag (`+0x240`) that makes Amp's zap kill them like guppies (`pet-amp.md#the-zap`).
 
+Captures: `nostradamus_01` and `nostradamus_02` (1-2, him alone, guppies kept hungry), replayed exactly from the game's own demo. They cover potions, guppies turning into noses, and one sneeze roll that failed; not a clicked potion or a postponed wave. `traced` where a section says so, else `static`.
+
 Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-21 differences are listed here. All offsets are raw `this`-relative (Ghidra's `FishTypePet_data.offset_0xN` = raw `+0x22c + N`, `Fish_data.field_0xN` = raw `+0x154 + N`, `Food_data.offset_0xN` = raw `+0x154 + N`).
 
 - Ctor `FishTypePet::FishTypePet` @ `0x004ef420`: id-0x15 branch (the potion interval)
@@ -31,7 +33,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
 
 Divisor `+0x180` stays `Fish::Init`'s draw; bounds are a guppy's (floor 370). The board's per-id pet counter for id 21 is `board+0x144 + 4·21 = board+0x198` (`board.md#object-lists`); the sneeze reads it.
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) (`+0x240` on a guppy-made nose; the puff for every nose).
 
 ## Construction
 
@@ -44,7 +46,7 @@ Divisor `+0x180` stays `Fish::Init`'s draw; bounds are a guppy's (floor 370). Th
 
 So a bought Nostradamus costs **10 app draws**, a nose made from a guppy or by Presto **8**.
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) (bought and guppy-made). The Virtual Tank interval is `static`.
 
 ## Update (`0x004f7ad0`), id 21
 
@@ -56,7 +58,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 - **Puff:** `+0x248 += 1` while < 20 (the counter Presto pets use; for id 21 it runs unconditionally).
 - **Animation:** the default branch (Itchy's: cycle +1/+2 by speed bucket, wraps above 19, cel = cycle / 2).
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`).
 
 ## Potion clock (slot 81, `0x004e5900`, id 21)
 
@@ -73,7 +75,7 @@ The interval never changes, so a nose drops a potion every `+0x224` calm ticks (
 
 RNG per potion: 1 app draw.
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`). The potion is made in the object pass and **updates on the tick it is made** (it joins the end of the widget list).
 
 ## The potion (Food kind 2)
 
@@ -96,7 +98,7 @@ No hunger, growth or coin. (The eat check then removes the potion as for any foo
 
 Other readers of kind 2: aliens' food searches skip it (`0x004ee6b0`, `0x004ee850`); Nimbus never targets it but can toss one (`pet-nimbus.md#open-questions`), and his re-drop through `AddFood` passes kind 0, so a tossed potion becomes an ordinary pellet; Brinkley's target and eat have no kind filter, so he eats potions like pellets (`pet-brinkley.md#eat-0x004fe740-id-20`).
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for falling, the bottom, who can drink it (hunger < 108) and the transformation. Clicking it ($1) is `static` (built, not captured).
 
 ## Sneeze of Power (`0x00543f40`)
 
@@ -114,7 +116,7 @@ The shake timer is decremented by `Board::Update` (`0x0054786c`, earlier in the 
 
 App-stream RNG: none in the sneeze itself. The repeated warning costs the usual 4 app draws.
 
-`static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for the roll (one global draw at countdown 30, here ≥ 50: nothing happened; the replay re-syncs the global stream every tick). A postponed wave is `static`.
 
 ## Effects on other pets and the board
 

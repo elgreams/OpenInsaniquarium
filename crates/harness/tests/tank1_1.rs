@@ -785,6 +785,26 @@ fn brinkley_rare_coin() {
     }
 }
 
+/// Nostradamus (`nostradamus_01`): 1-2 with him alone, guppies kept hungry
+/// (`--hunger 100`): a potion, a guppy drinks it and turns into a nose
+/// (pet-nostradamus.md).
+#[test]
+fn nostradamus_potion() {
+    if captured("nostradamus_01") {
+        replay_level("nostradamus_01", 2, true);
+    }
+}
+
+/// `nostradamus_02`: a later chunk of the same session: potions, the Sneeze
+/// of Power roll at countdown 30 (it failed: the wave came), the alien,
+/// then a guppy turning into a nose.
+#[test]
+fn nostradamus_sneeze_roll() {
+    if captured("nostradamus_02") {
+        replay_level("nostradamus_02", 2, true);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

@@ -2109,10 +2109,12 @@ impl Board {
                 }
             }
             if let Some((x, y)) = out.potion {
-                // Straight onto `+0xac` (no AddFood limit or sound). Food
-                // comes before `+0xb4` in z-order: it first updates next tick.
-                self.foods
-                    .push(crate::food::Food::new_potion(x, y, &mut self.rng));
+                // Straight onto `+0xac` (no AddFood limit or sound). Made in
+                // the object pass, it joins the end of the widget list and
+                // updates this tick (`nostradamus_01`).
+                let mut f = crate::food::Food::new_potion(x, y, &mut self.rng);
+                f.update();
+                self.foods.push(f);
             }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));

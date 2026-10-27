@@ -62,4 +62,28 @@ How `zoo_a_01` and `zoo_b_01` were made (2026-10-26). RE tooling only.
 
 Replay with `replay_level(name, level, true)` in `tank1_1.rs`, which takes the inputs from the demo.
 
+### The working routine (as used for `gash_snack_01`, `amp_zap_01`)
+
+Keep each recording **short and focused on one ability**: one capture of ~2800 ticks (about 80 s), pushing a slow timer with CE rather than waiting for it.
+
+1. Backup + `set_profile.py --level 1-2` + delete `adv1.dat`; launch with `-record`; `open_process` on the `game.exe -changedir…` pid.
+2. One `evaluate_lua`: owned bytes `+0x00..+0x17` = 1, count `+0x18`.
+3. Clicks always with a hold time: `tools/orig_click.sh 318 431 150` (title "Click here to play"), `sleep 4`, `tools/orig_click.sh 465 90 150` (Adventure), `sleep 4`, then a screenshot (`tools/orig_shot.sh /tmp/now.png`) to confirm the Instructions screen.
+4. **One `evaluate_lua` that sets the chosen bytes and starts the capture** (`for i=0,23 … writeBytes(prof+0x5a+id,1); CAPTURE_OUT=…; CAPTURE_TICKS=2800; CAPTURE_GPOS="/tmp/gpos"; dofile(…ce_capture.lua)`). It times out after 30 s; that's expected. The chosen bytes must be set **on the Instructions screen**: entering Adventure clears them (NextLevel).
+5. `sudo rm -f /tmp/gpos; sleep 1; tools/orig_click.sh 318 431 150` (Click Here To Continue starts the level), then autoplay in the background with `--max-seconds` a bit under the capture length.
+6. Push timers with CE while it runs (see below), check progress with `grep ^P /tmp/gpos`.
+7. Quit: kill autoplay; `orig_click.sh 573 17 150` (Menu), `sleep 1.5`, `314 300` (Back to Main Menu), `sleep 1.5`, `244 285` (Leave), screenshot. From the main menu `556 426` (Quit), `sleep 2`, `244 258` (Quit), `sleep 8`; the game process is gone and `popcap.dmo` has a new timestamp.
+8. Save `popcap.dmo` → `traces/demos/<name>.dmo`, the capture → `traces/original/<name>.trace.jsonl.zst` (drop a torn last line first), restore the save, delete `adv1.dat`.
+
+### Common hiccups
+
+- **CE "not responding" / every MCP call times out:** a capture is running. `ce_capture.lua` holds CE's Lua engine for its whole length, so CE can't answer until it finishes. Keep captures short (≤ 3000 ticks), and wait for the file to reach `CAPTURE_TICKS + 1` lines before the next CE call. To write memory meanwhile, write `/proc/<pid>/mem` as root (`sudo python3`, see `/tmp`-style helper: seek to the address, write a little-endian int): same effect as CE, no Lua needed.
+- **A second `dofile(ce_capture.lua)` while one runs** queues behind it: the second capture starts only when the first ends. Don't overlap them.
+- **No pets in the tank after starting:** the chosen bytes were written before entering Adventure (cleared) or on a previous level. Write them on the Instructions screen, just before the start click.
+- **Game over** (all guppies died: Brinkley eats their food, potions turn them into noses, no feeding): GAME OVER dialog; click Continue at **(312, 258)** → main menu. Quit from there (step 7's second half). Feed the guppies (autoplay's default or `--hunger N`) unless the ability needs them hungry, and keep the recording short.
+- **Leaving a level writes `adv1.dat`**: the next Adventure resumes mid-level with the old pets. Delete it before re-entering.
+- **Danger dialog** (1-2's first wave, ~1750 ticks in): autoplay clicks its button; if autoplay has stopped, click (315, 271).
+- **CE broken pipe / connection reset** in `/tmp/ce.log`: the bridge dropped. Restart CE (`sudo pkill -9 -x cheatengine-x86`, not `-f`, which also matches your own shell), relaunch, `open_process` again.
+- **The capture file is root-owned**: copy it before editing; its last line is often torn when the game quits.
+
 **Long sessions in several capture chunks:** each `ce_capture.lua` run writes its own header with the full RNG state at its start. When joining chunks into one trace, keep each later chunk's header as a snapshot line carrying `"rng"` (or store the chunks as separate traces). Without it, a chunk after a hole can't be replayed, because the RNG can't be walked across ticks nobody captured. `zoo_e_01` lost its later chunks' headers, so only its first chunk (ticks 2538–11155) is replayable.

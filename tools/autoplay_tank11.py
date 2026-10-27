@@ -61,6 +61,9 @@ ZAP_AMP = int(sys.argv[sys.argv.index("--zap-amp") + 1]) if "--zap-amp" in sys.a
 PRESTO = (sys.argv[sys.argv.index("--presto") + 1].split(",")
           if "--presto" in sys.argv else [])
 PET_DIALOG = 0x1f
+# Feed only when the hungriest guppy is below N (`--hunger N`, default 450):
+# low values keep guppies hungry enough to drink Nostradamus's potions.
+HUNGER = int(sys.argv[sys.argv.index("--hunger") + 1]) if "--hunger" in sys.argv else 450
 
 
 def window():
@@ -224,7 +227,7 @@ def main():
             click(win, *GUPPY_BTN)
         elif (FEED_FIRST and st["guppies"] and st["foods"] <= bought_quantity
               and now - last_feed > 0.8 and st["money"] >= 5
-              and min(g[2] for g in st["guppies"]) < 450):
+              and min(g[2] for g in st["guppies"]) < HUNGER):
             # Pets that move coins (Nimbus) can keep the coin branch busy
             # forever: feed hungry guppies first.
             g = min(st["guppies"], key=lambda g: g[2])
@@ -237,7 +240,7 @@ def main():
         elif (st["guppies"] and st["foods"] <= bought_quantity and now - last_feed > 0.8
               and st["money"] >= 5):
             g = min(st["guppies"], key=lambda g: g[2])
-            if g[2] < 450:
+            if g[2] < HUNGER:
                 x = min(max(g[0] + 40, 40), 580)
                 y = min(max(g[1] - 20, 75), 390)
                 click(win, x, y)
