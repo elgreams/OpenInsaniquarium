@@ -1923,8 +1923,8 @@ pub fn replay_resync_dirty(
             }
         }
         // Money written by the recorder (Cheat Engine), not by the game: the
-        // capture's money jumps up to a round 1000s value with nothing
-        // banked. Adopt it so the replay can carry on (RE tooling only).
+        // capture's money jumps by 500 or more to a round hundreds value,
+        // more than any coin pays. Adopt it so the replay can carry on (RE tooling only).
         if let Some(m) = t
             .snapshots
             .iter()
@@ -1932,8 +1932,7 @@ pub fn replay_resync_dirty(
             .and_then(|s| s.state.get("board"))
             .and_then(|b| b.get("money"))
             .and_then(Value::as_i64)
-            && m >= 1000
-            && m % 1000 == 0
+            && m % 100 == 0
             && m - i64::from(board.money) >= 500
         {
             board.money = m as i32;

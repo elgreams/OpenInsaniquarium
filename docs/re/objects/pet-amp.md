@@ -11,7 +11,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-16 differen
 - Animation (slot 89) @ `0x004dfc50`, id-0x10 branch; draw body `0x004f8610` case 0x10 → `0x004df2f0`
 - Victims: guppy `Fish::Die` (slot 88 @ `0x004d5f90`, argument 0); pet removal `0x004d6830`; coin `Board::AddCoin` @ `0x00544430`; spark `EffectShot` @ `0x005436f0`; free guppy `Board::AddRandomGuppy` @ `0x00546d70`; "no fish left" test `0x005392a0`
 
-Confidence: `static` throughout. No capture with Amp exists yet; the first one should charge him (≥ 2700 calm ticks) and click him three times with several guppies in the tank.
+Confidence per section. `amp_zap` (`tank1_1.rs`) replays 1-2 with Amp from the game's own demo (`amp_zap_01`: his charge pushed to 2900 with Cheat Engine, the EEL2 charge, two EEL3 crackles, then a zap of 7 guppies into corpses, $200 coins and sparks, and the free guppy) and compares the pets, guppies, corpses, coins, sounds and the app RNG every tick. Drawing and the id-21 pets stay `static`.
 
 ## Fields used by id 16
 
@@ -30,7 +30,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 | `+0x70`, `+0x78` | int | ctor writes 0 and 25 (Ghidra `Widget_data.field_0x1c/0x24`; probably mouse insets of the click area; not checked) |
 | widget size | | **160 × 80** (`+0x88/+0x8c` in Ghidra's WidgetContainer: `0xa0`, `0x50`) |
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Construction
 
@@ -43,7 +43,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), plus:
 
 So adding Amp costs **9 app draws**, as Itchy.
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Update (`0x004f7ad0`), id 16
 
@@ -57,7 +57,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are unchanged.
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Charge (slot 81, `0x004e5900`, id 16)
 
@@ -71,7 +71,7 @@ The clock keeps counting past the threshold (only the `==` tick plays the sound)
 
 First charge: `3000 − 300 = 2700` calm ticks after he is added. After a zap: `threshold + 200 + 20` calm ticks (3220, 3420, …), since the clock restarts at −20.
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Clicks (slot 54 `0x004fbe20` → `0x004fb680`)
 
@@ -84,7 +84,7 @@ Slot 54 calls `0x004fb680(x, y, clicks)`; if that returns false (and a re-entry 
 
 The click handler doesn't check for aliens: a charged Amp can be fired during a wave (the clock only grows on calm ticks).
 
-`static`.
+`traced` (`amp_zap`).
 
 ## The zap (`0x004fb680`, id 16)
 
@@ -104,9 +104,9 @@ In order, all in the click handler (input handling, before the tick's object upd
 8. If `i > 0`: the die sound `0x00538610(−1)`: `DIE` (`0x117`), gap 3, no pitch shift. No RNG.
 9. Unless in the Virtual Tank: `threshold += 200`. Then `clock = −20`, `+0x260 = 0`.
 
-**RNG per zap** (app MTRand, in this order): per victim 1 spark draw + the spark ctor's draws; then 11 for a free guppy if the tank is empty. Every coin and corpse is RNG-free. The coins and corpses are created during input handling, so they get their first update in the same tick.
+**RNG per zap** (app MTRand, in this order): per victim 1 spark draw + the spark ctor's draws; then 11 for a free guppy if the tank is empty. Every coin and corpse is RNG-free. The coins and corpses are created during input handling, so they get their first update in the same tick (`amp_zap_01`: corpse life 124 on the zap tick).
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Animation (`0x004dfc50`), id 16
 
@@ -117,7 +117,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`). When not turn
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` (`amp_zap`).
 
 ## Drawing (`0x004df2f0`)
 

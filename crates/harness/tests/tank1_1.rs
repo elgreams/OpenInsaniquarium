@@ -754,6 +754,16 @@ fn gash_snack() {
     }
 }
 
+/// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
+/// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
+/// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).
+#[test]
+fn amp_zap() {
+    if captured("amp_zap_01") {
+        replay_level("amp_zap_01", 2, true);
+    }
+}
+
 /// The pet screen after 1-5 (`petscreen_01`): hover in and out, Continue
 /// with nothing chosen and No, three picks, a refused 4th, an un-pick and
 /// a re-pick, then Continue into 2-1 (`screens/pet-screen.md`). Inputs are

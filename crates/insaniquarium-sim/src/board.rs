@@ -465,9 +465,9 @@ impl Board {
         let cap = ((n - 20) / 2 + 20).max(20);
         let victims = std::mem::take(&mut self.guppies);
         for (i, g) in victims.iter().enumerate() {
-            let mut corpse = DeadFish::from_fish(g);
-            corpse.update();
-            self.dead_fish.push(corpse);
+            // Made in input handling, before the object pass: the pass gives
+            // it its first update this tick.
+            self.dead_fish.push(DeadFish::from_fish(g));
             if (i as i32) < cap {
                 self.coins
                     .push(Coin::new((g.x + 15.0) as i32, (g.y + 10.0) as i32, 5));
