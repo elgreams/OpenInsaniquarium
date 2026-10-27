@@ -195,7 +195,7 @@ The ball: `0x004e1d00` kind 2 → `IMAGE_BALLS` (global `0x005e8ee8`; `balls`, 1
 ## Open questions
 
 - Everything is static. The grow counter, the 101-tick throw, the ball's steering and bounce, and the 15 damage are the parts to capture first; the global-stream colour draw (`& 3`) needs the global MT state in the capture.
-- Which aliens fire missile kinds 0 and 1 (alien kinds 5/6 per `alien-sylvester.md`'s shoot timer; the creators are in `Alien::Update` `0x004fd560`), what the kind-1 byte `+0x190` means, and on which tank they first come: not followed.
+- Who fires the missiles he shoots: `Alien::Update` (`0x004fd560`) makes missile **kind 0** for alien kind 5 (call at `0x004fdb7b`, from `(wx − 10, wy − 35)`) and **kind 1** for alien kind 6 (`0x004fddac`, from `(wx + 10, wy − 24)`), each at a target from `0x004e8df0`. Which named aliens these are, what the kind-1 byte `+0x190` means, and on which tank they first come: not followed.
 - The ball's generic steering bands with a Bilaterus present were not written out.
 - The board pet counter `board+0x19c` (id 22): readers not looked for.
 - Whether alien missiles can target Stanley (his `+0x98`): the missile target pick was not followed.
@@ -210,6 +210,6 @@ A pet zoo on tank 1-2 with Stanley, through one Sylvester wave (one capture chun
 - The wave: the transformation (row 5, 10 ticks), a ball every 101 ticks; Sylvester (50 HP) dies on the 4th hit if nothing else hurts him, so don't click him. The kill comes inside the ball's update, and the end of the wave waits for the last falling ball. After the wave the counter runs back down.
 - To save time, push `+0x220` to 95 just after the warning (the replay must adopt that write); the wave itself can be brought forward by pushing the board countdown `board+0x2c0` as in earlier zoos.
 
-The missile shoot-down needs an alien that fires missiles (not on 1-2): a second session on a later tank, or later in the bonus-pet work. Optional: Wadsworth (pet 9) alongside, to see him shelter while a ball is in flight.
+The missile shoot-down needs an alien of kind 5 or 6, which fire missiles (not on 1-2): a second session on a later tank, or later in the bonus-pet work. Optional: Wadsworth (pet 9) alongside, to see him shelter while a ball is in flight.
 
 `static` (a plan).
