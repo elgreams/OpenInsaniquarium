@@ -49,6 +49,8 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 12 => FishKind::Gumbo,
             0x15 if rd_i32(b, 0x234) == 13 => FishKind::Blip,
             0x15 if rd_i32(b, 0x234) == 15 => FishKind::Nimbus,
+            0x15 if rd_i32(b, 0x234) == 17 => FishKind::Gash,
+            0x15 if rd_i32(b, 0x234) == 18 => FishKind::Angie,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },

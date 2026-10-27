@@ -28,6 +28,8 @@ pub const SHRAPNEL: i32 = 11;
 pub const GUMBO: i32 = 12;
 pub const BLIP: i32 = 13;
 pub const NIMBUS: i32 = 15;
+pub const GASH: i32 = 17;
+pub const ANGIE: i32 = 18;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -129,6 +131,23 @@ impl Fish {
         f
     }
 
+    /// `AddPet(17)`'s fish part: hunger clock −1550, threshold 1570 (no
+    /// RNG). `coin_timer` is the clock, `coin_interval` the threshold.
+    pub fn new_gash(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Gash;
+        f.coin_timer = -1550;
+        f.coin_interval = 1570;
+        f
+    }
+
+    /// `AddPet(18)`'s fish part: no id-18 ctor branch.
+    pub fn new_angie(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Angie;
+        f
+    }
+
     /// `AddPet(12)`'s fish part: no id-12 ctor branch.
     pub fn new_gumbo(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -171,6 +190,8 @@ impl Fish {
             FishKind::Gumbo => self.update_gumbo(ctx.aliens, rng),
             FishKind::Blip => self.update_blip(ctx, rng),
             FishKind::Nimbus => self.update_nimbus(ctx, rng),
+            FishKind::Gash => self.update_gash(ctx, rng),
+            FishKind::Angie => self.update_angie(ctx, rng),
             _ => PetFishOut {
                 stabbed: self.update_itchy(aliens, rng),
                 ..Default::default()
@@ -659,6 +680,245 @@ impl Fish {
         }
     }
 
+    /// Gash (pet-gash.md): bites the nearest alien (3 HP, it dies at once
+    /// at 0); on calm ticks his clock runs, and past 1570 he hunts the
+    /// nearest guppy and swallows the first he touches.
+    fn update_gash(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        let aliens = !ctx.aliens.is_empty();
+        let hungry = self.coin_timer > self.coin_interval && !ctx.guppies.is_empty();
+        if aliens || hungry {
+            self.gash_hunt(ctx, aliens, &mut out);
+        } else {
+            self.swim_modes_calm();
+        }
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        if !aliens {
+            self.coin_timer += 1;
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        self.animate_gash();
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
+    fn gash_hunt(&mut self, ctx: PetCtx<'_>, aliens: bool, out: &mut PetFishOut) {
+        // Target (`0x004e5fc0`, id 0x11).
+        let (px, py) = (self.x + 40.0, self.y + 40.0);
+        let d = |cx: i32, cy: i32| {
+            let dx = (f64::from(cx) - px) as i32;
+            let dy = (f64::from(cy) - py) as i32;
+            (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32
+        };
+        let mut best = 10_000;
+        let mut target: Option<(i32, i32)> = None;
+        if aliens {
+            for a in ctx.aliens {
+                let c = (a.widget_x + 80, a.widget_y + 80);
+                let dd = d(c.0, c.1);
+                if dd < best {
+                    best = dd;
+                    target = Some(c);
+                }
+            }
+        } else {
+            for g in ctx.guppies {
+                let c = (g.widget_x + 40, g.widget_y + 40);
+                let dd = d(c.0, c.1);
+                if dd < best {
+                    best = dd;
+                    target = Some(c);
+                }
+            }
+        }
+        let Some((tx, ty)) = target else { return };
+        if self.mode_timer >= 5 {
+            self.mode_timer = 0;
+            let lim = if aliens { 9.0 } else { 8.0 };
+            let (tx, ty) = (f64::from(tx), f64::from(ty));
+            if px > tx {
+                if self.vx > -lim {
+                    self.vx -= 2.5;
+                }
+            } else if px < tx && self.vx < lim {
+                self.vx += 2.5;
+            }
+            if py > ty {
+                if self.vy > -4.0 {
+                    self.vy -= 1.5;
+                }
+            } else if py < ty && self.vy < 4.0 {
+                self.vy += 1.5;
+            }
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        // Attack (`0x004fe740`, id 0x11): contact < 20, near < 30.
+        let close = |cx: i32, cy: i32, r: f64| {
+            (px - f64::from(cx)).abs() < r && (py - f64::from(cy)).abs() < r
+        };
+        if aliens {
+            for (i, a) in ctx.aliens.iter().enumerate() {
+                let (cx, cy) = (a.widget_x + 80, a.widget_y + 80);
+                if close(cx, cy, 20.0) {
+                    out.bite = Some(i);
+                    return;
+                }
+                if close(cx, cy, 30.0) && self.eat_timer == 0 {
+                    self.eat_timer = 10;
+                    return;
+                }
+            }
+        } else {
+            for (i, g) in ctx.guppies.iter().enumerate() {
+                let (cx, cy) = (g.widget_x + 40, g.widget_y + 40);
+                if close(cx, cy, 20.0) {
+                    out.swallow = Some(i);
+                    self.coin_timer = 0;
+                    return;
+                }
+                if close(cx, cy, 30.0) && self.eat_timer == 0 {
+                    self.eat_timer = 10;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Gash's animation (`0x004dfc50`, id 0x11): the bite timer shows its
+    /// cel instead of the swim cycle.
+    fn animate_gash(&mut self) {
+        if self.facing > 0.0 && self.vx < 0.0 {
+            self.turn_timer = 20;
+        } else if self.facing < 0.0 && self.vx > 0.0 {
+            self.turn_timer = -20;
+        }
+        if self.turn_timer != 0 {
+            self.turn_timer -= self.turn_timer.signum();
+            if self.turn_timer == 0 {
+                self.eat_timer = 0;
+            }
+        }
+        if self.turn_timer > 0 {
+            self.cel = 9 - self.turn_timer / 2;
+        } else if self.turn_timer < 0 {
+            self.cel = self.turn_timer / 2 + 9;
+        } else if self.eat_timer > 0 {
+            self.eat_timer -= 1;
+            self.cel = self.eat_timer;
+        } else {
+            self.swim_cycle += if self.anim_frame <= 1 { 1 } else { 2 };
+            if self.swim_cycle > 19 {
+                self.swim_cycle = 0;
+            }
+            self.cel = self.swim_cycle / 2;
+        }
+    }
+
+    /// Angie (pet-angie.md): with any corpse in the tank she homes on the
+    /// nearest fresh one (life > 95) and starts its revival on touch.
+    fn update_angie(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        if ctx.corpses.is_empty() {
+            self.swim_modes_calm();
+        } else {
+            self.angie_chase(ctx, &mut out);
+        }
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.swim_tail(2, 19, 1);
+        out
+    }
+
+    fn angie_chase(&mut self, ctx: PetCtx<'_>, out: &mut PetFishOut) {
+        let (px, py) = (self.x + 40.0, self.y + 40.0);
+        let mut best = 10_000;
+        let mut target = None;
+        for (i, c) in ctx.corpses.iter().enumerate() {
+            if c.life <= 95 {
+                continue;
+            }
+            let dx = (f64::from(c.widget_x + 40) - px) as i32;
+            let dy = (f64::from(c.widget_y + 40) - py) as i32;
+            let d = (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
+            if d < best {
+                best = d;
+                target = Some(i);
+            }
+        }
+        let Some(t) = target else { return };
+        if self.mode_timer >= 5 {
+            self.mode_timer = 0;
+            let c = &ctx.corpses[t];
+            let (tx, ty) = (f64::from(c.widget_x + 40), f64::from(c.widget_y + 40));
+            let mut step_x = |hi: bool, lo: bool, v: f64| -> bool {
+                if hi {
+                    if self.vx > -3.0 {
+                        self.vx -= v;
+                    }
+                    true
+                } else if lo {
+                    if self.vx < 3.0 {
+                        self.vx += v;
+                    }
+                    true
+                } else {
+                    false
+                }
+            };
+            let _ = step_x(px > tx + 4.0, px < tx - 4.0, 1.0)
+                || step_x(px > tx + 2.0, px < tx - 2.0, 0.1)
+                || step_x(px > tx, px < tx, 0.05);
+            if py > ty + 3.0 {
+                if self.vy > -2.0 {
+                    self.vy -= 0.6;
+                }
+            } else if py < ty - 3.0 {
+                if self.vy < 3.0 {
+                    self.vy += 1.0;
+                }
+            } else if py > ty {
+                if self.vy > -2.0 {
+                    self.vy -= 0.3;
+                }
+            } else if py < ty && self.vy < 3.0 {
+                self.vy += 0.5;
+            }
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        // Attack (`0x004fe740`, id 0x12): the first fresh corpse touched.
+        let (px, py) = (self.x + 40.0, self.y + 40.0);
+        if let Some(i) = ctx.corpses.iter().position(|c| {
+            c.life > 95
+                && (px - f64::from(c.widget_x + 40)).abs() < 30.0
+                && (py - f64::from(c.widget_y + 40)).abs() < 30.0
+        }) {
+            out.revive = Some(i);
+        }
+    }
+
     /// Gumbo's chase (`0x004e02d0`, id 12): steer by the nearest alien's
     /// centre toward the opposite corner, every 5th tick.
     fn flee(&mut self, aliens: &[Alien]) {
@@ -827,6 +1087,11 @@ pub struct PetFishOut {
     pub bomb: Option<(i32, i32)>,
     /// Blip reveals every shop slot (once, at level tick 201).
     pub reveal_shop: bool,
+    /// Gash bites alien `i` (3 HP; dies at 0) / swallows guppy `i`.
+    pub bite: Option<usize>,
+    pub swallow: Option<usize>,
+    /// Angie touches corpse `i`: its revival countdown starts.
+    pub revive: Option<usize>,
     /// Nimbus tosses coin `i` up to widget y `y` (removed, re-added as
     /// its rising kind), and pellet `i` (re-dropped at y, tossed).
     pub toss_coin: Option<(usize, i32)>,
@@ -844,6 +1109,8 @@ pub struct PetCtx<'a> {
     pub foods: &'a [crate::food::Food],
     /// Blip's shop reveal is due (level tick > 200, slots still hidden).
     pub reveal_due: bool,
+    /// The dead fish (`+0x98`), for Angie.
+    pub corpses: &'a [crate::fish::DeadFish],
 }
 
 impl PetCtx<'_> {

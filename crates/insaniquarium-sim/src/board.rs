@@ -161,6 +161,9 @@ pub struct Board {
     /// Wadsworth's shelter (globals `0x005e89d0..d8`): his widget position
     /// as of his last update, while sheltering (pet-wadsworth.md).
     pub shelter: Option<(i32, i32)>,
+    /// Guppies Angie revived this tick (indices): they join the end of the
+    /// widget list and update after the pets.
+    pub revived: Vec<usize>,
     /// `board+0xb0`: `OtherTypePet` pets (Stinky) in insertion order.
     pub pets: Vec<Pet>,
     /// Tutorial level (`board+0x3c8 == 1 && +0x3cc == 1`): coins rest
@@ -248,6 +251,7 @@ impl Board {
             notes: Vec::new(),
             song: false,
             shelter: None,
+            revived: Vec::new(),
             pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
@@ -413,6 +417,12 @@ impl Board {
             self.rng.next_range(5);
         } else if id == crate::itchy::ZORF {
             self.fish_pets.push(Fish::new_zorf(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::GASH {
+            self.fish_pets.push(Fish::new_gash(a, _b, &mut self.rng));
+            self.rng.next_range(5);
+        } else if id == crate::itchy::ANGIE {
+            self.fish_pets.push(Fish::new_angie(a, _b, &mut self.rng));
             self.rng.next_range(5);
         } else if id == crate::itchy::BLIP {
             self.fish_pets.push(Fish::new_blip(a, _b, &mut self.rng));
@@ -1467,7 +1477,34 @@ impl Board {
             }
         }
         // Dead fish come right after shadows (cosmetic, no RNG).
-        self.dead_fish.retain_mut(DeadFish::update);
+        // A corpse Angie revived (`DeadFish::Update` `0x004f64e0`): HEAL,
+        // remove it, and re-create the fish, which updates this tick.
+        let mut revived = Vec::new();
+        self.dead_fish.retain_mut(|d| {
+            let keep = d.update();
+            if !keep && d.revive_due() {
+                revived.push((d.widget_x, d.widget_y, d.kind, d.facing_right));
+            }
+            keep
+        });
+        let mut reborn = Vec::new();
+        for (x, y, kind, right) in revived {
+            self.play(0x125, Sound::Heal);
+            if (0..=4).contains(&kind) {
+                // `0x00546fc0`: `Fish::Init` (6 draws), the stage and facing,
+                // then its shadow (1 draw).
+                let mut f = Fish::new(x, y, &mut self.rng);
+                f.stage = kind;
+                f.vx = if right { 1.0 } else { -1.0 };
+                f.facing = f.vx;
+                f.announces = self.tutorial;
+                self.guppies.push(f);
+                self.rng.next_range(5);
+                reborn.push(self.guppies.len() - 1);
+            }
+            // TODO(spec): other fish kinds (not on tank 1).
+        }
+        self.revived = reborn;
         // Meryl's notes (`+0xe8`, `Coin::Update` kind 16): rise 1 px a
         // tick; gone after 100 ticks or above y 50.
         self.notes.retain_mut(|n| {
@@ -1514,7 +1551,10 @@ impl Board {
                 .find(|f| f.kind == crate::fish::FishKind::Gumbo)
                 .map(|f| (f.widget_x, f.widget_y)),
         };
-        for f in &mut self.guppies {
+        // Guppies Angie revived this tick sit at the end of the widget
+        // list: they update after the pets (with the newborns).
+        let n_old = self.guppies.len() - self.revived.len();
+        for f in &mut self.guppies[..n_old] {
             f.update(env, &mut world);
         }
         // Carnivores (`+0xa4`) right after the guppies. They read the guppy
@@ -1630,6 +1670,7 @@ impl Board {
                 coins: &self.coins,
                 foods: &self.foods,
                 reveal_due: hidden && self.level_ticks > 200,
+                corpses: &self.dead_fish,
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
@@ -1664,6 +1705,41 @@ impl Board {
             if let Some((x, y)) = out.coin {
                 // Coins come after `+0xb4` in z-order: it updates this tick.
                 self.coins.push(Coin::new(x, y, crate::coin::kind::GOLD));
+            }
+            if let Some(a) = out.bite {
+                // Gash (`0x004fb5b0`): 3 HP (0.5 for kinds 4/5), PUNCH gap
+                // 9; at 0 the alien dies on the spot.
+                let dmg = if matches!(self.aliens[a].kind, 4 | 5) {
+                    0.5
+                } else {
+                    3.0
+                };
+                self.aliens[a].health -= dmg;
+                if self.aliens[a].health <= 0.0 {
+                    let n = self.dead_aliens.len();
+                    self.kill_alien(a);
+                    self.update_dead_aliens_from(n);
+                }
+                self.play_throttled(0x130, 9, Sound::Punch);
+            }
+            if let Some(g) = out.swallow {
+                // Gash swallows a guppy: removed, no corpse; the chomp
+                // sound draws `r % 3` unless throttled.
+                self.guppies.remove(g);
+                if self.sample_ready(0x113, 3) {
+                    let s = if self.rng.next_range(3) == 0 {
+                        Sound::Chomp2
+                    } else {
+                        Sound::Chomp
+                    };
+                    self.sounds.push(s.into());
+                }
+            }
+            if let Some(c) = out.revive
+                && self.dead_fish[c].turn == 100
+            {
+                // Angie (`0x004d5630`): the countdown starts.
+                self.dead_fish[c].turn = 10;
             }
             if out.reveal_shop {
                 // Blip (`0x004f7b01`): SONAR, then every slot revealed.
@@ -1704,8 +1780,13 @@ impl Board {
                 self.fish_pets[i].finish_prego(out.birth.is_some(), n);
             }
         }
-        if !born.is_empty() {
-            self.update_newborns(&born);
+        // Revived guppies are the last ones before this tick's births.
+        let n_rev = std::mem::take(&mut self.revived).len();
+        let first_born = born.first().copied().unwrap_or(self.guppies.len());
+        let mut late: Vec<usize> = (first_born.saturating_sub(n_rev)..first_born).collect();
+        late.extend(born);
+        if !late.is_empty() {
+            self.update_newborns(&late);
         }
         self.shots.retain_mut(Shot::update);
         let mut banked = 0;

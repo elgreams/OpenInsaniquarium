@@ -54,6 +54,12 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 15, Nimbus: tosses coins and food up
     /// (`pet-nimbus.md`).
     Nimbus,
+    /// `Sexy::FishTypePet` id 17, Gash: bites aliens, snacks on guppies
+    /// (`pet-gash.md`).
+    Gash,
+    /// `Sexy::FishTypePet` id 18, Angie: revives dead fish
+    /// (`pet-angie.md`).
+    Angie,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1196,6 +1202,11 @@ pub struct DeadFish {
 }
 
 impl DeadFish {
+    /// Angie's revival finished this update (counter run down from 10).
+    pub fn revive_due(&self) -> bool {
+        self.turn < 1 && self.life >= 1
+    }
+
     /// `DeadFish::DeadFish` (`0x004eed20`) from a dying guppy.
     pub fn from_fish(f: &Fish) -> Self {
         // `Fish::Die` passes the position as ints.
@@ -1244,6 +1255,11 @@ impl DeadFish {
             self.alpha = (self.alpha - 0.02).max(0.0);
         }
         if self.life < 1 {
+            return false;
+        }
+        // Angie's revival ran out (pet-angie.md#the-revival): the board
+        // re-creates the fish; the caller sees `revive()`.
+        if self.turn < 1 {
             return false;
         }
         if self.y > 370.0 || self.life > 105 {
