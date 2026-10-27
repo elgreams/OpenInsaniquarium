@@ -766,6 +766,25 @@ fn presto_changes() {
     }
 }
 
+/// Brinkley with Zorf (`brinkley_01`, `brinkley_02`): 1-2, low feeding, no
+/// coin collecting. He eats Zorf's and the player's pellets (a star every
+/// 3rd); his count `+0x240` was pushed to 44 (the chest at 45) and, in the
+/// second capture, to 134 (the $2000 coin at 135). Zorf drops every 2nd
+/// check with him in (pet-brinkley.md, pet-zorf.md#feeding).
+#[test]
+fn brinkley_zorf() {
+    if captured("brinkley_01") {
+        replay_level("brinkley_01", 2, true);
+    }
+}
+
+#[test]
+fn brinkley_rare_coin() {
+    if captured("brinkley_02") {
+        replay_level("brinkley_02", 2, true);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

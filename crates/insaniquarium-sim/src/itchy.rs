@@ -677,29 +677,47 @@ impl Fish {
         let Some((w, h)) = target else { return };
         if self.mode_timer >= 5 {
             self.mode_timer = 0;
+            // Bands by position; each speed guard sits inside its band
+            // (`0x004e0bb4`, as Nimbus's).
             let (cx, w) = (self.x + 40.0, f64::from(w));
-            if cx > w + 28.0 && self.vx > -3.0 {
-                self.vx = -1.0;
-            } else if cx < w + 12.0 && self.vx < 3.0 {
-                self.vx = 1.0;
-            } else if cx > w + 24.0 && self.vx > -3.0 {
-                self.vx = -0.1;
-            } else if cx < w + 16.0 && self.vx < 3.0 {
-                self.vx = 0.1;
-            } else if cx > w + 20.0 && self.vx > -3.0 {
-                self.vx = -0.05;
+            if cx > w + 28.0 {
+                if self.vx > -3.0 {
+                    self.vx -= 1.0;
+                }
+            } else if cx < w + 12.0 {
+                if self.vx < 3.0 {
+                    self.vx += 1.0;
+                }
+            } else if cx > w + 24.0 {
+                if self.vx > -3.0 {
+                    self.vx -= 0.1;
+                }
+            } else if cx < w + 16.0 {
+                if self.vx < 3.0 {
+                    self.vx += 0.1;
+                }
+            } else if cx > w + 20.0 {
+                if self.vx > -3.0 {
+                    self.vx -= 0.05;
+                }
             } else if cx < w + 20.0 && self.vx < 3.0 {
-                self.vx = 0.05;
+                self.vx += 0.05;
             }
             let (cy, h) = (self.y + 40.0, f64::from(h));
-            if cy > h + 26.0 && self.vy > -2.0 {
-                self.vy = -0.6;
-            } else if cy < h + 14.0 && self.vy < 2.5 {
-                self.vy = 1.0;
-            } else if cy > h + 20.0 && self.vy > -2.0 {
-                self.vy = -0.3;
-            } else if cy < h + 20.0 && self.vy < 2.5 {
-                self.vy = 0.5;
+            if cy > h + 26.0 {
+                if self.vy > -2.0 {
+                    self.vy -= 0.6;
+                }
+            } else if cy < h + 14.0 {
+                if self.vy < 3.0 {
+                    self.vy += 1.0;
+                }
+            } else if cy > h + 20.0 {
+                if self.vy > -2.0 {
+                    self.vy -= 0.3;
+                }
+            } else if cy < h + 20.0 && self.vy < 3.0 {
+                self.vy += 0.5;
             }
             if self.anim_frame < 5 {
                 self.anim_frame += 1;
@@ -712,8 +730,10 @@ impl Fish {
     }
 
     /// Brinkley ate a pellet: count it, start digesting; every 3rd pellet
-    /// is a rising coin at (wx + 5, wy − 10), by the count.
-    pub fn brinkley_ate(&mut self) -> Option<(i32, i32, i32)> {
+    /// is a rising coin at (wx + 5, wy − 10), by the count. `wx, wy` is his
+    /// widget position when he ate (during the chase, before this tick's
+    /// move).
+    pub fn brinkley_ate(&mut self, wx: i32, wy: i32) -> Option<(i32, i32, i32)> {
         self.count_240 += 1;
         self.timer_23c = 45;
         let n = self.count_240;
@@ -729,7 +749,7 @@ impl Fish {
         } else {
             10
         };
-        Some((self.widget_x + 5, self.widget_y - 10, kind))
+        Some((wx + 5, wy - 10, kind))
     }
 
     /// Blip (pet-blip.md): Itchy's swimming; on the first update past

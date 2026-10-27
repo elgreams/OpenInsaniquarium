@@ -12,7 +12,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-20 differen
 - Animation (slot 89) @ `0x004dfc50` (branch shared with Nimbus); draw body `0x004f8610` case 0x14 → generic pet draw `0x004dfbb0` with `IMAGE_BRINKLEY`
 - Readers of the Brinkley count `board+0x194`: Zorf's feeding (`0x004e5cc3`, `pet-zorf.md#feeding`)
 
-Confidence: everything below is `static` (read from the code; nothing captured yet).
+Confidence per section. Captures: `brinkley_01` (1-2 with Zorf, ~9 200 ticks, his count pushed to 44 with Cheat Engine: stars and the chest) and `brinkley_02` (a later chunk of the same session, pushed to 134: the $2000 coin), both replayed exactly from the game's own demo. `traced` where a section says so, else `static`.
 
 ## Fields used by id 20
 
@@ -28,7 +28,7 @@ As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
 
 The bounds are a guppy's (floor 370, min x 10, ceiling 95, max x 540). The board keeps his count in the per-id pet counter `board+0x144 + 4·20 = board+0x194` (`board.md#object-lists`).
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`).
 
 ## Construction
 
@@ -41,7 +41,7 @@ The bounds are a guppy's (floor 370, min x 10, ceiling 95, max x 540). The board
 
 So adding Brinkley costs **9 app draws**, as Itchy. Made by Presto (`pet-presto.md#the-change`): the same minus the 2 position draws.
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`) (his draws at level start).
 
 ## Update (`0x004f7ad0`), id 20
 
@@ -69,7 +69,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 RNG: the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0), as Itchy, plus the slurp draw (below). The gate, chase and target search draw nothing.
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`): the gate, the extra sink, the re-roll.
 
 ## Chase
 
@@ -78,28 +78,32 @@ RNG: the 21-tick re-roll (`r % 10`, then `r % 9 + 1` on 0), as Itchy, plus the s
 1. **Target** (`0x004e5fc0`, id 20): best = 10 000, strict `<` (first minimum wins). Over the food list `board+0xac` in list order, with **no filter** (every kind, any motion, tossed or not): `dx = trunc((x + 40) − (f.wx + 20))`, `dy = trunc((y + 40) − (f.wy + 20))`, `d = trunc(f32 sqrt(f32(dx² + dy²)))`. The nearest pellet wins (no `dx → 50` rule, unlike Nimbus).
 2. If `+0x1b0 < 5` or there is no target, no steering. Otherwise `+0x1b0 = 0` and steer, with `cx = x + 40`, `w = target.wx` (int), first matching rule:
 
-   | Condition | vx |
-   |---|---|
-   | `cx > w + 28` and `vx > −3` | −1.0 |
-   | `cx < w + 12` and `vx < 3` | +1.0 |
-   | `cx > w + 24` and `vx > −3` | −0.1 |
-   | `cx < w + 16` and `vx < 3` | +0.1 |
-   | `cx > w + 20` and `vx > −3` | −0.05 |
-   | `cx < w + 20` and `vx < 3` | +0.05 |
+   Bands by position, **each speed guard inside its band** (no fall-through to the next band when the guard fails), and the steps are **added** to the velocity:
+
+   | Band (first match) | if | vx |
+   |---|---|---|
+   | `cx > w + 28` | `vx > −3` | −= 1.0 |
+   | `cx < w + 12` | `vx < 3` | += 1.0 |
+   | `cx > w + 24` | `vx > −3` | −= 0.1 |
+   | `cx < w + 16` | `vx < 3` | += 0.1 |
+   | `cx > w + 20` | `vx > −3` | −= 0.05 |
+   | `cx < w + 20` | `vx < 3` | += 0.05 |
 
    Then with `cy = y + 40`, `h = target.wy`:
 
-   | Condition | vy |
-   |---|---|
-   | `cy > h + 26` and `vy > −2` | −0.6 |
-   | `cy < h + 14` and `vy < 2.5` | +1.0 |
-   | `cy > h + 20` and `vy > −2` | −0.3 |
-   | `cy < h + 20` and `vy < 2.5` | +0.5 |
+   | Band (first match) | if | vy |
+   |---|---|---|
+   | `cy > h + 26` | `vy > −2` | −= 0.6 |
+   | `cy < h + 14` | `vy < 3` | += 1.0 |
+   | `cy > h + 20` | `vy > −2` | −= 0.3 |
+   | `cy < h + 20` | `vy < 3` | += 0.5 |
+
+   (Corrected against `brinkley_01`: the first draft read these as assignments with fall-through and a 2.5 vy guard; the code at `0x004e0bb4` adds, nests, and uses 3.0.)
 
    Then the speed bucket `+0x1bc += 1` while below 5. The +20 lines his centre up with the pellet's centre (40-px food widget).
 3. If there is a target, **eat** (every tick, steering tick or not).
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`).
 
 ## Eat (`0x004fe740`, id 20)
 
@@ -113,7 +117,7 @@ Over the food list `board+0xac` in list order, the **first** pellet with (double
 1. **Slurp** (`0x005384c0(0)`): if sample **`0x138` (`SLURP`)** is off its **3-tick** throttle (the board sample table `0x005381f0`, which stamps `0x138`), **1 app draw `r % 5`**: 0 → `SOUND_SLURP3`, 1 → `SOUND_SLURP2`, 2–4 → `SOUND_SLURP`, played through the app's sound manager. No draw while throttled. (The same shape as Gash's chomp, `pet-gash.md`.)
 2. **Remove the pellet** (`0x004d9570`, as Nimbus's toss). No food ctor, no RNG.
 3. `+0x240 += 1`; `+0x23c = 45` (108 in the Virtual Tank).
-4. If `+0x240 % 3 ≠ 0`, stop. Otherwise, if `0x004d70b0` allows a coin (always outside the Virtual Tank; in it, only when `board+0x500` is set and a coin limit isn't reached, not followed): **`Board::AddCoin(wx + 5, wy − 10, kind, 0, −1.0, 0)`** at his widget position, with
+4. If `+0x240 % 3 ≠ 0`, stop. Otherwise, if `0x004d70b0` allows a coin (always outside the Virtual Tank; in it, only when `board+0x500` is set and a coin limit isn't reached, not followed): **`Board::AddCoin(wx + 5, wy − 10, kind, 0, −1.0, 0)`** at his widget position **as of the start of the tick** (the eat runs in the chase, before his move), with
 
    | `+0x240` | kind | value (`coin.md#values-0x004d53a0-normal-game`) |
    |---|---|---|
@@ -122,13 +126,13 @@ Over the food list `board+0xac` in list order, the **first** pellet with (double
    | else multiple of 15 | 11 | 200 |
    | else (multiple of 3) | 10 | 40 |
 
-   These are the **rising** kinds (Nimbus's toss makes the same ones): the coin flies up to y < 120 and then falls like any coin (`pet-nimbus.md#effects-on-other-objects`). `Coin::Coin` draws nothing. The coin goes to the coin list `+0xa8`.
+   These are the **rising** kinds (Nimbus's toss makes the same ones): the coin flies up to y < 120 and then falls like any coin (`pet-nimbus.md#effects-on-other-objects`). `Coin::Coin` draws nothing. The coin goes to the coin list `+0xa8`. Collecting it (`0x004e51f0`): kind 10 the POINTS family (one draw), 11 `DIAMOND` (`0x116`), **13 the `PEARL` sample (`0x12b`)**, **14 `TREASURE` (`0x142`)** (`BONUSCOLLECT`, `0x10f`, in the Virtual Tank or with `board+0x2a5` set), each with a 3-tick throttle.
 
 At most one pellet per tick. RNG per pellet: the slurp draw only (0 or 1).
 
 Update order (`sim/board.md#tick-order`): food `+0xac` and guppies `+0xa0` update before the FishTypePets `+0xb4`, so a guppy that reaches a pellet in the same tick eats it first, and the pellet Brinkley removes has already moved this tick.
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`): slurp, removal, the count, coin kinds 10, 11, 13 and 14 and their collect sounds. The Virtual Tank gate is `static`.
 
 ## Effects on other pets and the board
 
@@ -137,7 +141,7 @@ Update order (`sim/board.md#tick-order`): food `+0xac` and guppies `+0xa0` updat
 - **Aliens:** none (he ignores them; the gate stops the chase while one is in).
 - **Clicks:** not mouse-visible (`+0x55` = byte `0x005e8f14`, 0) and no id-20 case in the mouse-down `0x004fb680`: clicks pass through to the tank.
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`) for Zorf's every-2nd drop (`board+0x194`). The rest `static`.
 
 ## Animation (`0x004dfc50`), id 20
 
@@ -148,7 +152,7 @@ Turning is Itchy's (turn ±20, cel `9 − turn/2` / `turn/2 + 9`). When not turn
 
 Facing follows vx (guppy rule). No RNG.
 
-`static`.
+`traced` by `brinkley_zorf` (`brinkley_01`) and `brinkley_rare_coin` (`brinkley_02`).
 
 ## Drawing (`0x004dfbb0`)
 
@@ -158,7 +162,6 @@ The generic pet draw (`pet-vert.md#drawing-0x004dfbb0`) with `IMAGE_BRINKLEY` (g
 
 ## Open questions
 
-- Everything is static. The extra sink (`|vx|` buckets, undivided) is the one unusual movement rule; a capture of him idling should show y pinned at 370 within a few ticks.
 - Whether the food removal `0x004d9570` takes the pellet off `+0xac` at once (the same question as Nimbus's).
 - `0x004d70b0` (the Virtual Tank coin gate: `board+0x500`, `board+0x400` against `0x005df590`) is not followed.
 

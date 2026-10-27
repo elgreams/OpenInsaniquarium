@@ -48,6 +48,7 @@ pub enum Sound {
     Eel2,
     Eel3,
     TapGlass,
+    Treasure,
 }
 
 impl Sound {
@@ -98,6 +99,7 @@ impl Sound {
             Sound::Eel2 => 0x11a,
             Sound::Eel3 => 0x11b,
             Sound::TapGlass => 0x141,
+            Sound::Treasure => 0x142,
         }
     }
 
@@ -168,6 +170,7 @@ impl Sound {
             Sound::Eel2 => "SOUND_EEL2",
             Sound::Eel3 => "SOUND_EEL3",
             Sound::TapGlass => "SOUND_TAPGLASS",
+            Sound::Treasure => "SOUND_TREASURE",
         }
     }
 

@@ -1074,6 +1074,13 @@ impl Board {
             self.sounds.push(Sound::points(r).into());
         } else if matches!(kind, 4 | 5 | 11 | 12) {
             self.play(0x116, Sound::Diamond);
+        } else if matches!(kind, 6 | 13) {
+            // The chest plays the pearl sample (`0x004e51f0`).
+            self.play(0x12b, Sound::Pearl);
+        } else if matches!(kind, 7 | 14) {
+            // TREASURE (BONUSCOLLECT in the Virtual Tank and with
+            // `board+0x2a5`, not modelled).
+            self.play(0x142, Sound::Treasure);
         }
     }
 
@@ -2008,7 +2015,7 @@ impl Board {
                     self.sounds.push(s.into());
                 }
                 self.foods.remove(fi);
-                if let Some((x, y, kind)) = self.fish_pets[i].brinkley_ate() {
+                if let Some((x, y, kind)) = self.fish_pets[i].brinkley_ate(pre_wx, pre_wy) {
                     self.coins.push(Coin::new(x, y, kind));
                 }
             }

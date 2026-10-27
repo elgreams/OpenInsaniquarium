@@ -499,6 +499,18 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         if let Some(c) = b.get("clock").and_then(Value::as_i64) {
             board.clock = c as i32;
         }
+        // A chunk can open under the "Game Paused" dialog (18): focus went
+        // to the recorder. The player's click resumes it.
+        let paused = b.get("paused").and_then(Value::as_bool) == Some(true);
+        let dialogs = first.state.get("pres").and_then(|p| p.get("dialogs"));
+        if paused
+            && dialogs
+                .and_then(Value::as_array)
+                .is_some_and(|d| d.iter().any(|v| v == 18))
+        {
+            board.paused = true;
+            board.focus_paused = true;
+        }
         if let Some(o) = b.get("owned").and_then(Value::as_str).and_then(hex_bytes) {
             for (flag, &v) in board.owned.iter_mut().zip(&o) {
                 *flag = v != 0;
