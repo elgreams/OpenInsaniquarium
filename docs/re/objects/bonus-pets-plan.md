@@ -23,7 +23,7 @@ Status: plan only, no claims about the game. What is already known is cited. `st
    - the replacement: remove the pet, `AddPet(n, wx, wy, flag 1)` with no position draws, recharge 360, puff 0, the "Presto" label;
    - record: 1-2 with Presto, right-click him, pick 2–3 different pets in turn.
 2. ~~Find the unlock~~: done, `screens/bonus-screen.md`. For recordings, the CE profile edit (owned bytes 20–23) is enough.
-3. **Spec 20–23** in one agent run, one pet per commit (Brinkley, Nostradamus, Stanley, Walter).
+3. ~~Spec 20–23~~: done (`pet-brinkley.md`, `pet-nostradamus.md`, `pet-stanley.md`, `pet-walter.md`, all `static`). Each spec ends with its own recording plan, which supersedes step 4 below where they differ (e.g. Stanley and Walter need the global MT state captured; Stanley's missile shoot-down needs alien kinds 5/6, a later tank).
 4. **Build** them and record one zoo: 1-2 with Brinkley + Nostradamus + Stanley (Walter needs Presto: record him with Presto in a second session). Push timers with CE where an ability is slow, inside one capture chunk (`dynamic-analysis.md`: keep each chunk's header when joining).
 5. Promote specs, update `INDEX.md`, `ROADMAP.md`.
 
