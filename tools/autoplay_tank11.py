@@ -79,6 +79,9 @@ STAR_BTN = (BTN_X[3] + 29, 33)
 # (`--starcatcher`): it lives on stars (starcatcher.md).
 STARCATCHER = "--starcatcher" in sys.argv
 STARCATCHER_BTN = (BTN_X[4] + 29, 33)
+# Shoot every other missile once it can be shot (`--shoot-missiles`):
+# 15 ticks after launch, a click on its centre (alien-kind5.md#64).
+SHOOT_MISSILES = "--shoot-missiles" in sys.argv
 # Gus (alien kind 4, `--feed-gus`): with an alien in, drop pellets just
 # above him instead of shooting (alien-kind4.md#41).
 FEED_GUS = "--feed-gus" in sys.argv
@@ -139,6 +142,8 @@ def read_state():
             st["oscars"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
             st["aliens"].append(tuple(map(int, p[1:3])))
+        elif p[0] == "M" and len(p) >= 5:
+            st.setdefault("missiles", []).append(tuple(map(int, p[1:5])))
         elif p[0] == "D" and len(p) >= 6:
             st["dialogs"].append(tuple(map(int, p[1:6])))
         elif p[0] == "R" and len(p) > 1:
@@ -162,6 +167,8 @@ def main():
     punch_at = time.time() + 4
     stars = 0
     armed = False
+    missile_clicks = 0
+    missile_pause = 0.0
     bought_starcatcher = False
     while time.time() - start < MAX_S:
         st = read_state()
@@ -226,6 +233,14 @@ def main():
             for _ in range(3):
                 click(win, min(max(ax + 80, 10), 630), min(max(ay + 40, 70), 470))
                 time.sleep(0.3)
+        elif (SHOOT_MISSILES and now >= missile_pause
+              and any(m[2] < 1 and m[3] == 0 for m in st.get("missiles", []))):
+            # Shoot one missile, then leave the rest alone for 4 s so some
+            # reach their fish.
+            m = [m for m in st["missiles"] if m[2] < 1 and m[3] == 0][0]
+            click(win, min(max(m[0] + 40, 10), 630), min(max(m[1] + 40, 45), 470))
+            missile_clicks += 1
+            missile_pause = now + 4
         elif st["aliens"] and FEED_GUS:
             # A pellet 90 px above his centre: outside the 20-tick delay box
             # (centre within 35..75 of the click), clamped to the food area.

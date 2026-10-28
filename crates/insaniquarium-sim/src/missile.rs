@@ -164,38 +164,39 @@ impl Missile {
         }
     }
 
-    /// `0x004e2170`, kind 0: 0 down, 4 left, 8 up, 12 right.
+    /// `0x004e2170`, kind 0: 0 down, 4 left, 8 up, 12 right. Nearly
+    /// still in x (−0.8 < vx < 0.8): 12 if vy > 0, else 4. Otherwise vy
+    /// above 2.5 → 12, below −2.5 → 4, then bands by vy, mirrored by the
+    /// sign of vx (traced by `destructor_missiles`).
     fn heading_cel(&self) -> i32 {
         let (vx, vy) = (self.vx, self.vy);
-        if -0.8 < vy && vy < 0.8 {
-            return if vx > 0.0 { 12 } else { 4 };
+        if -0.8 < vx && vx < 0.8 {
+            return if 0.0 < vy { 12 } else { 4 };
         }
-        if vx > 2.5 {
+        if 2.5 < vy {
             return 12;
         }
-        if vx < -2.5 {
+        if vy < -2.5 {
             return 4;
         }
-        let up = vy <= -0.8;
-        let band = if vx > 2.0 {
-            0
-        } else if vx > 1.5 {
-            1
-        } else if vx > 1.0 {
-            2
-        } else if vx >= -1.0 {
-            3
-        } else if vx >= -1.5 {
-            4
-        } else if vx >= -2.0 {
-            5
+        // Bands: (vy > 2.0, vy < −2.0, vy > 1.5, vy < −1.5, vy > 1.0,
+        // vy < −1.0, else).
+        let right = 0.0 < vx;
+        let pick = |r: i32, l: i32| if right { r } else { l };
+        if 2.0 < vy {
+            pick(13, 11)
+        } else if vy < -2.0 {
+            pick(3, 5)
+        } else if 1.5 < vy {
+            pick(14, 10)
+        } else if vy < -1.5 {
+            pick(2, 6)
+        } else if 1.0 < vy {
+            pick(15, 9)
+        } else if vy < -1.0 {
+            pick(1, 7)
         } else {
-            6
-        };
-        if up {
-            [11, 10, 9, 8, 7, 6, 5][band]
-        } else {
-            [13, 14, 15, 0, 1, 2, 3][band]
+            pick(0, 8)
         }
     }
 

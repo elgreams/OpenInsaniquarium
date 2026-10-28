@@ -806,6 +806,11 @@ pub struct ArtifactPlan {
     /// sim walks guppies, carnivores, then fish pets. A replay can reverse
     /// that order (`true`) when the capture's pushes say so.
     pub glove_reversed: bool,
+    /// The Destructor's PickTarget walks the master set in heap-address
+    /// order, so an exact distance tie (two fish at the same spot) goes to
+    /// the earlier one in address order (`alien-kind5.md#61`). The sim takes
+    /// the earlier in list order; a replay can make ties go to the later.
+    pub volley_ties_last: bool,
     /// Effect shots made so far this tick.
     pub made: usize,
 }

@@ -188,10 +188,10 @@ while captured < max_ticks and polls < max_ticks * 40 do
     if board and board ~= 0 then
       for _, p in ipairs(vec_ptrs(u32(board + 0xa0))) do
         fish[#fish+1] = string.format(
-          '{"x":%s,"y":%s,"vx":%s,"vy":%s,"div":%s,"hunger":%s,"mode":%s,"mode_t":%s,"reroll_t":%s,"stage":%s,"coin_t":%s,"coin_iv":%s,"raw":"%s"}',
+          '{"x":%s,"y":%s,"vx":%s,"vy":%s,"div":%s,"hunger":%s,"mode":%s,"mode_t":%s,"reroll_t":%s,"stage":%s,"coin_t":%s,"coin_iv":%s,"ptr":%d,"raw":"%s"}',
           num(f64(p+0x158)), num(f64(p+0x160)), num(f64(p+0x168)), num(f64(p+0x170)), num(f64(p+0x180)),
           num(i32(p+0x9c)), num(i32(p+0x1ac)), num(i32(p+0x1b0)), num(i32(p+0x1b4)), num(i32(p+0x1a0)),
-          num(i32(p+0x220)), num(i32(p+0x224)), hex_block(p, 0x230))
+          num(i32(p+0x220)), num(i32(p+0x224)), p, hex_block(p, 0x230))
       end
     end
     -- Raw bytes of other modelled objects, for state rebuild and offset RE.
@@ -222,6 +222,10 @@ while captured < max_ticks and polls < max_ticks * 40 do
         end
         for _, a in ipairs(vec_ptrs(u32(board + 0xb8))) do
           gf:write(string.format("A %d %d\n", i32(a + 0x30), i32(a + 0x34)))
+        end
+        -- Missiles: "M x y launch kind" (alien-kind5.md).
+        for _, m in ipairs(vec_ptrs(u32(board + 0xdc))) do
+          gf:write(string.format("M %d %d %d %d\n", i32(m + 0x30), i32(m + 0x34), i32(m + 0x17c), i32(m + 0x19c)))
         end
         -- Coins in the other coin lists (pearls etc.), carnivores' hunger.
         for _, off in ipairs({0xe8, 0xec}) do

@@ -1275,7 +1275,8 @@ impl Board {
                 let dx = acx - (f.widget_x + 40);
                 let dy = acy - (f.widget_y + 40);
                 let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-                if best < d {
+                let ties_last = self.artifacts.volley_ties_last;
+                if best < d || (ties_last && best == d && pick.is_some()) {
                     best = d;
                     pick = Some((c, j));
                 }
@@ -1303,7 +1304,6 @@ impl Board {
     fn end_of_wave_check(&mut self) {
         if self.missiles.is_empty() && self.aliens.is_empty() {
             self.food_lockout = 36;
-            self.has_aliens = false;
             self.music = Some(Music::Tank);
         }
     }
@@ -1311,6 +1311,10 @@ impl Board {
     /// `Alien` death (`0x004f9c70`), kind 1.
     fn kill_alien(&mut self, i: usize) {
         let a = self.aliens.remove(i);
+        // `has_aliens` is "an alien is in" (`0x004da780`: `+0xb8`/`+0xf4`
+        // only): fish resume hunger and coins at once, even while missiles
+        // still fly (`destructor_missiles`).
+        self.has_aliens = !self.aliens.is_empty();
         // The alien's attached missile goes with it (slot 76); later aliens
         // shift down one in the list.
         self.missiles.retain(|m| m.target != Some(i));

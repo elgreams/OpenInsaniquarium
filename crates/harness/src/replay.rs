@@ -1929,6 +1929,59 @@ fn eat_choice(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> Option<u
     })
 }
 
+/// Should a volley's distance ties go to the later fish this tick?
+/// (Replay-only; see `ArtifactPlan::volley_ties_last`.) The capture's
+/// missile/fish links are pointers, so both choices are run ahead with the
+/// replay's inputs until the capture's "which fish still has a missile"
+/// tells them apart.
+fn volley_ties_last(
+    board: &Board,
+    all_inputs: &BTreeMap<u32, Vec<Input>>,
+    t: &Trace,
+    tick: u32,
+) -> bool {
+    let inputs = |k: u32| all_inputs.get(&k).map_or(&[][..], Vec::as_slice);
+    let mut plain = board.clone();
+    plain.step(inputs(tick));
+    if plain.missiles.len() == board.missiles.len() {
+        return false;
+    }
+    let mut tied = board.clone();
+    tied.artifacts.volley_ties_last = true;
+    tied.step(inputs(tick));
+    let links = |b: &Board| -> Vec<Option<u32>> { b.guppies.iter().map(|f| f.missile).collect() };
+    if links(&plain) == links(&tied) {
+        return false;
+    }
+    let marks = |s: &Snapshot| -> Vec<Value> {
+        s.state
+            .get("fish")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .map(|f| f.get("targeted").cloned().unwrap_or(Value::Null))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for k in tick + 1..tick + 400 {
+        plain.step(inputs(k));
+        tied.step(inputs(k));
+        let Some(s) = t.snapshots.iter().find(|s| s.tick == k) else {
+            continue;
+        };
+        let want = marks(s);
+        let (p, q) = (
+            marks(&snapshot(&plain)) == want,
+            marks(&snapshot(&tied)) == want,
+        );
+        if p != q {
+            return q;
+        }
+    }
+    false
+}
+
 /// Should this tick's glove hits run in reverse order to match the
 /// capture's pushes? (Replay-only; see `ArtifactPlan::glove_reversed`.)
 fn glove_reversed(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> bool {
@@ -2147,6 +2200,12 @@ pub fn replay_resync_global(
         // reproduce): if the capture lost a different fish, pick that one.
         if !dirty.contains(&next) && !board.aliens.is_empty() {
             board.artifacts.eat_choice = eat_choice(&board, step_inputs, t, next);
+        }
+        // The Destructor's volley: a distance tie goes by heap address
+        // (`alien-kind5.md#61`). If our list order gives the wrong targets,
+        // let ties go to the later fish.
+        if board.aliens.iter().any(|a| a.kind == 5) {
+            board.artifacts.volley_ties_last = volley_ties_last(&board, inputs, t, next);
         }
         // Walter's glove: several hits in one tick take the global draws in
         // heap order (`pet-walter.md#deviations`). If our order gives the

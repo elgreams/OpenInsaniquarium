@@ -876,6 +876,18 @@ fn gus_killed() {
     }
 }
 
+/// The Destructor, alien kind 5 (`tank2-4_destructor_01`): 2-4, money
+/// pushed to 2000 (seven guppies) and the countdown to 500; two volleys of
+/// three missiles, some reaching their guppies, some clicked down, the
+/// laser kill with a missile still flying (alien-kind5.md).
+#[test]
+#[ignore = "WIP: matches to tick 4999; guppies must see only the live alien list (not has_aliens, which waits for missiles) for coins/hunger"]
+fn destructor_missiles() {
+    if captured("tank2-4_destructor_01") {
+        replay_level_tank("tank2-4_destructor_01", 2, 4);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).
@@ -1041,7 +1053,10 @@ fn pet_screen_matches_original() {
 /// Captures whose pets decide on the global stream (Nostradamus's sneeze):
 /// their replays re-sync it every tick.
 fn needs_global(name: &str) -> bool {
-    name.starts_with("nostradamus") || name.starts_with("stanley") || name.starts_with("walter")
+    name.starts_with("nostradamus")
+        || name.starts_with("stanley")
+        || name.starts_with("walter")
+        || name.starts_with("tank2-4")
 }
 
 fn captured(name: &str) -> bool {
