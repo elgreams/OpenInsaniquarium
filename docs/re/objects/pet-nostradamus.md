@@ -116,7 +116,7 @@ The shake timer is decremented by `Board::Update` (`0x0054786c`, earlier in the 
 
 App-stream RNG: none in the sneeze itself. The repeated warning costs the usual 4 app draws.
 
-`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for the roll (one global draw at countdown 30, here ≥ 50: nothing happened; the replay re-syncs the global stream every tick). A postponed wave is `static`.
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for the roll (one global draw at countdown 30, here ≥ 50: nothing happened; the replay re-syncs the global stream every tick). A postponed wave is `traced` by `tank_2_5` (`tank2-5_full_01`, 2-5 with Stanley: two sneezes in a row, countdown 31 → 635, the warning's 4 app draws again, then a third roll that lets the wave come). The bubble/sneeze-delay global draws aren't compared (the global stream is re-synced per tick); the message line and the music switch back are compared.
 
 ## Effects on other pets and the board
 

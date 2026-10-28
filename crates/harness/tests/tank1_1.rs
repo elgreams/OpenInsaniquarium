@@ -855,6 +855,56 @@ fn tank_2_2_starcatcher() {
     }
 }
 
+/// Tank 2-5 (`tank2-5_full_01`): the level-setup draw picks kind 5, one
+/// Destructor wave (countdown pushed to 400, money to 2000) with Stanley
+/// and Nostradamus, the re-roll after the spawn, the kill; then the guppies
+/// starve after autoplay stops (game over). tank2-plan.md, step 5.
+#[test]
+fn tank_2_5() {
+    if captured("tank2-5_full_01") {
+        replay_level_tank("tank2-5_full_01", 2, 5);
+    }
+}
+
+/// The start of 2-5 (`tank2-5_full_01`, Stanley and Nostradamus chosen):
+/// `start_level` from the pre-populate RNG makes SetupShop's kind draw (5
+/// here), the pets and guppies, and lands on the same app position.
+#[test]
+fn level_2_5_start() {
+    use harness::replay::rebase_rng;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/tank2-5_full_01.trace.jsonl");
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
+    let i = full
+        .snapshots
+        .iter()
+        .position(|s| s.state["board"].is_object())
+        .unwrap();
+    let before = full.snapshots[i - 1].tick;
+    let rng = |stream: &str| match rebase_rng(&full, stream, before).unwrap() {
+        harness::trace::RngState::Full { mt, mti } => {
+            sexy_core::rand::MtRand::from_state(mt.try_into().unwrap(), mti as usize)
+        }
+        harness::trace::RngState::Seed { seed } => sexy_core::rand::MtRand::new(seed),
+    };
+    let mut b = insaniquarium_sim::Board::start_level(rng("app"), rng("global"), 2, 5, &[21, 22]);
+    assert_eq!(full.snapshots[i].state["board"]["wave"]["kind"], 5);
+    assert_eq!(b.wave_kind, 5, "SetupShop's draw");
+    // This capture's first level snapshot is before the first update.
+    assert_eq!(full.snapshots[i].state["board"]["clock"], 0);
+    b.tick = full.snapshots[i].tick;
+    let expected = decode_capture(&harness::replay::window(&full, b.tick, b.tick));
+    let actual = harness::replay::snapshot(&b);
+    let e = &expected.snapshots[0].state;
+    assert_eq!(
+        e["fish_pets"], actual.state["fish_pets"],
+        "Nostradamus, Stanley"
+    );
+    assert_eq!(e["fish"], actual.state["fish"], "starting guppies");
+    assert_eq!(e["rng_mti"]["app"], actual.state["rng_mti"]["app"]);
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
@@ -1066,6 +1116,7 @@ fn needs_global(name: &str) -> bool {
         || name.starts_with("stanley")
         || name.starts_with("walter")
         || name.starts_with("tank2-4")
+        || name.starts_with("tank2-5")
 }
 
 fn captured(name: &str) -> bool {
@@ -1163,7 +1214,13 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
     // captures are several GB once parsed.
     let debris = debris_ticks(&harness::replay::by_board_clock(&raw));
     let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
-    let originals: Vec<u32> = debris.iter().filter_map(|&ct| tick_of(ct)).collect();
+    // Also the tick after each: a debris tick caught mid-frame (dirty) has
+    // its click, and the spark's draw, replayed one tick later.
+    let originals: Vec<u32> = debris
+        .iter()
+        .flat_map(|&ct| [ct, ct + 1])
+        .filter_map(tick_of)
+        .collect();
     let resync_orig = deviation_resyncs(&full, &originals);
     // The global stream after each tick, for replays whose pets decide on
     // it (Nostradamus's sneeze): keyed by the board clock below.
@@ -1177,8 +1234,9 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         .map(|s| (s.to_string(), rebase_rng(&full, s, from).unwrap()))
         .collect();
     drop(full);
-    let resync: std::collections::BTreeMap<u32, _> = debris
-        .into_iter()
+    let resync_at: std::collections::BTreeMap<u32, _> = debris
+        .iter()
+        .flat_map(|&ct| [ct, ct + 1])
         .filter_map(|ct| Some((ct, resync_orig.get(&tick_of(ct)?)?.clone())))
         .collect();
     drop(resync_orig);
@@ -1220,6 +1278,17 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         inferred_clicks(&t)
     };
     inferred.dirty.extend(harness::replay::after_gaps(&t));
+    // A debris tick caught mid-frame (dirty) gets its click, and the
+    // spark's stale-field draw, replayed one tick later: re-sync there.
+    let resync: std::collections::BTreeMap<u32, _> = debris
+        .iter()
+        .flat_map(|&ct| {
+            let late = inferred.dirty.contains(&ct) && !inferred.dirty.contains(&(ct + 1));
+            std::iter::once(ct).chain(late.then_some(ct + 1))
+        })
+        .filter_map(|ct| Some((ct, resync_at.get(&ct)?.clone())))
+        .collect();
+    drop(resync_at);
     let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();
     drop(t);
@@ -1295,6 +1364,23 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
                     serde_json::to_string(&a.map(|s| &s.state)).unwrap()
                 );
             }
+        }
+    }
+    // REPLAY_DUMP_TICKS=a-b: dump both sides for ticks a..=b.
+    if let Some((a, b)) = std::env::var("REPLAY_DUMP_TICKS").ok().and_then(|v| {
+        Some((
+            v.split('-').next()?.parse::<u32>().ok()?,
+            v.split('-').nth(1)?.parse::<u32>().ok()?,
+        ))
+    }) {
+        for t in a..=b {
+            let e = expected.snapshots.iter().find(|s| s.tick == t);
+            let a = actual.snapshots.iter().find(|s| s.tick == t);
+            eprintln!(
+                "--- {t}\nexpected {}\nactual   {}",
+                serde_json::to_string(&e.map(|s| &s.state)).unwrap(),
+                serde_json::to_string(&a.map(|s| &s.state)).unwrap()
+            );
         }
     }
     if let Some(d) = diff(&expected, &actual) {

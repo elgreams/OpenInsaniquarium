@@ -16,12 +16,19 @@ Captures: `tank2-3_gus_01` and `tank2-3_gus_02` (2-3, no pets, the wave countdow
 Differences from `alien-sylvester.md` §1:
 
 - **Level table** (`0x00541200`, tank 2 branch, `board+0x3cc` switch): **2-3 sets kind `+0x2bc = 4`** and `+0x340 = 5000`. It doesn't write `+0x2c0`, so the countdown keeps the level-start value **3000** (`0x00541a20`). **2-5** sets `+0x340 = 10000` and `kind = (rand() & 1) | 4` (1 app draw at level setup: kind 4 or 5). This matches `sim/shop-bar.md`'s table.
-- **Re-roll after a spawn** (`Board::Update`, the block after `AddAlien`): on tank 2 only level 5 re-rolls. If the kind is 9, `kind = (~r & 1) | 4`. Then `r % 10 == 0` swaps 4 ↔ 5; otherwise a further `r % 20 == 0` sets kind 9. That is 2 or 3 app draws per 2-5 spawn. **2-3 draws nothing** and keeps kind 4.
+- **Re-roll after a spawn** (`Board::Update` @ `0x00548c0e`, the block after `AddAlien`): on tank 2 only level 5 re-rolls, each draw a fresh app `rand()`:
+  1. If the kind is 9 (the Sylvester + Balrog pair): `kind = (~r & 1) | 4`.
+  2. `r % 10 == 0`: `kind = 5` if it isn't 5, else 4 (swaps 4 ↔ 5), and stop.
+  3. Otherwise `r % 20 == 0`: kind 9 (the next wave is the pair, `alien-sylvester.md` wave kind 9).
+
+  That is 2 or 3 app draws per 2-5 spawn, one more after a pair. **2-3 draws nothing** and keeps kind 4.
+
+  `traced` by `tank_2_5` (`tank2-5_full_01`) for one 2-5 spawn of kind 5 (steps 2 and 3, kind stayed 5); the pair branch (step 1) and the swap are `static`.
 - **Warning line** (countdown 275): "ALIEN SIGNATURE TYPE-G DETECTED" (`sim/board.md#the-alien-warning-line`). Colours, timer, sound `0x106`, music and the 4 position draws are the same as kind 1.
 - **Hint dialog** (countdown 276, `0x005485f6`): on 2-3, unless the game is completed, dialog 0x0e "WARNING!" with the text above is shown **once** (board byte `+0x4c1`, `framework/dialog.md`).
 - **Music**: `PlayAlienMusic` (`0x0054c480`) has no kind check, so it is the same as kind 1 (`Alien.mo3`, the same fades).
 
-`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for 2-3 (warning text, the hint dialog, kind 4). The 2-5 rows are `static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for 2-3 (warning text, the hint dialog, kind 4). 2-5: the level-setup draw is `traced` by `level_2_5_start` (`tank2-5_full_01`, it drew kind 5) and the re-roll as noted above; a 2-5 wave of kind 4 is not captured.
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 

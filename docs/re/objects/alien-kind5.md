@@ -22,7 +22,7 @@ Differences from `alien-sylvester.md` §1 (and `alien-kind4.md` §1, which cover
 - **Music:** the same as kind 1.
 - **Countdown freeze:** the wave block is skipped while `+0xb8`, `+0xf4` **or `+0xdc`** is non-empty (`alien-sylvester.md#per-tick-countdown`, step 2). The Destructor's missiles live on `+0xdc` (§8), so **the next countdown doesn't start until the last missile is gone**, even after the alien has died.
 
-`traced` by `destructor_missiles` (`tank2-4_destructor_01`) for 2-4 (the countdown frozen by a missile after the kill). 2-5 is `static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) for 2-4 (the countdown frozen by a missile after the kill), and by `tank_2_5` (`tank2-5_full_01`) for a 2-5 wave of kind 5 (with Stanley shooting its missiles down and Nostradamus postponing it twice).
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 
@@ -371,6 +371,12 @@ Called by the board mouse-down for each missile in list order until one returns 
 - **PickTarget ties by heap address** (§6.1): two candidates at exactly the same distance (guppies resting side by side on the floor) go to the earlier object in address order. The sim takes the earlier in list order; the replay checks the capture and takes the later one when that matches (`ArtifactPlan::volley_ties_last`, replay-only). An implementation artifact, no toggle.
 
 `traced` (`destructor_missiles`, one such tie at the second volley). The heap-dependent effect-shot start delay (`alien-sylvester.md#deviations`) applies to every smoke puff, every explosion piece and every click spark here. With a smoke draw on about a third of all missile ticks, the harness will need to re-sync or model the stale-field draw often on 2-4.
+
+Harness details found on 2-5 (`tank_2_5`, replay-only, no sim change):
+- A smoke or spark tick whose snapshot was read mid-frame (a click in it, marked dirty) has its click replayed one tick later, so the stale-field draw lands there too: the replay also re-syncs the app stream on the tick after such a dirty debris tick, and doesn't overwrite the shot list from an older snapshot right after a dirty tick (that would drop the sparks the dirty tick made).
+- Stanley's cooldown draw (`grand() % 100`) comes after the board's bubble systems, which also draw the global stream and aren't modelled. The replay places the sim's global draws of a tick at the end of that tick's captured global draws (the object pass runs after the bubble emitter). `traced` (the cooldown 60 at clock 1998 matches).
+
+`traced` (`tank_2_5`).
 
 ## Open questions
 

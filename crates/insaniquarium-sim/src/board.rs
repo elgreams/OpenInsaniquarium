@@ -1573,6 +1573,19 @@ impl Board {
                 if self.tank == 1 && self.level == 5 {
                     self.wave_kind = if self.rng.next_u31() & 1 != 0 { 3 } else { 9 };
                 }
+                // 2-5's re-roll (alien-kind4.md#1-wave-timing): a pair
+                // becomes 4 or 5, then 1 in 10 swaps 4 ↔ 5, else 1 in 20
+                // makes the next wave the pair.
+                if self.tank == 2 && self.level == 5 {
+                    if self.wave_kind == 9 {
+                        self.wave_kind = (!self.rng.next_u31() & 1) as i32 | 4;
+                    }
+                    if self.rng.next_u31().is_multiple_of(10) {
+                        self.wave_kind = if self.wave_kind != 5 { 5 } else { 4 };
+                    } else if self.rng.next_u31().is_multiple_of(20) {
+                        self.wave_kind = 9;
+                    }
+                }
                 self.waves += 1;
                 self.wave_countdown = 3000;
             }

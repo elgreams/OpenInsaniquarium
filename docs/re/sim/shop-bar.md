@@ -87,7 +87,7 @@ Helpers (our names):
 
 The same switch also writes `+0x2bc` (tank 1: 0/1/2/3/3 by level; 1-2 also sets `+0x2c0 = 1750`). These are not shop fields; they look like alien/wave parameters and belong to the alien spec.
 
-Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_full_01`, slots, prices, reveals and purchases compared); the 2-2..2-5 rows are `static`.
+Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_full_01`, slots, prices, reveals and purchases compared); the 2-2..2-4 rows are `static`. 2-5's kind draw is `traced` (`level_2_5_start`); its slots and egg price are `static` (the 2-5 capture buys guppies only).
 
 | Slot | Pos | Price |
 |---|---|---|

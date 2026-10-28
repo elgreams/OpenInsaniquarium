@@ -2173,7 +2173,10 @@ pub fn replay_resync_global(
         // decides differently how many sparks (and draws) a burst makes.
         // Shots are cosmetic and masked while debris lives. (A mid-frame
         // snapshot isn't usable: take the latest whole one, aged to now.)
+        // Not right after a dirty tick: the aged older list would lose the
+        // shots that tick made.
         if resync.contains_key(&next)
+            && !dirty.contains(&board.tick)
             && let Some(prev) = t
                 .snapshots
                 .iter()
@@ -2232,6 +2235,25 @@ pub fn replay_resync_global(
         // wrong pushes, try the reverse.
         if !dirty.contains(&next) && board.fish_pets.iter().any(|f| f.glove.is_some()) {
             board.artifacts.glove_reversed = glove_reversed(&board, step_inputs, t, next);
+        }
+        // The board's bubble systems (not modelled, `sim/board.md#the-global-
+        // rng-stream-in-normal-play`) draw the global stream before the
+        // object pass, so the sim's own global draws (pets, missiles) are
+        // the last of the tick: start them that many draws before the
+        // capture's end-of-tick position.
+        if let (Some(start), Some(end)) = (global.get(&board.tick), global.get(&next)) {
+            let total = (end.state().1 + 624 - start.state().1) % 624;
+            let mut trial = board.clone();
+            trial.global_rng = start.clone();
+            trial.step(step_inputs);
+            let ours = (trial.global_rng.state().1 + 624 - start.state().1) % 624;
+            if ours > 0 && ours <= total {
+                let mut g = start.clone();
+                for _ in 0..total - ours {
+                    g.next_u31();
+                }
+                board.global_rng = g;
+            }
         }
         board.step(step_inputs);
         board.artifacts = Default::default();
