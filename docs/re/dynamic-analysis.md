@@ -64,7 +64,7 @@ Replay with `replay_level(name, level, true)` in `tank1_1.rs`, which takes the i
 
 ### Recording with `tools/record.sh` (tank 2+, use this first)
 
-Scripted version of the routine below, as used for `tank2-4_stanley_01`. Six tool calls, no screenshots unless something looks wrong:
+Scripted version of the routine below, as used for `tank2-4_stanley_01`. First full run of the script: `tank2-5_full_01` (2026-10-28), every click landed. Six tool calls, no screenshots unless something looks wrong:
 
 1. `tools/record.sh launch 2-4`: backs up the saves once (`re/backup/userdata-record`), sets the level, launches with `-record`, clicks the title, owns all 24 pets; prints the game PID.
 2. CE MCP `open_process <PID>`.
@@ -101,6 +101,7 @@ Keep each recording **short and focused on one ability**: one capture of ~2800 t
 - **No Instructions screen on tank 2+**: only 1-1/1-2 show it; elsewhere Adventure starts the level at once (or opens the pet screen when more than 3 pets are owned). Start the capture on the **main menu**, then click Adventure and launch autoplay in the same Bash call.
 - **Danger dialog** (1-2's first wave, ~1750 ticks in): autoplay clicks its button; if autoplay has stopped, click (315, 271).
 - **CE broken pipe / connection reset** in `/tmp/ce.log`: the bridge dropped. Restart CE (`sudo pkill -9 -x cheatengine-x86`, not `-f`, which also matches your own shell), relaunch, `open_process` again.
+- **CE already running:** `pgrep -x cheatengine-x86` misses it (the process name is truncated to 15 characters, `cheatengine-x86_64` → no match). Check with `pgrep -f cheatengine-x86_64` or the CE MCP `ping` before starting a second one.
 - **The capture file is root-owned**: copy it before editing; its last line is often torn when the game quits.
 
 **Long sessions in several capture chunks:** each `ce_capture.lua` run writes its own header with the full RNG state at its start. When joining chunks into one trace, keep each later chunk's header as a snapshot line carrying `"rng"` (or store the chunks as separate traces). Without it, a chunk after a hole can't be replayed, because the RNG can't be walked across ticks nobody captured. `zoo_e_01` lost its later chunks' headers, so only its first chunk (ticks 2538–11155) is replayable.
