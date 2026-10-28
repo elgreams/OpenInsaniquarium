@@ -36,7 +36,7 @@ It runs inside `Fish::Update` **after the mode reroll and before the damping tim
 1. Skip if `stage ≤ 0` and `+0xac < 0` (small guppies never drop).
 2. `coin_timer += 1`. The interval is `+0x224` (set at spawn: `Next() % 200 + 150`, passed through `0x004d71d0`, which only changes it in Virtual Tank). It is 35 if the global `0x005e89cc` is set.
 3. When `coin_timer ≥ interval` (`0x004d7100`, normal game): reset the timer to 0. If `0x004d6bd0` allows it (always, outside Virtual Tank), choose the kind:
-   - plain guppy (`+0x124 == −1`… see below): **kind = stage** (stage 1 → silver, 2 → gold). Nothing is dropped at stage ≤ 0.
+   - plain guppy (`+0x124 == −1`… see below): **kind = stage** (stage 1 → silver, 2 → gold). Nothing is dropped at stage ≤ 0. This holds for every stage: a **star guppy (stage 3) drops kind 3, a star ($40)**, which falls like silver/gold (kind 3 isn't a rising kind), and a crowned stage 4 drops kind 4 (diamond). Starcatchers eat kind-3 stars (`starcatcher.md`). `static` for stages 3 and 4.
    - with the "gold-capable" byte `+0x22a`: stage 1 → 4, 2 → 6, 4 → 7, other → 2.
    - pet-linked fish (`+0x124` = 0 or 5): kind 7, only from stage 2 for 5.
 4. `AddCoin(widget_x + 5, widget_y + 10, kind, …)`.

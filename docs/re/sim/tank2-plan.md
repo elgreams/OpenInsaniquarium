@@ -10,11 +10,13 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 - **Egg prices:** 750, 3000, 5000, 7500, 10000.
 - **Wave kinds `+0x2bc`:** 2-1 → 2, 2-2 → 3, 2-3 → 4, 2-4 → 5, 2-5 → 4 or 5 (one app draw). Kinds 2 and 3 are the tank-1 aliens already built (1-3, 1-4: Sylvester variants and Balrog). **Kinds 4 and 5 are new.** Per the alien ctor table (`alien-sylvester.md`): kind 4 divisor 1.6, 100 HP; kind 5 divisor 1.2, 150 HP. The click rule already treats kind 4 specially (a click with kind 4 first in the list may drop food, `alien-sylvester.md#4.1`: the alien lasers can't hurt, the "new breed" of 2-3). Kind 5 fires missiles (kind 0, `pet-stanley.md#open-questions`).
 - **New objects:**
-  - **Starcatcher** (`Sexy::Penta`, type 0x08, list `+0xd0`): bought fish; eats stars and drops something (to spec).
+  - **Starcatcher** (`Sexy::Penta`, type 0x08, list `+0xd0`): bought fish; eats stars (coin kinds 3/10) and drops a kind-5 coin ($200); specced in `objects/starcatcher.md` (static).
   - **Star potion** (food level 3, `food.md`: a guppy that eats it goes to stage 3 if medium/large, a small one explodes; level-3 food explodes at the bottom; RNG not modelled yet).
-  - Stars: stage-3 guppies are star guppies; which coin kinds the Starcatcher eats is to spec.
+  - Stars: stage-3 guppies are star guppies and drop kind-3 stars ($40, falling; `static`).
   - Alien kind 4 and 5 behaviour, kind 5's missiles (Missle kinds 0/1, `+0xdc`), which also makes Stanley's shoot-down testable.
 - **Backdrop** 2 (`+0x3e8`), the "Welcome to the second tank!" message (already in `level-start.md`), tank-2 music.
+
+`static` for the list itself; each item's confidence is in its own spec (Starcatcher: `objects/starcatcher.md`).
 
 ## Steps
 
