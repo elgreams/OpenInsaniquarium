@@ -2380,14 +2380,6 @@ impl Board {
                     };
                     self.sounds.push(chomp.into());
                 }
-                // Gus: a fish costs him 15 HP and plays the gulp.
-                if self.aliens[i].kind == 4 {
-                    self.aliens[i].cooldown = 10;
-                    self.aliens[i].health -= 15.0;
-                    // The hook runs inside the update, before its death
-                    // check (alien-kind4.md#3).
-                    out.died = self.aliens[i].health <= 0.0;
-                }
                 // Gore burst (`app+0x882`, on by default): 2..4 kind-1 shots.
                 // TODO(options): the original's option that clears 0x882.
                 let n = self.rng.next_range(3) + 2;

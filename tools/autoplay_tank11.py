@@ -79,6 +79,9 @@ STAR_BTN = (BTN_X[3] + 29, 33)
 # (`--starcatcher`): it lives on stars (starcatcher.md).
 STARCATCHER = "--starcatcher" in sys.argv
 STARCATCHER_BTN = (BTN_X[4] + 29, 33)
+# Gus (alien kind 4, `--feed-gus`): with an alien in, drop pellets just
+# above him instead of shooting (alien-kind4.md#41).
+FEED_GUS = "--feed-gus" in sys.argv
 # Leave stars (coin kinds 3, 10) for the Starcatcher (`--no-stars`).
 NO_STARS = "--no-stars" in sys.argv
 
@@ -223,6 +226,15 @@ def main():
             for _ in range(3):
                 click(win, min(max(ax + 80, 10), 630), min(max(ay + 40, 70), 470))
                 time.sleep(0.3)
+        elif st["aliens"] and FEED_GUS:
+            # A pellet 90 px above his centre: outside the 20-tick delay box
+            # (centre within 35..75 of the click), clamped to the food area.
+            ax, ay = st["aliens"][0]
+            x = min(max(ax + 80, 40), 580)
+            y = min(max(ay + 80 - 90, 70), 370)
+            if now - last_feed > 0.25:
+                click(win, x, y)
+                last_feed = now
         elif st["aliens"] and not NO_SHOOT:
             # Shoot the alien: click its centre (160x160 widget).
             # A burst of quick clicks (one hit lands per 10-tick cooldown;

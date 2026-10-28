@@ -1887,8 +1887,9 @@ fn eat_choice(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> Option<u
     let target = t.snapshots.iter().find(|s| s.tick == tick)?;
     let fits = |b: &Board| {
         let snap = snapshot(b);
-        // Which fish survive (by stage), and where the aliens steer.
-        let key = |v: &Value| v.get("stage").cloned();
+        // Which fish survive (by stage and position), and where the aliens
+        // steer.
+        let key = |v: &Value| (v.get("stage").cloned(), v.get("widget").cloned());
         let lists = ["fish", "carnivores"].iter().all(|k| {
             match (target.state.get(*k), snap.state.get(*k)) {
                 (Some(Value::Array(x)), Some(Value::Array(y))) => {

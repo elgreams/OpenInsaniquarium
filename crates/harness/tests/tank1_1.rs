@@ -855,6 +855,27 @@ fn tank_2_2_starcatcher() {
     }
 }
 
+/// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
+/// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
+/// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
+/// empties (alien-kind4.md).
+#[test]
+fn gus_feeds() {
+    if captured("tank2-3_gus_01") {
+        replay_level_tank("tank2-3_gus_01", 2, 3);
+    }
+}
+
+/// `tank2-3_gus_02`: the same session, money pushed to 1500 (more guppies)
+/// and the countdown to 500: he eats three guppies and pellets until he
+/// bursts (no corpse, a diamond), and the next wave starts counting.
+#[test]
+fn gus_killed() {
+    if captured("tank2-3_gus_02") {
+        replay_level_tank("tank2-3_gus_02", 2, 3);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

@@ -324,6 +324,12 @@ impl Alien {
         }
         if self.eat_delay <= 0 {
             out.ate = self.eat_test(guppies, hidden, prefer);
+            // The "ate" hook (`0x004d45a0`), kind 4: the gulp and 15 HP,
+            // inside this update (before its timers and death check).
+            if out.ate.is_some() {
+                self.cooldown = 10;
+                self.health -= 15.0;
+            }
         }
     }
 

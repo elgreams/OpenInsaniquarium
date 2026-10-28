@@ -8,6 +8,9 @@ In short: clicks don't shoot Gus. While he is the first alien, a click in the ta
 
 Confidence: `static` for the whole file (per section below).
 
+
+Captures: `tank2-3_gus_01` and `tank2-3_gus_02` (2-3, no pets, the wave countdown pushed with Cheat Engine, clicks dropping pellets just above him), replayed exactly from the game's own demo. They cover the spawn, food targeting, level-0 pellets (−4), guppies eaten (−15), the burst with no corpse and the diamond. Star potions, level-1/2 pellets, the 20-tick delay near his middle and pets are not covered. `traced` where a section says so, else `static`.
+
 ## 1. Wave timing
 
 Differences from `alien-sylvester.md` §1:
@@ -18,13 +21,13 @@ Differences from `alien-sylvester.md` §1:
 - **Hint dialog** (countdown 276, `0x005485f6`): on 2-3, unless the game is completed, dialog 0x0e "WARNING!" with the text above is shown **once** (board byte `+0x4c1`, `framework/dialog.md`).
 - **Music**: `PlayAlienMusic` (`0x0054c480`) has no kind check, so it is the same as kind 1 (`Alien.mo3`, the same fades).
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for 2-3 (warning text, the hint dialog, kind 4). The 2-5 rows are `static`.
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 
 The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The only difference is the arrival sample at the end. Kind 4 plays **`SOUND_GUFFAW`** (sample `0x123`, global `0x005e8e98`, image-table slot `0x5e0e9c`), played directly through the app's sound manager (vtable `+0xd8`), unthrottled, at `0x0054587b`. Kinds 1–3 play `SOUND_ROAR` instead.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) (draws; the guffaw).
 
 ### Constructor (`0x004ecfa0`), kind 4
 
@@ -33,7 +36,7 @@ The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The on
 - RNG: the same 2 app draws in the same order (`rand()` direction → vx ±3.0, then `rand(10)` wander mode).
 - Virtual Tank only (`app+0x880`): health = `grand() % 50 + 70` (the kind-4 arm at `0x004ed2c6`), and `+0x1a8 = 144`. Not reached in Adventure.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`).
 
 ## 3. `Alien::Update` (`0x004fd560`), kind 4
 
@@ -41,7 +44,7 @@ The top-level steps (warp-in, chase or wander, clamp `x ∈ [−10, 490]`, `y �
 
 Death check (step 10): health ≤ 0 → `0x004f9c70(1)` (§4.3). Gus only loses health while eating (§3.2), which happens inside step 3 of the same update. So **he dies at the end of the tick in which he eats the last pellet** (or fish).
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`).
 
 ### 3.0 Chase or wander (`0x004f03d0`)
 
@@ -49,7 +52,7 @@ For kind 1, the alien chases only when "has prey" (`0x004d4580`: guppies, Oscars
 
 Note that `0x004ed460` calls `NearestPrey` a second time. It uses no RNG and gives the same result, but it re-writes byte `+0x190`.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`).
 
 ### 3.1 Nearest prey (`0x004e8b60`), kind 4
 
@@ -59,7 +62,7 @@ Note that `0x004ed460` calls `NearestPrey` a second time. It uses no RNG and giv
 3. **Fish**, only if `0x00503580` is true (always outside the Virtual Tank) **and the eat delay `+0x1a0` ≤ 0**. While the eat delay runs (the first 100 ticks after the ctor), Gus targets food only. Otherwise this is the same master-set walk, filter and type rules as kind 1 (guppies unless protected, types 5–10, pets `0x14/0x15` only with a boss). A fish wins if `d² < best`, and then best = its `d²` (no bias).
    - **Quirk:** `+0x190` is not cleared when a fish beats an earlier pellet. Steering then uses the food branch (§3.2) towards a fish.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) (food first, fish after the eat delay).
 
 ### 3.2 Steering and eating (`0x004ed460` → `0x004e8f70`), kind 4
 
@@ -99,7 +102,7 @@ elif y + 80 < ty: if vy <  3.0: vy += 0.3      # dives faster
 
 Numbers for a fresh Gus (100 HP, no fish eaten): **25 level-0 pellets, 17 level-1 (16 × 6 = 96, so the 17th kills), 13 level-2, or 5 star potions.** Mixes add up the same way. Each fish he eats takes 15 off.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for level-0 pellets and fish. The "ate" hook's 15 HP and gulp happen **inside his update**, before its timers (the gulp counter reads 9 on the eat tick's snapshot). Star potions and levels 1/2 are `static`.
 
 ## 4. Clicks and damage
 
@@ -119,7 +122,7 @@ If kind 4 is **not first** in the list, or a boss is present, the normal laser p
 
 **Coin under Gus.** `Coin` mouse-down (`0x004e5450`) re-dispatches a click that lies inside an alien widget to the board's handler (`alien-sylvester.md#41`). With Gus, that **drops a free pellet** at the click (step 3 may give it delay 20), and the coin is collected as well.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for the free pellet away from his middle. The 20-tick delay and the coin re-dispatch are `static`.
 
 ### 4.2 Pets and other damage sources
 
@@ -153,7 +156,7 @@ All of them kill through `0x004f9c70(1)`, which gives the same kind-4 death (§4
 
 Effect shots can be capped (fewer than 20 in `+0xd8`) and carry the heap-dependent start-delay draw (`alien-sylvester.md#deviations`). With up to 2·6 + 2·3 = 18 sparks in one tick, the 20-shot cap can actually bite here.
 
-`static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`).
 
 ## 5. Fish and other objects while Gus is in
 
