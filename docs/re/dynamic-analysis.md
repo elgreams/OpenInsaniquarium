@@ -62,6 +62,19 @@ How `zoo_a_01` and `zoo_b_01` were made (2026-10-26). RE tooling only.
 
 Replay with `replay_level(name, level, true)` in `tank1_1.rs`, which takes the inputs from the demo.
 
+### Recording with `tools/record.sh` (tank 2+, use this first)
+
+Scripted version of the routine below, as used for `tank2-4_stanley_01`. Six tool calls, no screenshots unless something looks wrong:
+
+1. `tools/record.sh launch 2-4`: backs up the saves once (`re/backup/userdata-record`), sets the level, launches with `-record`, clicks the title, owns all 24 pets; prints the game PID.
+2. CE MCP `open_process <PID>`.
+3. Bash: `MONEY=2000 CD=400 tools/record.sh go <PID> "22" --guppies 6 --feed-first --no-egg --max-seconds 90` (pet ids separated by spaces; autoplay flags after). It runs in the background: waits 4 s, Adventure, picks the pets, Continue (and Yes on "Select more pets?" if fewer than 3), autoplay, then the money/countdown push 6 s into the level.
+4. **Immediately** CE `evaluate_lua`: `CAPTURE_OUT="/tmp/capture.jsonl"; CAPTURE_TICKS=6000; CAPTURE_GPOS="/tmp/gpos"; dofile("/home/three/fsf/aquarium/tools/ce_capture.lua")`. It times out after 30 s; that's expected. The capture starts on the main menu and runs through the pet screen (~500 ticks) into the level. 6000 ticks ≈ 60 s of game.
+5. Wait with `sleep` until `/tmp/capture.jsonl` has `CAPTURE_TICKS + 1` lines (no CE calls meanwhile). Check that the event happened by scanning the capture with a short python script, not with screenshots.
+6. `tools/record.sh quit`, then `tools/record.sh save <name>`; add the test (`replay_level_tank`) and run it.
+
+Don't start the capture on the main menu *before* `go`: it spends its ticks on the menu (the 30 s MCP block is game time too). `tools/orig_mem.py <pid>` (sudo) prints the board's clock, countdown, money, pets and guppies at any time, even while a capture runs.
+
 ### The working routine (as used for `gash_snack_01`, `amp_zap_01`)
 
 Keep each recording **short and focused on one ability**: one capture of ~2800 ticks (about 80 s), pushing a slow timer with CE rather than waiting for it.

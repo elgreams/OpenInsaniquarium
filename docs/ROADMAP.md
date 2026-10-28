@@ -61,8 +61,8 @@ The smallest real game, provably 1:1.
 
 Mostly content now; the hard problems are solved.
 
-- [ ] All fish types: Carnivore, Ultravore, Starcatcher, Guppycruncher, Beetlemuncher, Breeder.
-- [ ] All aliens + Cyrax boss; shots/missiles; boss-specific mechanics.
+- [ ] All fish types: Carnivore, Ultravore, Starcatcher, Guppycruncher, Beetlemuncher, Breeder. *(Status 2026-10-28: Carnivore (tank 1) and Starcatcher (tank 2) traced.)*
+- [ ] All aliens + Cyrax boss; shots/missiles; boss-specific mechanics. *(Status 2026-10-28: kinds 1–3 (tank 1), Gus (kind 4) and the Destructor (kind 5) with its missiles traced; Stanley's shoot-down traced. Tank 2 levels 2-1..2-4 replayed; 2-5 and the screens between tank-2 levels next, `docs/re/sim/tank2-plan.md` step 5.)*
 - [ ] All 24 pets and their unlock flow. *(Status 2026-10-27: All 24 pets built and replayed exactly against the original (`docs/re/INDEX.md`): the 20 Adventure pets incl. Presto, and the bonus pets Brinkley, Nostradamus, Stanley and Walter. The bonus pets' unlock (bought with shells on the Bonus screen) is specced, `screens/bonus-screen.md`, not built.)*
 - [ ] Store, upgrades, egg pieces, per-level config for tanks 1–4.
 - [ ] Screens: title, menu, story/interlude, hatch, bonus, game over, help, options.
