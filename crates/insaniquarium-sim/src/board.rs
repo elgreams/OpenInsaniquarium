@@ -841,8 +841,24 @@ impl Board {
         self.add_food_delay(fx, fy, delay)
     }
 
+    /// A click with Gus first: no price, a pellet at (x − 10, y − 10),
+    /// edible after 20 ticks if dropped near his middle (`0x004d46f0`).
+    fn feed_gus(&mut self, x: i32, y: i32) -> ClickResult {
+        if !(31..=586).contains(&x) || !(61..=379).contains(&y) {
+            return ClickResult::Ignored;
+        }
+        let (acx, acy) = (self.aliens[0].widget_x + 80, self.aliens[0].widget_y + 80);
+        let near = x - 35 < acx && acx < x + 75 && y - 35 < acy && acy < y + 75;
+        self.add_food_delay(x - 10, y - 10, if near { 20 } else { 0 })
+    }
+
     /// Board mouse-down with aliens present.
     fn shoot(&mut self, x: i32, y: i32) -> ClickResult {
+        // Gus first in the list: the click drops a free pellet instead
+        // (alien-kind4.md#41-input-routing-board-mouse-down--0x00543920).
+        if self.aliens.first().is_some_and(|a| a.kind == 4) {
+            return self.feed_gus(x, y);
+        }
         if y > 40 {
             for i in 0..self.aliens.len() {
                 if let Some(killed) = self.aliens[i].hit(x, y, self.laser) {
@@ -1152,14 +1168,17 @@ impl Board {
         // `0x00539c90`: the wave ends once no alien and no missile is left.
         self.end_of_wave_check();
         // Debris (§4.3 step 5). Bubbles draw the global stream (not modelled).
-        let n = self.rng.next_u31() & 1;
+        // Gus (kind 4) bursts bigger: 2–3, 4–6 and 2–3 rounds
+        // (alien-kind4.md#43-death-0x004f9c701-kind-4).
+        let gus = a.kind == 4;
+        let n = (self.rng.next_u31() & 1) + if gus { 2 } else { 0 };
         for _ in 0..n {
             self.rng.next_range(70);
             self.rng.next_range(70);
             self.rng.next_range(50);
             self.rng.next_range(50);
         }
-        let n = self.rng.next_range(3);
+        let n = self.rng.next_range(3) + if gus { 4 } else { 0 };
         for _ in 0..n {
             let k = self.rng.next_range(3) as i32 + 3;
             let y = self.rng.next_range(50) as i32 + 20 + iy;
@@ -1170,7 +1189,7 @@ impl Board {
             let x = self.rng.next_range(30) as i32 + 40 + ix;
             self.add_effect_shot(x, y, k);
         }
-        let n = self.rng.next_u31() & 1;
+        let n = (self.rng.next_u31() & 1) + if gus { 2 } else { 0 };
         for _ in 0..n {
             let k = (self.rng.next_u31() & 1) as i32 + 6;
             let y = self.rng.next_range(50) as i32 + 20 + iy;
@@ -1184,6 +1203,10 @@ impl Board {
         // Death sounds (`0x004fa01e`, `0x004fa03e`).
         self.play(0x11d, Sound::Explode);
         self.play(0x11e, Sound::Explosion1);
+        // Gus leaves no corpse.
+        if gus {
+            return;
+        }
         // AddDeadAlien gets trunc(x, y) (`0x004fa6ae`): the stroke animation
         // can move the alien after its widget position was set.
         self.dead_aliens.push(DeadAlien::new(
@@ -1321,6 +1344,8 @@ impl Board {
                 // "FOURTEEN ALIEN SIGNATURES".
                 let text = match self.wave_kind {
                     9..=12 => "MULTIPLE ALIEN SIGNATURES DETECTED",
+                    4 => "ALIEN SIGNATURE TYPE-G DETECTED",
+                    5 => "ALIEN SIGNATURE TYPE-D DETECTED",
                     _ => "ENEMY APPROACHING",
                 };
                 message::show_warning(&mut self.message, text);
@@ -1363,8 +1388,16 @@ impl Board {
                     self.aliens.push(a);
                     // Its shadow.
                     self.rng.next_range(5);
-                    // Arrival roar (kinds 1–3), played directly.
-                    self.sounds.push(Sound::Roar.into());
+                    // Arrival roar (kinds 1–3) or Gus's guffaw, played
+                    // directly.
+                    self.sounds.push(
+                        if kind == 4 {
+                            Sound::Guffaw
+                        } else {
+                            Sound::Roar
+                        }
+                        .into(),
+                    );
                 }
                 self.has_aliens = true;
                 if self.tank == 1 && self.level == 5 {
@@ -1950,6 +1983,7 @@ impl Board {
         let env = FishEnv {
             paused: self.paused,
             has_aliens: self.has_aliens,
+            gus_first: self.aliens.first().is_some_and(|a| a.kind == 4),
         };
         let mut stage_ups = Vec::new();
         let mut new_dead = Vec::new();
@@ -2167,6 +2201,7 @@ impl Board {
         let env = FishEnv {
             paused: self.paused,
             has_aliens: self.has_aliens,
+            gus_first: self.aliens.first().is_some_and(|a| a.kind == 4),
         };
         let mut stage_ups = Vec::new();
         let mut new_dead = Vec::new();
@@ -2276,7 +2311,49 @@ impl Board {
             // Replay-only: the original's address-order tie break
             // (`ArtifactPlan::eat_choice`); `None` in play.
             let prefer = self.artifacts.eat_choice;
-            self.aliens[i].update_masked(&prey, &prey_mask, prefer, &mut self.rng, &mut out);
+            let foods: Vec<crate::alien::FoodView> = self
+                .foods
+                .iter()
+                .map(|f| crate::alien::FoodView {
+                    widget_x: f.widget_x,
+                    widget_y: f.widget_y,
+                    delay: f.delay,
+                    kind: f.kind,
+                    level: f.level,
+                })
+                .collect();
+            self.aliens[i].update_with_food(
+                &prey,
+                &prey_mask,
+                prefer,
+                &foods,
+                &mut self.rng,
+                &mut out,
+            );
+            if let Some(fi) = out.ate_food {
+                // Gus ate a pellet: a star potion explodes first, then the
+                // slurp, then the pellet is removed (alien-kind4.md#32).
+                if self.foods[fi].level == 3 {
+                    self.play(0x11d, Sound::Explode);
+                    let (ix, iy) = (self.aliens[i].widget_x, self.aliens[i].widget_y);
+                    let n = self.rng.next_range(3) + 1;
+                    for _ in 0..n {
+                        let k = self.rng.next_range(3) as i32 + 3;
+                        let y = self.rng.next_range(40) as i32 + 10 + iy;
+                        let x = self.rng.next_range(40) as i32 + 10 + ix;
+                        self.add_effect_shot(x, y, k);
+                        let k = self.rng.next_range(3) as i32 + 3;
+                        let y = self.rng.next_range(20) as i32 + 20 + iy;
+                        let x = self.rng.next_range(20) as i32 + 20 + ix;
+                        self.add_effect_shot(x, y, k);
+                    }
+                }
+                if self.sample_ready(0x138, 3) {
+                    let s = Sound::slurp(self.rng.next_range(5));
+                    self.sounds.push(s.into());
+                }
+                self.foods.remove(fi);
+            }
             if let Some(g) = out.ate {
                 let (ng, nc) = (self.guppies.len(), self.carnivores.len());
                 let victim = if g < ng {
@@ -2302,6 +2379,14 @@ impl Board {
                         Sound::Chomp
                     };
                     self.sounds.push(chomp.into());
+                }
+                // Gus: a fish costs him 15 HP and plays the gulp.
+                if self.aliens[i].kind == 4 {
+                    self.aliens[i].cooldown = 10;
+                    self.aliens[i].health -= 15.0;
+                    // The hook runs inside the update, before its death
+                    // check (alien-kind4.md#3).
+                    out.died = self.aliens[i].health <= 0.0;
                 }
                 // Gore burst (`app+0x882`, on by default): 2..4 kind-1 shots.
                 // TODO(options): the original's option that clears 0x882.

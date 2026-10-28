@@ -1677,7 +1677,12 @@ impl PetCtx<'_> {
 
 /// `0x004fb5b0` for Itchy: the alien loses [`STAB`] health.
 pub fn stab(alien: &mut Alien) {
-    alien.health -= STAB;
+    // Kinds 4 and 5 take a quarter (`0x004fb5b0`, alien-kind4.md#42).
+    alien.health -= if matches!(alien.kind, 4 | 5) {
+        0.25
+    } else {
+        STAB
+    };
 }
 
 #[cfg(test)]

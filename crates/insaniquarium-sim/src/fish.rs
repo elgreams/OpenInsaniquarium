@@ -200,6 +200,8 @@ pub struct FishEnv {
     pub paused: bool,
     /// Any alien on the board (`board+0xb8` or `+0xf4` non-empty).
     pub has_aliens: bool,
+    /// The first alien is Gus (kind 4).
+    pub gus_first: bool,
 }
 
 /// Board state a guppy update reads and writes.
@@ -567,8 +569,9 @@ impl Fish {
                 return false;
             }
         }
-        if self.hunger < 500 {
-            // TODO(spec): with aliens present only alien type ≠ 4 allows it.
+        // With Gus (kind 4) first in the alien list, guppies leave the
+        // food to him (`0x004f1816`, food.md step 5).
+        if self.hunger < 500 && !env.gus_first {
             return self.chase_food(w);
         }
         false

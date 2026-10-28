@@ -89,6 +89,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_BALLS",
     "IMAGE_WALTER",
     "IMAGE_STARCATCHER",
+    "IMAGE_GUS",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -1203,18 +1204,24 @@ fn pet_cels(p: &Pet, z: f32, cels: &mut Vec<Cel>) {
 fn alien_sheet(kind: i32) -> &'static str {
     match kind {
         3 => "IMAGE_BALROG",
+        4 => "IMAGE_GUS",
         _ => "IMAGE_SYLV",
     }
 }
 
 /// Sylvester and Balrog (alien-sylvester.md#71-alien).
 fn alien_cels(a: &Alien, z: f32, cels: &mut Vec<Cel>) {
-    let (row, mirror) = if a.turn != 0 {
-        (1, a.turn > 0)
+    // Gus's gulp (alien-kind4.md#71): row 2, column = the gulp counter,
+    // mirrored by vx even while turning; no white flash.
+    let gulp = a.kind == 4 && a.cooldown > 0;
+    let (row, col, mirror) = if gulp {
+        (2, a.cooldown, a.vx >= 0.0)
+    } else if a.turn != 0 {
+        (1, a.cel, a.turn > 0)
     } else {
-        (0, a.vx >= 0.0)
+        (0, a.cel, a.vx >= 0.0)
     };
-    let base = Cel::new(alien_sheet(a.kind), a.cel, row, a.widget_x, a.widget_y, z).mirror(mirror);
+    let base = Cel::new(alien_sheet(a.kind), col, row, a.widget_x, a.widget_y, z).mirror(mirror);
     if a.warp > 0 {
         if a.warp > 9 {
             return;
@@ -1228,7 +1235,7 @@ fn alien_cels(a: &Alien, z: f32, cels: &mut Vec<Cel>) {
         return;
     }
     cels.push(base.clone());
-    if a.cooldown > 0 {
+    if a.cooldown > 0 && a.kind != 4 {
         cels.push(
             Cel {
                 z: z + 0.0001,

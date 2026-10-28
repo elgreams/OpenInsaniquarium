@@ -55,7 +55,19 @@ pub struct AlienOut {
     /// Index of the fish eaten this tick, in the prey list passed to
     /// `update` (guppies, then carnivores).
     pub ate: Option<usize>,
+    /// Gus (kind 4) ate pellet `i` of the food list (alien-kind4.md#32).
+    pub ate_food: Option<usize>,
     pub died: bool,
+}
+
+/// What Gus sees of a pellet (`board+0xac`, alien-kind4.md#31).
+#[derive(Debug, Clone, Copy)]
+pub struct FoodView {
+    pub widget_x: i32,
+    pub widget_y: i32,
+    pub delay: i32,
+    pub kind: i32,
+    pub level: i32,
 }
 
 impl Alien {
@@ -66,6 +78,8 @@ impl Alien {
         let (divisor, health) = match kind {
             2 => (1.6, 60.0),
             3 => (1.2, 130.0),
+            4 => (1.6, 100.0),
+            5 => (1.2, 150.0),
             _ => (2.0, 50.0),
         };
         let right = rng.next_u31() & 1 != 0;
@@ -127,6 +141,20 @@ impl Alien {
         rng: &mut MtRand,
         out: &mut AlienOut,
     ) {
+        self.update_with_food(guppies, hidden, prefer, &[], rng, out);
+    }
+
+    /// [`Self::update_masked`] with the food list, which Gus (kind 4)
+    /// chases and eats (alien-kind4.md#3-alienupdate-0x004fd560-kind-4).
+    pub fn update_with_food(
+        &mut self,
+        guppies: &[&Fish],
+        hidden: &[bool],
+        prefer: Option<usize>,
+        foods: &[FoodView],
+        rng: &mut MtRand,
+        out: &mut AlienOut,
+    ) {
         let mut lunge = 0.0;
         if self.warp != 0 {
             if self.warp <= 10 {
@@ -140,19 +168,23 @@ impl Alien {
         // Chase the nearest guppy, else wander.
         // TODO(spec): candidates come from the master set in object-address
         // order; we use list order (ties are rare: equal squared distance).
-        let target = if guppies.is_empty() {
-            None
+        if self.kind == 4 {
+            self.gus_chase(guppies, hidden, prefer, foods, rng, out);
         } else {
-            self.nearest(guppies, hidden, prefer)
-        };
-        match target {
-            Some(t) => {
-                self.steer(guppies[t]);
-                if self.eat_delay < 1 {
-                    out.ate = self.eat_test(guppies, hidden, prefer);
+            let target = if guppies.is_empty() {
+                None
+            } else {
+                self.nearest(guppies, hidden, prefer)
+            };
+            match target {
+                Some(t) => {
+                    self.steer(guppies[t]);
+                    if self.eat_delay < 1 {
+                        out.ate = self.eat_test(guppies, hidden, prefer);
+                    }
                 }
+                None => self.wander(rng),
             }
-            None => self.wander(rng),
         }
         // Explicit compares in the original's order (§3 step 4).
         #[allow(clippy::manual_clamp)]
@@ -182,6 +214,117 @@ impl Alien {
         self.widget_y = self.y as i32;
         self.animate();
         out.died = self.health <= 0.0;
+    }
+
+    /// Gus's chase (alien-kind4.md#30..#32): food first (list order, a
+    /// −2500 bias), fish only after the eat delay; the food-branch steer
+    /// dives faster; the eat test always runs. The board applies the
+    /// pellet's damage (it may draw RNG).
+    fn gus_chase(
+        &mut self,
+        guppies: &[&Fish],
+        hidden: &[bool],
+        prefer: Option<usize>,
+        foods: &[FoodView],
+        rng: &mut MtRand,
+        out: &mut AlienOut,
+    ) {
+        if guppies.is_empty() && foods.is_empty() {
+            self.wander(rng);
+            return;
+        }
+        let (cx, cy) = self.centre();
+        let mut best = 100_000_000;
+        let mut food_flag = false;
+        let mut target: Option<(i32, i32)> = None;
+        for f in foods {
+            if f.delay >= 1 || f.kind == 2 {
+                continue;
+            }
+            let dx = cx - (f.widget_x + 20);
+            let dy = cy - (f.widget_y + 20);
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best {
+                target = Some((f.widget_x + 20, f.widget_y + 20));
+                food_flag = true;
+                best = d - 2500;
+            }
+        }
+        if self.eat_delay <= 0 {
+            let order = prefer
+                .filter(|&p| p < guppies.len())
+                .into_iter()
+                .chain((0..guppies.len()).filter(|&i| Some(i) != prefer));
+            for i in order {
+                if hidden.get(i) == Some(&true) {
+                    continue;
+                }
+                let g = guppies[i];
+                let dx = cx - (g.widget_x + 40);
+                let dy = cy - (g.widget_y + 40);
+                let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+                if d < best {
+                    best = d;
+                    // `+0x190` stays set: the food-branch steer, at the
+                    // fish's corner + 20 (alien-kind4.md#31, quirk).
+                    target = Some(if food_flag {
+                        (g.widget_x + 20, g.widget_y + 20)
+                    } else {
+                        (g.widget_x + 40, g.widget_y + 40)
+                    });
+                }
+            }
+        }
+        let Some((tx, ty)) = target else {
+            self.wander(rng);
+            return;
+        };
+        let (tx, ty) = (f64::from(tx), f64::from(ty));
+        if self.x + 80.0 > tx {
+            if self.vx > -1.8 {
+                self.vx -= 0.1;
+            }
+        } else if self.x + 80.0 < tx && self.vx < 1.8 {
+            self.vx += 0.1;
+        }
+        if food_flag {
+            if self.y + 80.0 > ty {
+                if self.vy > -1.8 {
+                    self.vy -= 0.1;
+                }
+            } else if self.y + 80.0 < ty && self.vy < 3.0 {
+                self.vy += 0.3;
+            }
+        } else if self.y + 80.0 > ty {
+            if self.vy > -1.8 {
+                self.vy -= 0.1;
+            }
+        } else if self.y + 80.0 < ty && self.vy < 1.8 {
+            self.vy += 0.1;
+        }
+        // Eat test: food (the alien's double position, no kind check),
+        // then fish once the eat delay is over.
+        let (ax, ay) = (self.x + 80.0, self.y + 80.0);
+        if self.cooldown < 6 {
+            out.ate_food = foods.iter().position(|f| {
+                let (fx, fy) = (f64::from(f.widget_x), f64::from(f.widget_y));
+                fx - 25.0 < ax && ax < fx + 65.0 && fy - 25.0 < ay && ay < fy + 65.0 && f.delay == 0
+            });
+            if let Some(i) = out.ate_food {
+                // Damage (alien-kind4.md#32): a star potion 20 (the board
+                // adds its explosion), else 2·level + 4.
+                let f = foods[i];
+                self.health -= if f.level == 3 {
+                    20.0
+                } else {
+                    f64::from(2 * f.level + 4)
+                };
+                self.cooldown = 10;
+            }
+        }
+        if self.eat_delay <= 0 {
+            out.ate = self.eat_test(guppies, hidden, prefer);
+        }
     }
 
     fn centre(&self) -> (i32, i32) {

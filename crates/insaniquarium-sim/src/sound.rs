@@ -50,6 +50,7 @@ pub enum Sound {
     TapGlass,
     Treasure,
     Sfx,
+    Guffaw,
 }
 
 impl Sound {
@@ -102,6 +103,7 @@ impl Sound {
             Sound::TapGlass => 0x141,
             Sound::Treasure => 0x142,
             Sound::Sfx => 0x136,
+            Sound::Guffaw => 0x123,
         }
     }
 
@@ -121,7 +123,8 @@ impl Sound {
             | Sound::Splash3
             | Sound::Roar
             | Sound::Hatch
-            | Sound::TapGlass => None,
+            | Sound::TapGlass
+            | Sound::Guffaw => None,
             s => Some(s.sample_id()),
         }
     }
@@ -174,6 +177,7 @@ impl Sound {
             Sound::TapGlass => "SOUND_TAPGLASS",
             Sound::Treasure => "SOUND_TREASURE",
             Sound::Sfx => "SOUND_SFX",
+            Sound::Guffaw => "SOUND_GUFFAW",
         }
     }
 
