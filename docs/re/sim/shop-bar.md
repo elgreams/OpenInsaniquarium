@@ -87,7 +87,7 @@ Helpers (our names):
 
 The same switch also writes `+0x2bc` (tank 1: 0/1/2/3/3 by level; 1-2 also sets `+0x2c0 = 1750`). These are not shop fields; they look like alien/wave parameters and belong to the alien spec.
 
-Tank 2 (`0x00541200`, the tank-2 branch):
+Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_full_01`, slots, prices, reveals and purchases compared); the 2-2..2-5 rows are `static`.
 
 | Slot | Pos | Price |
 |---|---|---|
@@ -138,7 +138,7 @@ Triggers on tank 1-1 come from `Fish::OnStageUp` @ `0x004f1840`. It is called fr
 - **Stage becomes 2** (medium → large):
   - In mode 1, reveal slot 11.
   - On 1-1, if `+0x3af` (slot 11 revealed) is 0: reveal slot 11, set `+0x4b2 = 0` and `+0x4d8 = 1` ("buy egg piece" arrow). In tutorial 1-1, if no message is showing, also show "Buy 3 egg pieces to complete level!".
-  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4. **Tank 2:** 2, 3 and 5 (star potion), then **11 on 2-1** or **6 (Starcatcher) on 2-2..2-5**; tanks 3 and 4: three slots each (not followed).
+  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4. **Tank 2:** 2, 3 and 5 (star potion), then **11 on 2-1** or **6 (Starcatcher) on 2-2..2-5** (2-1 `traced` by `tank_2_1`); tanks 3 and 4: three slots each (not followed).
 
 So on 1-1, the guppy button appears when the first guppy reaches medium, and the egg button appears when the first guppy reaches large. **No reveal path uses RNG.**
 

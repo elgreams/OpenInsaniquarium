@@ -69,6 +69,12 @@ NO_SHOOT = "--no-shoot" in sys.argv
 # Walter (`--walter N`): click him N times, ~2 s apart, preferring moments
 # with a guppy beside him (pet-walter.md#clicks-slot-54-0x004fbe20--0x004fb680).
 WALTER = int(sys.argv[sys.argv.index("--walter") + 1]) if "--walter" in sys.argv else 0
+# Tank 2 (`--star N`): buy N star potions (slot 5, position 3) once revealed
+# and drop each just above a large guppy, which turns it into a star guppy
+# (food.md, level 3). The first one goes to a small guppy instead if there
+# is no large one after a while, so the explosion is covered too.
+STAR = int(sys.argv[sys.argv.index("--star") + 1]) if "--star" in sys.argv else 0
+STAR_BTN = (BTN_X[3] + 29, 33)
 
 
 def window():
@@ -109,6 +115,7 @@ def read_state():
                       rev_guppy=int(p[4]), rev_egg=int(p[5]), foods=int(p[6]))
         elif p[0] == "G":
             st["guppies"].append(tuple(map(int, p[1:4])))
+            st.setdefault("stages", []).append(int(p[4]) if len(p) > 4 else 0)
         elif p[0] == "C":
             st["coins"].append(tuple(map(int, p[1:4])))
         elif p[0] == "P":
@@ -142,6 +149,8 @@ def main():
     buzzed = True
     punches = 0
     punch_at = time.time() + 4
+    stars = 0
+    armed = False
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -233,6 +242,22 @@ def main():
         elif st["revealed"][3] and bought_quantity < MAX_QUANTITY and st["money"] >= 400:
             click(win, *QUANTITY_BTN)
             bought_quantity += 1
+        elif (STAR and stars < STAR and not armed and st["revealed"][5] and st["money"] >= 250
+              and any(s >= 2 for s in st.get("stages", []))):
+            click(win, *STAR_BTN)
+            print("star potion bought", flush=True)
+            armed = True
+        elif armed and not st["aliens"]:
+            # Drop it just above the largest guppy.
+            gs = list(zip(st["guppies"], st.get("stages", [])))
+            big = [g for g, s in gs if s == 2] or [g for g, s in gs]
+            if big:
+                g = big[0]
+                click(win, min(max(g[0] + 40, 40), 580), min(max(g[1] + 10, 75), 390))
+                print("star potion dropped", flush=True)
+                armed = False
+                stars += 1
+                last_feed = now
         elif not NO_EGG and st["rev_egg"] and st["money"] >= EGG_PRICE:
             click(win, *EGG_BTN)
         elif (st["rev_guppy"] and bought_guppies < MAX_GUPPIES and st["money"] >= 120

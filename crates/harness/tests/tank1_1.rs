@@ -826,6 +826,16 @@ fn walter_punches() {
     }
 }
 
+/// Tank 2-1 (`tank2-1_full_01`): played by autoplay from the level start,
+/// no pets, two star potions dropped, two waves (wave kind 2), three egg
+/// pieces bought (tank2-plan.md, step 1).
+#[test]
+fn tank_2_1() {
+    if captured("tank2-1_full_01") {
+        replay_level_tank("tank2-1_full_01", 2, 1);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).
@@ -1024,6 +1034,15 @@ fn replay_level(name: &str, level: i32, from_demo: bool) -> usize {
 /// clock); chunk 0 starts at the level's first tick, later chunks start
 /// mid-level from their first snapshot.
 fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> usize {
+    replay_level_full(name, 1, level, from_demo, chunk)
+}
+
+/// [`replay_level`] for any tank (inputs from the demo).
+fn replay_level_tank(name: &str, tank: i32, level: i32) -> usize {
+    replay_level_full(name, tank, level, true, 0)
+}
+
+fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: usize) -> usize {
     use harness::replay::{
         debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
     };
@@ -1141,7 +1160,7 @@ fn replay_level_chunk(name: &str, level: i32, from_demo: bool, chunk: usize) -> 
     let mut board = board_from_capture(&t).unwrap();
     drop(t);
     board.shop = {
-        let mut sh = insaniquarium_sim::shop::Shop::adventure(1, level);
+        let mut sh = insaniquarium_sim::shop::Shop::adventure(tank, level);
         sh.revealed = board.shop.revealed;
         sh
     };

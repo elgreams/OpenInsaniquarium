@@ -215,7 +215,7 @@ while captured < max_ticks and polls < max_ticks * 40 do
           i32(board + OFF.money), i32(board + 0x43c), readBytes(board + 0x3a4, 1) or 0,
           readBytes(board + 0x3a4 + 11, 1) or 0, #vec_ptrs(u32(board + 0xac))))
         for _, g in ipairs(vec_ptrs(u32(board + 0xa0))) do
-          gf:write(string.format("G %d %d %d\n", i32(g + 0x30), i32(g + 0x34), i32(g + 0x9c)))
+          gf:write(string.format("G %d %d %d %d\n", i32(g + 0x30), i32(g + 0x34), i32(g + 0x9c), i32(g + 0x1a0)))
         end
         for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
           gf:write(string.format("C %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0))
