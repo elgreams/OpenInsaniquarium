@@ -227,6 +227,8 @@ pub struct World<'a> {
     pub guppies: &'a [Fish],
     /// Guppies eaten this tick (indices into `guppies`).
     pub eaten: &'a mut Vec<usize>,
+    /// The star-potion hints show (tank 2 levels 1–2, game not beaten).
+    pub star_hints: bool,
     /// Noses made this tick by guppies drinking a potion (the board adds
     /// them to the fish pets).
     pub potions: &'a mut Vec<Fish>,
@@ -963,9 +965,60 @@ impl Fish {
         let was_hungry = self.looks_hungry();
         w.play_slurp();
         self.timer_f8 = 0;
+        if food.level == 3 {
+            // A star potion (food.md#guppy-hunger-and-feeding, level 3).
+            match self.stage {
+                0 | 1 => {
+                    // Too small: it explodes, and the guppy dies.
+                    if w.sample_ready(0x11d, 3) {
+                        w.sounds.push(Sound::Explode.into());
+                    }
+                    let n = w.rng.next_range(3) + 2;
+                    for _ in 0..n {
+                        let k = w.rng.next_range(3) as i32 + 3;
+                        let y = self.widget_y + w.rng.next_range(30) as i32 - 10;
+                        let x = self.widget_x + w.rng.next_range(30) as i32 - 10;
+                        crate::alien::add_effect_shot_with(w.shots, w.rng, x, y, k, w.artifacts);
+                    }
+                    if w.star_hints {
+                        message::show(
+                            w.message,
+                            w.hints,
+                            "Warning! Use star potions carefully!",
+                            false,
+                            0x1e,
+                        );
+                    }
+                    self.die(w);
+                }
+                2 => {
+                    self.hunger = (self.hunger + 1100).min(1400);
+                    self.stage = 3;
+                    if w.sample_ready(0x122, 3) {
+                        w.sounds.push(Sound::Grow.into());
+                    }
+                }
+                _ => self.hunger = (self.hunger + 1100).min(1400),
+            }
+            if self.dead {
+                return;
+            }
+            // The growth check below still runs (no growth was added): a
+            // well-grown guppy can go on to stage 4 (`0x004f20e7`).
+            if self.growth >= self.growth_needed
+                && self.growth >= 15 * self.growth_needed
+                && self.stage >= 2
+                && self.stage != 4
+            {
+                self.stage = 4;
+            }
+            if was_hungry && !self.looks_hungry() {
+                self.start_fade(false);
+            }
+            return;
+        }
         // Pellet levels (`0x004f1ba0`): 0 +500 cap 800 growth 1; 1 +700 cap
-        // 1000 growth 2; 2 +1100 cap 1400 growth 3. TODO(spec): level 3
-        // (star potion: stage-ups and explosions, tank 2).
+        // 1000 growth 2; 2 +1100 cap 1400 growth 3.
         let (gain, cap, growth) = match food.level {
             0 => (500, 800, 1),
             1 => (700, 1000, 2),

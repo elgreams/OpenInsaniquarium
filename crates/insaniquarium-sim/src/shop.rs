@@ -99,6 +99,30 @@ impl Shop {
             for &u in unused {
                 s.position[u as usize] = None;
             }
+        } else if tank == 2 {
+            // `SetupShop` tank 2 (shop-bar.md#shop-setup).
+            let mut set = |slot: Slot, pos: usize, price: i32| {
+                s.position[slot as usize] = Some(pos);
+                s.price[slot as usize] = price;
+            };
+            set(Slot::Guppy, 0, 100);
+            set(Slot::FoodQuality, 1, 200);
+            set(Slot::FoodQuantity, 2, 300);
+            set(Slot::StarPotion, 3, 250);
+            set(Slot::Starcatcher, 4, 750);
+            set(Slot::Weapon, 5, 1000);
+            let egg = match level {
+                1 => 750,
+                2 => 3000,
+                3 => 5000,
+                4 => 7500,
+                _ => 10000,
+            };
+            set(Slot::EggPiece, 6, egg);
+            if level == 1 {
+                s.position[Slot::Starcatcher as usize] = None;
+                s.position[Slot::Weapon as usize] = None;
+            }
         }
         s
     }

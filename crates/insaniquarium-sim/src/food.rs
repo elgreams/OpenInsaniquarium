@@ -45,6 +45,9 @@ pub enum FoodStep {
     Remove,
     /// A carried potion reached the counter: remove it, bank $1.
     Bank,
+    /// A star potion (level 3) hit the bottom: it explodes (the board draws
+    /// the debris) and is removed.
+    Explode,
 }
 
 impl Food {
@@ -179,7 +182,9 @@ impl Food {
             }
         }
         if self.y > FLOOR_Y || (self.level == 3 && self.y > 400.0) {
-            // TODO(spec): level-3 food explodes (RNG); potions vanish.
+            if self.level == 3 {
+                return FoodStep::Explode;
+            }
             if self.kind == 2 {
                 return FoodStep::Remove;
             }

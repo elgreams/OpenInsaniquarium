@@ -138,7 +138,7 @@ Triggers on tank 1-1 come from `Fish::OnStageUp` @ `0x004f1840`. It is called fr
 - **Stage becomes 2** (medium → large):
   - In mode 1, reveal slot 11.
   - On 1-1, if `+0x3af` (slot 11 revealed) is 0: reveal slot 11, set `+0x4b2 = 0` and `+0x4d8 = 1` ("buy egg piece" arrow). In tutorial 1-1, if no message is showing, also show "Buy 3 egg pieces to complete level!".
-  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4.
+  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4. **Tank 2:** 2, 3 and 5 (star potion), then **11 on 2-1** or **6 (Starcatcher) on 2-2..2-5**; tanks 3 and 4: three slots each (not followed).
 
 So on 1-1, the guppy button appears when the first guppy reaches medium, and the egg button appears when the first guppy reaches large. **No reveal path uses RNG.**
 
@@ -195,7 +195,7 @@ The RNG order shown is within the purchase call. Sound ids: `SOUND_BUY` = 0x111,
   1. On tank 1 with quantity == 1 (and no `profile+0x59`), show "Hold down mouse button to Auto-Feed!".
   2. `+= 1`, then Refresh, then `SOUND_BUY`.
 - **4 carnivore:** TrySpend → `0x00544c00` → on tank 4 with level > 1, reveal 9 → reveal 10 → reveal 11 → `SOUND_GROW` → `PlaySplash`. Tank 4 level 1 skips the reveal of 10.
-- **5 star potion:** only if `+0x440 == 0` and TrySpend succeeds.
+- **5 star potion:** only if `+0x440 == 0` and TrySpend succeeds. The first purchase in a level (byte `+0x441`) on 2-1/2-2 shows "Click on tank to drop star potion!" (no hint id, timer forced to 180).
   1. On the first potion of the level (`+0x441`): if level < 3, show "Click on tank to drop star potion!" and set the message timer `[+0x118]+0xd0 = 180`.
   2. `+0x440 = 1`, then `SOUND_BUY`.
 - **6 starcatcher:** TrySpend → `0x00545260` → reveal 10, 11 → `SOUND_GROW` → `PlaySplash`.

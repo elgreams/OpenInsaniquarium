@@ -226,6 +226,10 @@ pub struct Board {
     pub warps: Vec<Warp>,
     /// `board+0x98`: dead guppies sinking (cosmetic, no RNG).
     pub dead_fish: Vec<DeadFish>,
+    /// `board+0x440`: a star potion is armed (the next tank click drops
+    /// it, free); `+0x441`: its first-buy hint was shown.
+    pub potion_armed: bool,
+    pub potion_hint_shown: bool,
     /// `board+0x2b4`: screen-shake timer (−1 per update while non-zero).
     pub shake: i32,
     /// `+0x3d8..+0x3e0`: x of the three tank-light bands (cosmetic;
@@ -296,6 +300,8 @@ impl Board {
             warps: Vec::new(),
             dead_fish: Vec::new(),
             shake: 0,
+            potion_armed: false,
+            potion_hint_shown: false,
             missiles: Vec::new(),
             light_x: [0.0; 3],
         }
@@ -354,6 +360,18 @@ impl Board {
         // `r % 640` each (cosmetic, board.md#tank-lighting).
         for x in &mut b.light_x {
             *x = b.rng.next_range(640) as f32;
+        }
+        // `InitLevel` → `SetupShop`, after the ctor's draws: tank 2's wave
+        // table (shop-bar.md#shop-setup); 2-5 draws its kind.
+        if tank == 2 {
+            b.wave_countdown = 3000;
+            b.wave_kind = match level {
+                1 => 2,
+                2 => 3,
+                3 => 4,
+                4 => 5,
+                _ => (b.rng.next_u31() & 1) as i32 | 4,
+            };
         }
         // Start bubble burst: (r & 3) + 3 bubbles, two draws each.
         let n = (b.rng.next_u31() & 3) + 3;
@@ -780,12 +798,15 @@ impl Board {
         if !(31..=586).contains(&x) || !(61..=399).contains(&y) || self.food_lockout > 0 {
             return ClickResult::Ignored;
         }
-        if self.money < self.food_price {
-            // TODO(spec): buzzer, money flash and "out of money" handling.
-            return ClickResult::TooPoor;
+        // An armed star potion drops for free (`0x00543b68`).
+        if !self.potion_armed {
+            if self.money < self.food_price {
+                // TODO(spec): buzzer, money flash and "out of money" handling.
+                return ClickResult::TooPoor;
+            }
+            self.money -= self.food_price;
         }
-        self.money -= self.food_price;
-        self.add_food(x - 10, y - 10)
+        self.add_food_delay(x - 10, y - 10, 0)
     }
 
     /// `Fish` mouse-down (slot 55 @ `0x004e4c10`, food.md#clicking-on-a-
@@ -814,13 +835,7 @@ impl Board {
             return ClickResult::TooPoor;
         }
         self.money -= self.food_price;
-        let r = self.add_food(fx, fy);
-        if r == ClickResult::FoodDropped
-            && let Some(food) = self.foods.last_mut()
-        {
-            food.delay = delay;
-        }
-        r
+        self.add_food_delay(fx, fy, delay)
     }
 
     /// Board mouse-down with aliens present.
@@ -920,6 +935,19 @@ impl Board {
             kind,
             &mut self.artifacts,
         );
+    }
+
+    /// A star potion exploding (at the bottom, or in a small/medium
+    /// guppy, food.md): EXPLODE, then 2..4 sparks at (wx ± 10.., wy ± 10..).
+    fn star_explosion(&mut self, wx: i32, wy: i32) {
+        self.play(0x11d, Sound::Explode);
+        let n = self.rng.next_range(3) + 2;
+        for _ in 0..n {
+            let k = self.rng.next_range(3) as i32 + 3;
+            let y = wy + self.rng.next_range(30) as i32 - 10;
+            let x = wx + self.rng.next_range(30) as i32 - 10;
+            self.add_effect_shot(x, y, k);
+        }
     }
 
     /// The missile pass (`+0xdc`, right after the fish pets in z-order).
@@ -1344,7 +1372,10 @@ impl Board {
     }
 
     /// `Board::AddFood` (`0x00543280`) for a player pellet.
-    fn add_food(&mut self, x: i32, y: i32) -> ClickResult {
+    /// `Board::AddFood(x, y, 0, 0, delay, −1)` for a player drop. With a
+    /// star potion armed the pellet is the potion: level 3, disarmed, no
+    /// DROPFOOD (`0x00543469`). A guppy click pays the price even then.
+    fn add_food_delay(&mut self, x: i32, y: i32, delay: i32) -> ClickResult {
         let extra = self
             .foods
             .iter()
@@ -1375,11 +1406,15 @@ impl Board {
             }
             return ClickResult::FoodLimit;
         }
-        let food = Food::new_pellet(x, y, self.food_level, &mut self.rng);
-        self.foods.push(food);
-        if self.sample_ready(0x118, 3) {
+        let mut food = Food::new_pellet(x, y, self.food_level, &mut self.rng);
+        food.delay = delay;
+        if self.potion_armed {
+            food.level = 3;
+            self.potion_armed = false;
+        } else if self.sample_ready(0x118, 3) {
             self.sounds.push(Sound::DropFood.into());
         }
+        self.foods.push(food);
         ClickResult::FoodDropped
     }
 
@@ -1520,7 +1555,8 @@ impl Board {
             Slot::FoodQuantity => self.buy_food_quantity(price),
             Slot::Carnivore => self.buy_carnivore(price),
             Slot::Weapon => self.buy_weapon(price),
-            // TODO(spec): other slots (not on tank 1-1).
+            Slot::StarPotion => self.buy_star_potion(price),
+            // TODO(spec): other slots.
             _ => return ClickResult::Ignored,
         };
         if ok {
@@ -1565,6 +1601,27 @@ impl Board {
         self.play(0x122, Sound::Grow);
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r).into());
+        true
+    }
+
+    /// Slot 5 (`0x00549380` case 5, shop-bar.md#per-slot-behaviour): arms
+    /// the potion (`+0x440`); the next tank click drops it. The first buy
+    /// on 2-1/2-2 shows a hint. No RNG.
+    fn buy_star_potion(&mut self, price: i32) -> bool {
+        if self.potion_armed || !self.try_spend(price) {
+            return false;
+        }
+        if !self.potion_hint_shown {
+            self.potion_hint_shown = true;
+            if self.level < 3 {
+                self.show_message("Click on tank to drop star potion!", false, -1);
+                self.message.timer = 180;
+            }
+        }
+        self.potion_armed = true;
+        if self.sample_ready(0x111, 3) {
+            self.sounds.push(Sound::Buy.into());
+        }
         true
     }
 
@@ -1682,7 +1739,19 @@ impl Board {
                 self.shop.reveal(Slot::FoodQuantity, true);
                 self.shop.reveal(Slot::Carnivore, true);
             }
-            // TODO(spec): tanks 2–4 reveal lists (`0x004f1840`).
+            // Tank 2 (`0x004f1840`, shop-bar.md#reveal): quality, quantity,
+            // star potion, then the egg on 2-1 or the Starcatcher after.
+            2 if self.tank == 2 => {
+                self.shop.reveal(Slot::FoodQuality, true);
+                self.shop.reveal(Slot::FoodQuantity, true);
+                self.shop.reveal(Slot::StarPotion, true);
+                if self.level == 1 {
+                    self.shop.reveal(Slot::EggPiece, true);
+                } else {
+                    self.shop.reveal(Slot::Starcatcher, true);
+                }
+            }
+            // TODO(spec): tanks 3–4 reveal lists (`0x004f1840`).
             _ => {}
         }
     }
@@ -1832,6 +1901,7 @@ impl Board {
             guppies: &[],
             eaten: &mut Vec::new(),
             potions: &mut noses,
+            star_hints: self.tank == 2 && self.level < 3,
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
             song: self.song,
@@ -2002,14 +2072,23 @@ impl Board {
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
         let mut potion_money = 0;
-        self.foods.retain_mut(|f| match f.update() {
-            FoodStep::Keep => true,
-            FoodStep::Remove => false,
-            FoodStep::Bank => {
-                potion_money += 1;
-                false
+        let mut i = 0;
+        while i < self.foods.len() {
+            match self.foods[i].update() {
+                FoodStep::Keep => i += 1,
+                FoodStep::Remove => {
+                    self.foods.remove(i);
+                }
+                FoodStep::Bank => {
+                    potion_money += 1;
+                    self.foods.remove(i);
+                }
+                FoodStep::Explode => {
+                    let f = self.foods.remove(i);
+                    self.star_explosion(f.widget_x, f.widget_y);
+                }
             }
-        });
+        }
         self.money = (self.money + potion_money).min(9_999_999);
         let env = FishEnv {
             paused: self.paused,
@@ -2034,6 +2113,7 @@ impl Board {
             guppies: &[],
             eaten: &mut Vec::new(),
             potions: &mut noses,
+            star_hints: self.tank == 2 && self.level < 3,
             shots: &mut self.shots,
             artifacts: &mut self.artifacts,
             song: self.song,
