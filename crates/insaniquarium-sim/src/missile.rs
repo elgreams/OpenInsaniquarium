@@ -45,6 +45,12 @@ pub struct Missile {
     pub target: Option<usize>,
     /// Identity, for the fish's `+0x98` link.
     pub id: u32,
+    /// `+0x1a8`, `+0x1ac`: Stanley's shoot-down progress and duration
+    /// (pet-stanley.md#shooting-down-missiles-0x004e55d0); 0 = not shot.
+    pub shot_progress: i32,
+    pub shot_duration: i32,
+    /// `+0x1b0`, `+0x1b4`: where Stanley's shot ball starts.
+    pub shot_from: (i32, i32),
     pub widget_x: i32,
     pub widget_y: i32,
 }
@@ -67,6 +73,9 @@ impl Missile {
             row: (global.next_u31() & 3) as i32,
             target: Some(target),
             id: 0,
+            shot_progress: 0,
+            shot_duration: 10,
+            shot_from: (0, 0),
             widget_x: x,
             widget_y: y,
         }
@@ -87,6 +96,13 @@ impl Missile {
     /// `Missle::Update` (`0x004ffb30`), kind 0, up to the smoke (the board
     /// draws it on `Keep`). `target` is its fish's widget position.
     pub fn update_missile(&mut self, target: Option<(i32, i32)>) -> MissileStep {
+        // Shot down by Stanley: count up to the duration, then explode.
+        if self.shot_progress > 0 {
+            self.shot_progress += 1;
+            if self.shot_progress >= self.shot_duration {
+                return MissileStep::Explode;
+            }
+        }
         let Some((tx, ty)) = target else {
             return MissileStep::Explode;
         };

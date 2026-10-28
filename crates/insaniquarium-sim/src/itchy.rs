@@ -887,7 +887,33 @@ impl Fish {
             self.grow -= 1;
         }
         self.coin_timer += 1;
-        // TODO(spec): shooting down alien missiles (kinds 0/1, tank 2+).
+        // Shooting down missiles (`0x004e55d0`, pet-stanley.md): with the
+        // cooldown at 0, the kind-0 missile closest to its fish, at least 5
+        // ticks in flight and not yet shot. The board makes the draw.
+        if self.timer_23c == 0 {
+            let mut best = 100_000_000;
+            let mut pick = None;
+            for m in ctx.missiles {
+                if m.launch >= 11 || m.shot || m.kind > 1 {
+                    continue;
+                }
+                let Some((tx, ty)) = m.target else { continue };
+                let dx = (m.widget_x + 40) - (tx + 40);
+                let dy = (m.widget_y + 40) - (ty + 40);
+                let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+                if d < best {
+                    best = d;
+                    pick = Some(m.index);
+                }
+            }
+            if let Some(i) = pick {
+                out.shoot_missile = Some(i);
+                self.coin_timer = 0;
+                if self.eat_timer == 0 {
+                    self.eat_timer = 10;
+                }
+            }
+        }
         if self.coin_timer > self.coin_interval {
             self.coin_timer = 0;
             if self.timer_23c == 0 {
@@ -1640,6 +1666,8 @@ pub struct PetFishOut {
     pub ball: Option<(i32, i32, usize)>,
     /// Walter's glove can hit around this fist point this tick.
     pub fist: Option<(i32, i32)>,
+    /// Stanley shoots down missile `i` (the board draws the cooldown).
+    pub shoot_missile: Option<usize>,
     /// A punched Presto pet reverts to Presto (slot 73 with 19).
     pub revert: bool,
 }
@@ -1661,6 +1689,21 @@ pub struct PetCtx<'a> {
     pub brinkley: bool,
     /// Aliens with a ball on them (`+0x98`), for Stanley.
     pub balled: &'a [usize],
+    /// Missiles Stanley can shoot down.
+    pub missiles: &'a [MissileView],
+}
+
+/// What Stanley sees of a missile (pet-stanley.md#shooting-down-missiles-0x004e55d0).
+#[derive(Debug, Clone, Copy)]
+pub struct MissileView {
+    pub index: usize,
+    pub kind: i32,
+    pub launch: i32,
+    pub shot: bool,
+    pub widget_x: i32,
+    pub widget_y: i32,
+    /// Its target fish's widget position.
+    pub target: Option<(i32, i32)>,
 }
 
 impl PetCtx<'_> {

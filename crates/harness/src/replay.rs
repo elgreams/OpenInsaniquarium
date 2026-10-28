@@ -671,6 +671,9 @@ pub fn missile_from_raw(b: &[u8]) -> insaniquarium_sim::missile::Missile {
         row: rd_i32(b, 0x1a0),
         target: (rd_i32(b, 0x1a4) != 0).then_some(0),
         id: 0,
+        shot_progress: rd_i32(b, 0x1a8),
+        shot_duration: rd_i32(b, 0x1ac),
+        shot_from: (rd_i32(b, 0x1b0), rd_i32(b, 0x1b4)),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -715,6 +718,12 @@ fn missile_json(m: &insaniquarium_sim::missile::Missile) -> Value {
         "x": m.x, "y": m.y, "vx": m.vx, "vy": m.vy, "launch": m.launch, "spin": m.spin,
         "div": m.divisor, "bounced": m.bounced, "cel": m.cel, "kind": m.kind, "row": m.row,
         "targeted": m.target.is_some() || m.kind == 0, "widget": [m.widget_x, m.widget_y],
+        "shot": if m.shot_progress > 0 {
+            json!([m.shot_progress, m.shot_duration, m.shot_from.0, m.shot_from.1])
+        } else {
+            // Unset (heap leftovers) until Stanley shoots it.
+            json!(null)
+        },
     })
 }
 

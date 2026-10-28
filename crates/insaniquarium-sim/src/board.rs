@@ -2621,6 +2621,31 @@ impl Board {
                 .zip(&self.shop.revealed)
                 .any(|(p, &r)| p.is_some() && !r);
             let balled: Vec<usize> = self.missiles.iter().filter_map(|m| m.target).collect();
+            let missile_views: Vec<crate::itchy::MissileView> = self
+                .missiles
+                .iter()
+                .enumerate()
+                .map(|(k, m)| crate::itchy::MissileView {
+                    index: k,
+                    kind: m.kind,
+                    launch: m.launch,
+                    shot: m.shot_progress >= 1,
+                    widget_x: m.widget_x,
+                    widget_y: m.widget_y,
+                    target: if m.kind == 0 {
+                        self.missile_target(m.id).map(|(c, j)| {
+                            let f = if c {
+                                &self.carnivores[j]
+                            } else {
+                                &self.guppies[j]
+                            };
+                            (f.widget_x, f.widget_y)
+                        })
+                    } else {
+                        None
+                    },
+                })
+                .collect();
             let ctx = crate::itchy::PetCtx {
                 aliens: &self.aliens,
                 hungry,
@@ -2634,6 +2659,7 @@ impl Board {
                     .iter()
                     .any(|f| f.kind == crate::fish::FishKind::Brinkley),
                 balled: &balled,
+                missiles: &missile_views,
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
@@ -2752,6 +2778,29 @@ impl Board {
                 let mut f = crate::food::Food::new_potion(x, y, &mut self.rng);
                 f.update();
                 self.foods.push(f);
+            }
+            if let Some(mi) = out.shoot_missile {
+                // Stanley's shot (`0x004e55d0`): the cooldown from a global
+                // `% 100`, GROW, and the missile's shoot-down timeline: from
+                // his widget centre-top, 1 tick per 16 px.
+                let r = self.global_rng.next_range(100);
+                self.fish_pets[i].timer_23c = if r < 10 {
+                    30
+                } else if r < 60 {
+                    60
+                } else {
+                    90
+                };
+                self.play(0x122, Sound::Grow);
+                let f = &self.fish_pets[i];
+                let from = (f.widget_x + 40, f.widget_y + 10);
+                let m = &mut self.missiles[mi];
+                let dx = from.0 - (m.widget_x + 40);
+                let dy = from.1 - (m.widget_y + 40);
+                let d2 = dx * dx + dy * dy;
+                m.shot_from = from;
+                m.shot_progress = 1;
+                m.shot_duration = ((d2 as f32).sqrt() * 0.0625) as i32;
             }
             if let Some((x, y, t)) = out.ball {
                 // `0x00544130`: onto `+0xdc` (after `+0xb4` in z-order, so it
