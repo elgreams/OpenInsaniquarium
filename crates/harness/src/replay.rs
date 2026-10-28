@@ -56,6 +56,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
             0x15 if rd_i32(b, 0x234) == 20 => FishKind::Brinkley,
             0x15 if rd_i32(b, 0x234) == 21 => FishKind::Nostradamus,
             0x15 if rd_i32(b, 0x234) == 22 => FishKind::Stanley,
+            0x15 if rd_i32(b, 0x234) == 23 => FishKind::Walter,
             0x15 => FishKind::Itchy,
             _ => FishKind::Guppy,
         },
@@ -121,7 +122,10 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         } else {
             0
         },
-        clicks: if rd_i32(b, 0x8c) == 0x15 && rd_i32(b, 0x234) != 22 && b.len() > 0x264 {
+        clicks: if rd_i32(b, 0x8c) == 0x15
+            && !matches!(rd_i32(b, 0x234), 22 | 23)
+            && b.len() > 0x264
+        {
             rd_i32(b, 0x260)
         } else {
             0
@@ -131,6 +135,24 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         } else {
             0
         },
+        // Walter's glove (`+0x24c`, not on any list: a pointer; its life and
+        // position aren't captured) is kept as "has a glove" (pet-walter.md).
+        glove: (rd_i32(b, 0x8c) == 0x15 && b.len() > 0x250 && rd_i32(b, 0x24c) != 0)
+            .then(|| insaniquarium_sim::missile::Glove::new(false)),
+        punches: if rd_i32(b, 0x8c) == 0x15
+            && matches!(rd_i32(b, 0x234), 19 | 23)
+            && b.len() > 0x264
+        {
+            rd_i32(b, 0x260)
+        } else {
+            0
+        },
+        tired: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x268 {
+            rd_i32(b, 0x264)
+        } else {
+            0
+        },
+        reverting: false,
         // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
         blink: rd_i32(b, 0x8c) == 0x15
             && match rd_i32(b, 0x234) {
@@ -577,7 +599,7 @@ fn fish_json(f: &Fish) -> Value {
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
         "presto": [f.presto, f.recharge, f.puff], "t23c": f.timer_23c, "c240": f.count_240,
-        "grow": f.grow,
+        "grow": f.grow, "walter": [f.glove.is_some(), f.punches, f.tired],
     })
 }
 

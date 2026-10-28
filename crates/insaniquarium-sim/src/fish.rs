@@ -75,6 +75,9 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 22, Stanley: grows with an alien in, throws
     /// balls at it (`pet-stanley.md`).
     Stanley,
+    /// `Sexy::FishTypePet` id 23, Walter: click him to punch; the glove
+    /// knocks fish aside (`pet-walter.md`).
+    Walter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,6 +181,14 @@ pub struct Fish {
     pub count_240: i32,
     /// FishTypePet `+0x260`: Stanley's grow counter (0..10).
     pub grow: i32,
+    /// Walter: `+0x24c` the glove, `+0x260` punch count, `+0x264` tired
+    /// timer (pet-walter.md#fields-used-by-id-23).
+    pub glove: Option<crate::missile::Glove>,
+    pub punches: i32,
+    pub tired: i32,
+    /// Set at step 7 when a punched Presto pet reverts (the rest of the
+    /// update is skipped by the caller).
+    pub reverting: bool,
 }
 
 /// Board facts a guppy update reads.
@@ -307,6 +318,10 @@ impl Fish {
             timer_23c: 0,
             count_240: 0,
             grow: 0,
+            glove: None,
+            punches: 0,
+            tired: 0,
+            reverting: false,
             widget_x: x,
             widget_y: y,
         };
@@ -1055,7 +1070,8 @@ impl Fish {
             m if m > 4 => self.patrol(),
             0 => {
                 if self.vy_damp_timer == 0 {
-                    self.vy = 0.5;
+                    // A tired Walter sinks twice as fast (pet-walter.md, step 4).
+                    self.vy = if self.tired >= 1 { 1.0 } else { 0.5 };
                 }
                 if self.mode_timer >= 40 {
                     self.mode_timer = 0;
@@ -1154,6 +1170,12 @@ impl Fish {
             self.push *= 0.9;
             self.push_timer -= 1;
             self.x += self.push;
+            // A punched Presto pet turns back into Presto once the timer is
+            // below 41 (pet-presto.md#update-0x004f7ad0-id-19).
+            if self.presto && self.kind != FishKind::Presto && self.push_timer < 41 {
+                self.recharge = 0;
+                self.reverting = true;
+            }
         }
         if self.misc_timer > 0 {
             self.misc_timer -= 1;

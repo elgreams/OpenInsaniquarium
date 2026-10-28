@@ -176,3 +176,58 @@ impl Missile {
         }
     }
 }
+
+/// Walter's boxing glove (`Sexy::BoxingGlove`, pet-walter.md#the-boxing-glove).
+/// Owned by Walter, on no board list; he updates and draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Glove {
+    /// `+0x30`, `+0x34`: widget position (−200, −200 until it first moves).
+    pub widget_x: i32,
+    pub widget_y: i32,
+    /// `+0x15c`: life, 30 → 0.
+    pub life: i32,
+    /// `+0x160`: true = right.
+    pub right: bool,
+    /// `+0x164`: punch-sound cooldown.
+    pub sound_cooldown: i32,
+}
+
+impl Glove {
+    pub fn new(right: bool) -> Self {
+        Glove {
+            widget_x: -200,
+            widget_y: -200,
+            life: 30,
+            right,
+            sound_cooldown: 0,
+        }
+    }
+
+    /// `BoxingGlove::Update` (`0x004e9a60`) up to the hit pass: waits while
+    /// the owner's punch timer is above 35, else follows him and counts
+    /// down. Returns the fist point while it can hit (life > 12).
+    pub fn update(&mut self, owner_wx: i32, owner_wy: i32, punch_timer: i32) -> Option<(i32, i32)> {
+        if punch_timer > 35 {
+            return None;
+        }
+        self.widget_x = owner_wx + if self.right { -20 } else { -60 };
+        self.widget_y = owner_wy;
+        self.life -= 1;
+        if self.life <= 0 {
+            return None;
+        }
+        if self.sound_cooldown > 0 {
+            self.sound_cooldown -= 1;
+        }
+        if self.life <= 12 {
+            return None;
+        }
+        let reach = match self.life {
+            26.. => 0,
+            21..=25 => 30,
+            _ => 60,
+        };
+        let px = self.widget_x + 80 + if self.right { reach } else { -reach };
+        Some((px, self.widget_y + 40))
+    }
+}

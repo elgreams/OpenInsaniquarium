@@ -34,6 +34,7 @@ pub const ANGIE: i32 = 18;
 pub const BRINKLEY: i32 = 20;
 pub const NOSTRADAMUS: i32 = 21;
 pub const STANLEY: i32 = 22;
+pub const WALTER: i32 = 23;
 
 /// Vert's coin interval (`FishTypePet` ctor, id 6, normal game).
 const VERT_INTERVAL: i32 = 216;
@@ -200,6 +201,47 @@ impl Fish {
         f
     }
 
+    /// `AddPet(23)`'s fish part: mouse-visible (no RNG).
+    pub fn new_walter(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new_itchy(x, y, rng);
+        f.kind = FishKind::Walter;
+        f
+    }
+
+    /// Walter's left click (`0x004fb680`, id 23): a punch when the punch
+    /// timer, glove, tired timer and turn are all 0. Returns false to let
+    /// the click through to the tank. `classic` irrelevant here.
+    pub fn walter_punch(&mut self) -> Option<bool> {
+        if self.eat_timer != 0 || self.glove.is_some() || self.tired != 0 || self.turn_timer != 0 {
+            return None;
+        }
+        #[allow(clippy::float_cmp)]
+        let right = if self.vx < 0.0 || (self.vx as i32 == 0 && self.facing < 0.0) {
+            false
+        } else if self.vx > 0.0 || self.facing > 0.0 {
+            true
+        } else {
+            return Some(false);
+        };
+        self.glove = Some(crate::missile::Glove::new(right));
+        self.punches += 1;
+        if self.punches == 5 {
+            self.tired = 360;
+            self.punches = 0;
+            self.mode = 0;
+        }
+        self.cel = 0;
+        self.eat_timer = 40;
+        Some(true)
+    }
+
+    /// Does a click land on Walter's widget (80 × 80 minus the mouse
+    /// insets: 10 off the top, 15 off the bottom)?
+    pub fn walter_hit(&self, x: i32, y: i32) -> bool {
+        (self.widget_x..self.widget_x + 80).contains(&x)
+            && (self.widget_y + 10..self.widget_y + 65).contains(&y)
+    }
+
     /// `AddPet(19)`'s fish part: no id-19 ctor branch (pet-presto.md).
     pub fn new_presto(x: i32, y: i32, rng: &mut MtRand) -> Self {
         let mut f = Fish::new_itchy(x, y, rng);
@@ -242,7 +284,17 @@ impl Fish {
     /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
     /// board must apply.
     pub fn update_fish_pet(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
-        let out = self.update_fish_pet_kind(ctx, rng);
+        let mut out = self.update_fish_pet_kind(ctx, rng);
+        if self.reverting {
+            // Reverted at step 7: the update returned there; the board
+            // replaces the pet with Presto.
+            self.reverting = false;
+            out = PetFishOut {
+                revert: true,
+                ..Default::default()
+            };
+            return out;
+        }
         // Presto pets (pet-presto.md#update-0x004f7ad0-id-19): the recharge
         // counts down, the smoke puff counts up to 20.
         if self.recharge != 0 {
@@ -261,6 +313,7 @@ impl Fish {
             FishKind::Brinkley => self.update_brinkley(ctx, rng),
             FishKind::Nostradamus => self.update_nostradamus(ctx, rng),
             FishKind::Stanley => self.update_stanley(ctx, rng),
+            FishKind::Walter => self.update_walter(rng),
             FishKind::Prego => self.update_prego(aliens, rng),
             FishKind::Vert => self.update_vert(aliens, rng),
             FishKind::Zorf => self.update_zorf(ctx, rng),
@@ -900,6 +953,83 @@ impl Fish {
         out
     }
 
+    /// Walter (pet-walter.md#update-0x004f7ad0-id-23): the glove first
+    /// (its fist point is returned for the board's hit pass), the tired
+    /// timer, the guppy swim modes, and the punch animation.
+    fn update_walter(&mut self, rng: &mut MtRand) -> PetFishOut {
+        let mut out = PetFishOut::default();
+        self.pre_update();
+        // Step 1a: the glove, from his widget position as of last tick.
+        if let Some(g) = &mut self.glove {
+            out.fist = g.update(self.widget_x, self.widget_y, self.eat_timer);
+            if g.life < 1 {
+                self.glove = None;
+            }
+        }
+        if self.tired != 0 {
+            self.tired -= 1;
+        }
+        if self.timer_23c != 0 {
+            self.timer_23c -= 1;
+        }
+        self.swim_modes_calm();
+        self.mode_timer += 1;
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            // While tired only the first draw is made.
+            if rng.next_range(10) == 0 && self.tired == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
+        self.damping_timers();
+        self.drift_by_vx_bucket();
+        self.clamp_pet();
+        self.edge_steer();
+        // Animation, id 23: no turning while the glove exists (vx = 0).
+        if self.glove.is_some() {
+            if (self.facing > 0.0 && self.vx < 0.0) || (self.facing < 0.0 && self.vx > 0.0) {
+                self.vx = 0.0;
+            }
+        } else if self.facing > 0.0 && self.vx < 0.0 {
+            self.turn_timer = 20;
+        } else if self.facing < 0.0 && self.vx > 0.0 {
+            self.turn_timer = -20;
+        }
+        if self.turn_timer != 0 {
+            self.turn_timer -= self.turn_timer.signum();
+            if self.turn_timer == 0 {
+                self.eat_timer = 0;
+            }
+        }
+        if self.turn_timer > 0 {
+            self.cel = 9 - self.turn_timer / 2;
+        } else if self.turn_timer < 0 {
+            self.cel = self.turn_timer / 2 + 9;
+        } else if self.eat_timer >= 1 {
+            self.eat_timer -= 1;
+            let t = self.eat_timer;
+            self.cel = match t {
+                30.. => 9 - (t + 1 - 21) / 2,
+                10..=29 => 4,
+                _ => t / 2,
+            };
+        } else {
+            self.swim_cycle += if self.anim_frame < 2 { 1 } else { 2 };
+            if self.swim_cycle > 39 {
+                self.swim_cycle = 0;
+            }
+            self.cel = if self.swim_cycle < 20 {
+                self.swim_cycle / 2
+            } else {
+                (self.swim_cycle / 2 - 19).abs()
+            };
+        }
+        self.update_facing();
+        self.integrate();
+        out
+    }
+
     /// Blip (pet-blip.md): Itchy's swimming; on the first update past
     /// level tick 200 he reveals every shop slot (the board does it).
     fn update_blip(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
@@ -1503,6 +1633,10 @@ pub struct PetFishOut {
     pub potion: Option<(i32, i32)>,
     /// Stanley throws a ball from (x, y) at alien `i` (`0x00544130`).
     pub ball: Option<(i32, i32, usize)>,
+    /// Walter's glove can hit around this fist point this tick.
+    pub fist: Option<(i32, i32)>,
+    /// A punched Presto pet reverts to Presto (slot 73 with 19).
+    pub revert: bool,
 }
 
 /// What a fish-shaped pet's update reads from the board.

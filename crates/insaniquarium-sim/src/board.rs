@@ -469,6 +469,7 @@ impl Board {
             crate::itchy::BRINKLEY => Fish::new_brinkley(a, _b, rng),
             crate::itchy::NOSTRADAMUS => Fish::new_nostradamus(a, _b, rng),
             crate::itchy::STANLEY => Fish::new_stanley(a, _b, rng),
+            crate::itchy::WALTER => Fish::new_walter(a, _b, rng),
             // TODO(spec): pets 20–23 (bonus-pets-plan.md).
             _ => {
                 self.rng.next_range(5);
@@ -503,6 +504,7 @@ impl Board {
             K::Brinkley => BRINKLEY,
             K::Nostradamus => NOSTRADAMUS,
             K::Stanley => STANLEY,
+            K::Walter => WALTER,
             _ => ITCHY,
         }
     }
@@ -593,6 +595,17 @@ impl Board {
         // Remove the old pet (`0x00541d90`); its shadow goes with it.
         if let Some(i) = fish {
             let old = self.fish_pets.remove(i);
+            // Between Presto and Walter the punch count and tired timer
+            // carry over (`0x004f8a56`, pet-walter.md#construction).
+            use crate::fish::FishKind as K;
+            if matches!(
+                (old.kind, n),
+                (K::Walter, crate::presto::PRESTO) | (K::Presto, crate::itchy::WALTER)
+            ) && let Some(new) = self.fish_pets.last_mut()
+            {
+                new.punches = old.punches;
+                new.tired = old.tired;
+            }
             // `0x004d6250`: a sheltering Wadsworth releases his guppies,
             // Meryl's song stops.
             match old.kind {
@@ -669,6 +682,20 @@ impl Board {
                     self.play(0x11b, Sound::Eel3);
                 } else {
                     self.amp_zap(i);
+                }
+                return ClickResult::Ignored;
+            }
+            // Walter is mouse-visible: a click on him punches, unless he's
+            // busy, turning or tired, when it falls through to the tank
+            // (pet-walter.md#clicks-slot-54-0x004fbe20--0x004fb680).
+            if let Some(i) = self
+                .fish_pets
+                .iter()
+                .rposition(|f| f.kind == crate::fish::FishKind::Walter && f.walter_hit(x, y))
+                && let Some(punched) = self.fish_pets[i].walter_punch()
+            {
+                if punched {
+                    self.play(0x136, Sound::Sfx);
                 }
                 return ClickResult::Ignored;
             }
@@ -923,6 +950,83 @@ impl Board {
                     }
                 }
             }
+        }
+    }
+
+    /// A punched Presto pet `i` turns back into Presto (slot 73 with 19,
+    /// pet-presto.md#the-change): GROW, a new flagged Presto at its widget
+    /// spot (no position draws), the old pet removed.
+    fn presto_revert(&mut self, i: usize) {
+        let (wx, wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
+        self.play(0x122, Sound::Grow);
+        self.add_pet_at(crate::presto::PRESTO, Some((wx, wy)), true);
+        let old = self.fish_pets.remove(i);
+        match old.kind {
+            crate::fish::FishKind::Wadsworth if old.blink => self.shelter = None,
+            crate::fish::FishKind::Meryl => self.song = false,
+            _ => {}
+        }
+    }
+
+    /// The glove's hit pass (`0x004e9a60` → `0x004e0ed0`, pet-walter.md):
+    /// every guppy, carnivore and fish pet (but Prego and Walter `w`
+    /// himself) whose centre is within 40 px of the fist, not already
+    /// pushed, is knocked aside: push timer 50, push ±15 or ±10 (one global
+    /// draw each), its coin clock put k ticks short of its interval.
+    ///
+    /// Deviation: the original walks its master set in heap-address order
+    /// (`pet-walter.md#deviations`); this walks guppies, carnivores, then
+    /// the fish pets.
+    fn glove_hits(&mut self, w: usize, px: i32, py: i32) {
+        use crate::fish::FishKind as K;
+        let Some(g) = self.fish_pets[w].glove else {
+            return;
+        };
+        let s = if g.right { 1.0 } else { -1.0 };
+        let mut hit = false;
+        let global = &mut self.global_rng;
+        let mut knock = |f: &mut Fish, k: i32| {
+            if f.push_timer > 0 {
+                return;
+            }
+            let (cx, cy) = (f.widget_x + 40, f.widget_y + 40);
+            if !(px - 40 < cx && cx < px + 40 && py - 40 < cy && cy < py + 40) {
+                return;
+            }
+            if k > 0 {
+                f.coin_timer = f.coin_interval - k;
+            }
+            f.push_timer = 50;
+            f.misc_timer = 180;
+            f.push = if global.next_u31() & 1 == 0 {
+                s * 15.0
+            } else {
+                s * 10.0
+            };
+            hit = true;
+        };
+        for f in self.guppies.iter_mut().chain(self.carnivores.iter_mut()) {
+            knock(f, 5);
+        }
+        for (j, f) in self.fish_pets.iter_mut().enumerate() {
+            if j == w || f.kind == K::Prego {
+                continue;
+            }
+            // A pet Presto made fewer than 30 updates ago can't be hit.
+            if f.presto && f.kind != K::Presto && f.recharge > crate::presto::RECHARGE - 30 {
+                continue;
+            }
+            let k = match f.kind {
+                K::Vert | K::Shrapnel | K::Amp => 5,
+                K::Nostradamus => 10,
+                _ => -1,
+            };
+            knock(f, k);
+        }
+        let glove = self.fish_pets[w].glove.as_mut().expect("glove");
+        if hit && glove.sound_cooldown == 0 {
+            glove.sound_cooldown = 5;
+            self.play(0x130, Sound::Punch);
         }
     }
 
@@ -2038,7 +2142,8 @@ impl Board {
         // update after the pets in the same pass (`tank1-5_full_01`: a
         // newborn's hunger is already one down on its first snapshot).
         let mut born = Vec::new();
-        for i in 0..self.fish_pets.len() {
+        let mut i = 0;
+        while i < self.fish_pets.len() {
             if self.paused {
                 break;
             }
@@ -2069,6 +2174,12 @@ impl Board {
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
             let out = self.fish_pets[i].update_fish_pet(ctx, &mut self.rng);
+            if out.revert {
+                // Slot 73 with 19: Presto is added at the end of `+0xb4`
+                // (he updates later in this pass) and this pet is removed.
+                self.presto_revert(i);
+                continue;
+            }
             if let Some((x, y, motion)) = out.food {
                 // Food made in the object pass updates in it (board.md).
                 let mut f = crate::food::Food::new_thrown(x, y, motion, &mut self.rng);
@@ -2189,6 +2300,9 @@ impl Board {
                 ));
                 self.play(0x122, Sound::Grow);
             }
+            if let Some((px, py)) = out.fist {
+                self.glove_hits(i, px, py);
+            }
             if let Some((x, y)) = out.bomb {
                 self.coins.push(Coin::new(x, y, crate::coin::kind::BOMB));
                 self.play(0x143, Sound::Unleash);
@@ -2208,6 +2322,7 @@ impl Board {
                 let n = self.guppies.len();
                 self.fish_pets[i].finish_prego(out.birth.is_some(), n);
             }
+            i += 1;
         }
         self.update_missiles();
         // Revived guppies are the last ones before this tick's births.
@@ -2291,6 +2406,46 @@ mod tests {
         b.tutorial = true;
         b.add_random_guppy();
         b
+    }
+
+    #[test]
+    fn walter_punches_a_guppy_and_tires_after_five() {
+        let mut b = Board::new(MtRand::new(1), MtRand::new(2));
+        b.add_pet(crate::itchy::WALTER);
+        b.add_random_guppy();
+        let w = 0;
+        // Facing right, a guppy just right of him, both at rest.
+        b.fish_pets[w].vx = 0.0;
+        b.fish_pets[w].facing = 1.0;
+        let (wx, wy) = (b.fish_pets[w].widget_x, b.fish_pets[w].widget_y);
+        let g = &mut b.guppies[0];
+        (g.x, g.y, g.vy, g.vy_damp_timer) = (f64::from(wx + 40), f64::from(wy), 0.0, 0);
+        (g.widget_x, g.widget_y) = (wx + 40, wy);
+        b.step(&[Input::Click {
+            x: wx + 40,
+            y: wy + 40,
+        }]);
+        assert!(b.fish_pets[w].glove.is_some());
+        for _ in 0..40 {
+            b.step(&[]);
+        }
+        assert!(b.fish_pets[w].glove.is_none());
+        assert!(
+            b.guppies[0].push_timer > 0 || b.guppies[0].push != 0.0,
+            "guppy knocked"
+        );
+        for _ in 0..4 {
+            let (wx, wy) = (b.fish_pets[w].widget_x, b.fish_pets[w].widget_y);
+            b.fish_pets[w].turn_timer = 0;
+            b.step(&[Input::Click {
+                x: wx + 40,
+                y: wy + 40,
+            }]);
+            for _ in 0..41 {
+                b.step(&[]);
+            }
+        }
+        assert!(b.fish_pets[w].tired > 0 && b.fish_pets[w].punches == 0);
     }
 
     #[test]

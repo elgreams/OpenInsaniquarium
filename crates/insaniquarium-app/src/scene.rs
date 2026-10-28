@@ -87,6 +87,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_NOSTRADAMUS",
     "IMAGE_STANLEY",
     "IMAGE_BALLS",
+    "IMAGE_WALTER",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -980,6 +981,24 @@ fn fish_pet_cel(f: &Fish, z: f32) -> Cel {
     Cel::new(image, col, row, f.widget_x, f.widget_y, z).mirror(mirror)
 }
 
+/// Walter (`0x004dfa00`, pet-walter.md#drawing): row 1 turning, row 2
+/// punching, else row 0; ZZZ while tired. `static`, not frame-checked.
+fn walter_cel(f: &Fish, z: f32) -> Cel {
+    let row = if f.turn_timer != 0 {
+        1
+    } else if f.eat_timer > 0 {
+        2
+    } else {
+        0
+    };
+    let mirror = if row == 1 {
+        f.turn_timer > 0
+    } else {
+        f.vx > 0.0 || (f.vx == 0.0 && f.facing > 0.0)
+    };
+    Cel::new("IMAGE_WALTER", f.cel, row, f.widget_x, f.widget_y, z).mirror(mirror)
+}
+
 /// Stanley (`0x004dfac0`, pet-stanley.md#drawing-0x004dfac0): rows 0/1
 /// small, 2/3/4 big (alien in), 5 growing. `static`, not frame-checked.
 fn stanley_cel(f: &Fish, alarmed: bool, z: f32) -> Cel {
@@ -1641,8 +1660,43 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             FishKind::Itchy => itchy_cel(f, !b.aliens.is_empty(), z),
             FishKind::Presto => presto_cel(f, z),
             FishKind::Stanley => stanley_cel(f, !b.aliens.is_empty(), z),
+            FishKind::Walter => walter_cel(f, z),
             _ => fish_pet_cel(f, z),
         });
+        // Walter's glove, behind him (pet-walter.md#drawing): the arm and
+        // fist from row 2 of his sheet. `static`, not frame-checked.
+        if let Some(g) = f.glove
+            && g.widget_x > -200
+        {
+            let d = (g.life - 15).abs();
+            let a = 9 - d;
+            if a >= 1 {
+                let ax = if g.right { 83 } else { -3 };
+                cels.push(
+                    Cel::new(
+                        "IMAGE_WALTER",
+                        a.max(6),
+                        2,
+                        g.widget_x + ax,
+                        g.widget_y + 2,
+                        z - 0.0004,
+                    )
+                    .mirror(g.right),
+                );
+            }
+            let fx = if g.right { 100 - 6 * d } else { 6 * d - 20 };
+            cels.push(
+                Cel::new(
+                    "IMAGE_WALTER",
+                    5,
+                    2,
+                    g.widget_x + fx,
+                    g.widget_y,
+                    z - 0.0003,
+                )
+                .mirror(g.right),
+            );
+        }
         // The smoke puff over a new Presto pet (pet-presto.md#drawing).
         if (f.presto || f.kind == FishKind::Nostradamus) && f.puff < insaniquarium_sim::presto::PUFF
         {
