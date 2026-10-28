@@ -1376,6 +1376,28 @@ impl DeadFish {
         }
     }
 
+    /// A starved Starcatcher's corpse (`0x004f3c60`): kind 8, vy 0 (then
+    /// AddDeadFish's start rule).
+    pub fn starcatcher(s: &crate::starcatcher::Starcatcher) -> Self {
+        let (x, y) = (f64::from(s.x as i32), f64::from(s.y as i32));
+        let vy = if y >= 115.0 { -2.0 } else { -1.0 };
+        DeadFish {
+            x,
+            y,
+            vx: s.vx,
+            vy,
+            divisor: s.divisor,
+            kind: 8,
+            facing_right: s.vx > 0.0,
+            cel: 0,
+            turn: 100,
+            alpha: 1.0,
+            life: 125,
+            widget_x: x as i32,
+            widget_y: y as i32,
+        }
+    }
+
     /// `DeadFish::Update` (`0x004f64e0`), unpaused ticks. Returns false
     /// when it's gone.
     pub fn update(&mut self) -> bool {
@@ -1388,6 +1410,8 @@ impl DeadFish {
         } else {
             self.cel = match self.life {
                 l if l > 105 => 9 - (l - 106) / 2,
+                // Kinds 8/9 use only the first rule (fish-guppy.md#dead-fish).
+                _ if matches!(self.kind, 8 | 9) => 9,
                 103 | 104 => 8,
                 101 | 102 => 7,
                 l if l > 100 => 9,
@@ -1405,7 +1429,9 @@ impl DeadFish {
         if self.turn < 1 {
             return false;
         }
-        if self.y > 370.0 || self.life > 105 {
+        // Kind 8 (Starcatcher) counts its life below y 365 (starcatcher.md).
+        let floor = if self.kind == 8 { 365.0 } else { 370.0 };
+        if self.y > floor || self.life > 105 {
             self.life -= 1;
         }
         if self.vx > 0.0 {
@@ -1418,7 +1444,9 @@ impl DeadFish {
         }
         self.y += self.vy / self.divisor;
         self.x += self.vx / self.divisor;
-        self.y = self.y.clamp(85.0, 380.0);
+        self.y = self
+            .y
+            .clamp(85.0, if self.kind == 8 { 370.0 } else { 380.0 });
         self.x = self.x.clamp(10.0, 540.0);
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;

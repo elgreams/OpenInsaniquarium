@@ -18,6 +18,7 @@ pub mod presto;
 pub mod profile;
 pub mod shop;
 pub mod sound;
+pub mod starcatcher;
 
 pub use board::Board;
 pub use coin::Coin;

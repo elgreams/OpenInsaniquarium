@@ -423,6 +423,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| dead_fish_from_raw(b))
         .collect();
+    board.starcatchers = raw_list(first, "penta")
+        .iter()
+        .map(|b| starcatcher_from_raw(b))
+        .collect();
     board.warps = raw_list(first, "warp")
         .iter()
         .map(|b| warp_from_raw(b))
@@ -664,6 +668,40 @@ pub fn missile_from_raw(b: &[u8]) -> insaniquarium_sim::missile::Missile {
     }
 }
 
+/// A Starcatcher from its raw bytes (starcatcher.md#fields).
+pub fn starcatcher_from_raw(b: &[u8]) -> insaniquarium_sim::starcatcher::Starcatcher {
+    insaniquarium_sim::starcatcher::Starcatcher {
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x168),
+        vy: rd_f64(b, 0x170),
+        divisor: rd_f64(b, 0x178),
+        hunger: rd_i32(b, 0x9c),
+        fade: rd_i32(b, 0xa0),
+        fade_to_hungry: b[0xa8] != 0,
+        splash: rd_i32(b, 0x180),
+        target_vx: rd_f64(b, 0x188),
+        mode: rd_i32(b, 0x190),
+        chase_timer: rd_i32(b, 0x194),
+        reroll_timer: rd_i32(b, 0x198),
+        anim: rd_i32(b, 0x19c),
+        cel: rd_i32(b, 0x1a0),
+        eats: rd_i32(b, 0x1a4),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+        shadow_y: 410,
+    }
+}
+
+fn starcatcher_json(s: &insaniquarium_sim::starcatcher::Starcatcher) -> Value {
+    json!({
+        "x": s.x, "y": s.y, "vx": s.vx, "vy": s.vy, "div": s.divisor, "hunger": s.hunger,
+        "fade": [s.fade, s.fade_to_hungry], "splash": s.splash, "tvx": s.target_vx,
+        "mode": s.mode, "timers": [s.chase_timer, s.reroll_timer], "anim": [s.anim, s.cel],
+        "eats": s.eats, "widget": [s.widget_x, s.widget_y],
+    })
+}
+
 fn missile_json(m: &insaniquarium_sim::missile::Missile) -> Value {
     json!({
         "x": m.x, "y": m.y, "vx": m.vx, "vy": m.vy, "launch": m.launch, "spin": m.spin,
@@ -750,6 +788,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "missiles".into(),
         Value::Array(board.missiles.iter().map(missile_json).collect()),
+    );
+    state.insert(
+        "starcatchers".into(),
+        Value::Array(board.starcatchers.iter().map(starcatcher_json).collect()),
     );
     state.insert(
         "dead_aliens".into(),
@@ -845,6 +887,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
                 .collect();
             s.state.insert("aliens".into(), Value::Array(aliens));
             if raw_present(&s) {
+                let stars = raw_list(&s, "penta")
+                    .iter()
+                    .map(|b| starcatcher_json(&starcatcher_from_raw(b)))
+                    .collect();
+                s.state.insert("starcatchers".into(), Value::Array(stars));
                 let missiles = raw_list(&s, "missile")
                     .iter()
                     .map(|b| missile_json(&missile_from_raw(b)))

@@ -187,6 +187,8 @@ pub struct Board {
     pub has_aliens: bool,
     /// `board+0xb8`: aliens.
     pub aliens: Vec<Alien>,
+    /// `board+0xd0`: Starcatchers (`Sexy::Penta`, starcatcher.md).
+    pub starcatchers: Vec<crate::starcatcher::Starcatcher>,
     /// `board+0xdc`: missiles (Stanley's balls for now).
     pub missiles: Vec<crate::missile::Missile>,
     /// `board+0xd8`: shots (click flashes, effect sparks).
@@ -303,6 +305,7 @@ impl Board {
             potion_armed: false,
             potion_hint_shown: false,
             missiles: Vec::new(),
+            starcatchers: Vec::new(),
             light_x: [0.0; 3],
         }
     }
@@ -937,6 +940,54 @@ impl Board {
         );
     }
 
+    /// The Starcatchers (`+0xd0`, after the warps, before food and the
+    /// guppies; starcatcher.md#per-tick-update-slot-22--0x004f94e0).
+    fn update_starcatchers(&mut self) {
+        let mut i = 0;
+        while i < self.starcatchers.len() {
+            let has_aliens = !self.aliens.is_empty();
+            let out = self.starcatchers[i].update(has_aliens, &self.coins, &mut self.rng);
+            if let Some((ci, x, y)) = out.ate {
+                // The star goes unbanked; a rising $200 coin (kind 5) and BUY.
+                self.coins.remove(ci);
+                self.coins.push(Coin::new(x, y, 5));
+                self.play(0x111, Sound::Buy);
+            }
+            if out.died {
+                // Starved (`0x004f3c60`): DIE (pitch +4), a kind-8 corpse
+                // with vy 0, the 2-2 message chain. The rest of the update
+                // already ran this tick (its reroll draw is real).
+                let s = self.starcatchers.remove(i);
+                self.play(0x117, Sound::Die);
+                let mut d = crate::fish::DeadFish::starcatcher(&s);
+                d.update();
+                self.dead_fish.push(d);
+                if (self.tank, self.level) == (2, 2) {
+                    self.starcatcher_died_messages();
+                }
+                continue;
+            }
+            i += 1;
+        }
+    }
+
+    /// The 2-2 chain when a starving Starcatcher is lost (`0x004f3ad0`):
+    /// each line shows if its one-time byte is clear, in this order, the
+    /// later ones only once the earlier ones were shown.
+    fn starcatcher_died_messages(&mut self) {
+        if self.hints[0x23] {
+            self.show_message(
+                "Hint: Star potions allow guppies to produce stars!",
+                false,
+                0x24,
+            );
+        }
+        if self.hints[0x22] {
+            self.show_message("Hint: Starcatchers need stars to stay alive!", false, 0x23);
+        }
+        self.show_message("Warning! Your starcatcher has died!", false, 0x22);
+    }
+
     /// A star potion exploding (at the bottom, or in a small/medium
     /// guppy, food.md): EXPLODE, then 2..4 sparks at (wx ± 10.., wy ± 10..).
     fn star_explosion(&mut self, wx: i32, wy: i32) {
@@ -1556,6 +1607,7 @@ impl Board {
             Slot::Carnivore => self.buy_carnivore(price),
             Slot::Weapon => self.buy_weapon(price),
             Slot::StarPotion => self.buy_star_potion(price),
+            Slot::Starcatcher => self.buy_starcatcher(price),
             // TODO(spec): other slots.
             _ => return ClickResult::Ignored,
         };
@@ -1622,6 +1674,23 @@ impl Board {
         if self.sample_ready(0x111, 3) {
             self.sounds.push(Sound::Buy.into());
         }
+        true
+    }
+
+    /// Slot 6 (`0x00549380` case 6): spend, `BuyStarcatcher` (x, 4 ctor
+    /// draws, shadow), reveal 10 and 11, GROW, the splash draw.
+    fn buy_starcatcher(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        let mut s = crate::starcatcher::Starcatcher::bought(&mut self.rng);
+        s.shadow_y = self.rng.next_range(5) as i32 + 410;
+        self.starcatchers.push(s);
+        self.shop.reveal(Slot::Weapon, true);
+        self.shop.reveal(Slot::EggPiece, true);
+        self.play(0x122, Sound::Grow);
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r).into());
         true
     }
 
@@ -2001,7 +2070,11 @@ impl Board {
         // board are banked first in the original via `0x0053c2d0`; that only
         // matters once coin values on-screen are tracked separately.)
         // TODO(spec): other fish kinds and pets count as fish (`0x005392a0`).
-        if self.guppies.is_empty() && self.carnivores.is_empty() && self.dialog.is_none() {
+        if self.guppies.is_empty()
+            && self.carnivores.is_empty()
+            && self.starcatchers.is_empty()
+            && self.dialog.is_none()
+        {
             self.paused = true;
             self.dialog = Some(if self.tutorial {
                 Dialog::LastFishDied
@@ -2071,6 +2144,7 @@ impl Board {
         self.update_dead_aliens();
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
+        self.update_starcatchers();
         let mut potion_money = 0;
         let mut i = 0;
         while i < self.foods.len() {
@@ -2180,6 +2254,8 @@ impl Board {
             // Wadsworth's shelter hides small and medium guppies from every
             // alien (`0x00500ff0`). Indices stay those of the full list.
             let sheltered = |f: &Fish| self.shelter.is_some() && !f.is_carnivore() && f.stage < 2;
+            // TODO(spec): Starcatchers are prey too (types 5..10,
+            // alien-sylvester.md#31-nearest-prey-0x004e8b60).
             let prey: Vec<&Fish> = self.guppies.iter().chain(&self.carnivores).collect();
             let prey_mask: Vec<bool> = prey.iter().map(|f| sheltered(f)).collect();
             // Replay-only: the original's address-order tie break

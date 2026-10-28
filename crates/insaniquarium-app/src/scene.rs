@@ -88,6 +88,7 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_STANLEY",
     "IMAGE_BALLS",
     "IMAGE_WALTER",
+    "IMAGE_STARCATCHER",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -1629,6 +1630,33 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             f.widget_y - 4,
             1.0,
         ));
+    }
+    // Starcatchers (`+0xd0`, before the guppies; starcatcher.md#drawing):
+    // never mirrored. `static`, not frame-checked.
+    for (i, s) in b.starcatchers.iter().enumerate() {
+        let hungry = s.hunger < 301 && s.fade == 0;
+        let z = 1.9 + i as f32 * 0.001;
+        cels.push(Cel::new(
+            "IMAGE_STARCATCHER",
+            s.cel,
+            i32::from(hungry),
+            s.widget_x,
+            s.widget_y,
+            z,
+        ));
+        if s.fade != 0 {
+            cels.push(
+                Cel::new(
+                    "IMAGE_STARCATCHER",
+                    s.cel,
+                    1,
+                    s.widget_x,
+                    s.widget_y,
+                    z + 0.0005,
+                )
+                .alpha(s.fade.clamp(0, 5) * 255 / 5),
+            );
+        }
     }
     // Guppies, then carnivores (`+0xa4` right after `+0xa0` in z-order).
     for (i, f) in b.guppies.iter().chain(&b.carnivores).enumerate() {
