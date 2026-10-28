@@ -90,6 +90,9 @@ pub const SHEETS: &[&str] = &[
     "IMAGE_WALTER",
     "IMAGE_STARCATCHER",
     "IMAGE_GUS",
+    "IMAGE_DESTRUCTOR",
+    "IMAGE_MISSILE",
+    "IMAGE_CROSSHAIR",
     "IMAGE_PETBUTTON",
     "IMAGE_PETBUTTONRING",
     "IMAGE_PETBUTTONREFLECT",
@@ -1205,6 +1208,7 @@ fn alien_sheet(kind: i32) -> &'static str {
     match kind {
         3 => "IMAGE_BALROG",
         4 => "IMAGE_GUS",
+        5 => "IMAGE_DESTRUCTOR",
         _ => "IMAGE_SYLV",
     }
 }
@@ -1749,16 +1753,35 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
             );
         }
     }
-    // Missiles (`+0xdc`, after the fish pets): Stanley's balls.
+    // Missiles (`+0xdc`, after the fish pets): Stanley's balls and the
+    // Destructor's missiles (alien-kind5.md#72, `static`).
     for (i, m) in b.missiles.iter().enumerate() {
-        cels.push(Cel::new(
-            "IMAGE_BALLS",
-            m.cel,
-            m.row,
-            m.widget_x,
-            m.widget_y,
-            2.77 + i as f32 * 0.001,
-        ));
+        let z = 2.77 + i as f32 * 0.001;
+        let sheet = if m.kind == 0 {
+            ("IMAGE_MISSILE", 0)
+        } else {
+            ("IMAGE_BALLS", m.row)
+        };
+        cels.push(Cel::new(sheet.0, m.cel, sheet.1, m.widget_x, m.widget_y, z));
+    }
+    // The crosshair over a fish with a missile on it.
+    for f in b
+        .guppies
+        .iter()
+        .chain(&b.carnivores)
+        .filter(|f| f.missile.is_some())
+    {
+        cels.push(
+            Cel::new(
+                "IMAGE_CROSSHAIR",
+                f.crosshair / 4,
+                0,
+                f.widget_x,
+                f.widget_y,
+                2.79,
+            )
+            .additive(),
+        );
     }
     for (i, s) in b.shots.iter().enumerate() {
         shot_cels(s, b.laser, 2.8 + i as f32 * 0.001, &mut cels);

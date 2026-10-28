@@ -51,6 +51,8 @@ pub enum Sound {
     Treasure,
     Sfx,
     Guffaw,
+    Missle,
+    Interfer,
 }
 
 impl Sound {
@@ -104,6 +106,8 @@ impl Sound {
             Sound::Treasure => 0x142,
             Sound::Sfx => 0x136,
             Sound::Guffaw => 0x123,
+            Sound::Missle => 0x128,
+            Sound::Interfer => 0x127,
         }
     }
 
@@ -124,7 +128,8 @@ impl Sound {
             | Sound::Roar
             | Sound::Hatch
             | Sound::TapGlass
-            | Sound::Guffaw => None,
+            | Sound::Guffaw
+            | Sound::Interfer => None,
             s => Some(s.sample_id()),
         }
     }
@@ -178,6 +183,8 @@ impl Sound {
             Sound::Treasure => "SOUND_TREASURE",
             Sound::Sfx => "SOUND_SFX",
             Sound::Guffaw => "SOUND_GUFFAW",
+            Sound::Missle => "SOUND_MISSLE",
+            Sound::Interfer => "SOUND_INTERFER",
         }
     }
 

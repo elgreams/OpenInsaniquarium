@@ -45,6 +45,11 @@ pub struct Alien {
     pub max_health: f64,
     /// `+0x200`: hit cooldown (white flash).
     pub cooldown: i32,
+    /// Kind 5 (alien-kind5.md#32): `+0x1a4` fire timer, `+0x1a8` fire
+    /// interval, `+0x1ac` fire animation.
+    pub fire_timer: i32,
+    pub fire_interval: i32,
+    pub fire_anim: i32,
     pub widget_x: i32,
     pub widget_y: i32,
 }
@@ -57,6 +62,9 @@ pub struct AlienOut {
     pub ate: Option<usize>,
     /// Gus (kind 4) ate pellet `i` of the food list (alien-kind4.md#32).
     pub ate_food: Option<usize>,
+    /// The Destructor (kind 5) fires: the board picks targets and makes
+    /// missiles from these launch points (alien-kind5.md#32).
+    pub volley: Option<[(i32, i32); 3]>,
     pub died: bool,
 }
 
@@ -84,7 +92,7 @@ impl Alien {
         };
         let right = rng.next_u31() & 1 != 0;
         let mode = rng.next_range(10) as i32;
-        Alien {
+        let mut a = Alien {
             kind,
             warp: 15,
             x: f64::from(x),
@@ -105,9 +113,18 @@ impl Alien {
             health,
             max_health: health,
             cooldown: 0,
+            fire_timer: 0,
+            fire_interval: 75,
+            fire_anim: 0,
             widget_x: x,
             widget_y: y,
+        };
+        // Kinds 5 and 6 walk the floor at y 280 (alien-kind5.md#constructor).
+        if matches!(kind, 5 | 6) {
+            a.y = 280.0;
+            a.widget_y = 280;
         }
+        a
     }
 
     /// `Alien::Update` (`0x004fd560`), kind 1.
@@ -170,6 +187,9 @@ impl Alien {
         // order; we use list order (ties are rare: equal squared distance).
         if self.kind == 4 {
             self.gus_chase(guppies, hidden, prefer, foods, rng, out);
+        } else if self.kind == 5 {
+            // The Destructor never chases or eats (alien-kind5.md#3).
+            self.wander(rng);
         } else {
             let target = if guppies.is_empty() {
                 None
@@ -210,9 +230,25 @@ impl Alien {
         if self.eat_delay > 0 {
             self.eat_delay -= 1;
         }
+        // Firing (alien-kind5.md#32): while prey exists the timer runs;
+        // past the interval a volley (the board picks the targets), then a
+        // new interval `rand(50) + 150`.
+        if self.kind == 5 && !guppies.is_empty() {
+            self.fire_timer += 1;
+            if self.fire_timer > self.fire_interval {
+                let (ix, iy) = (self.widget_x, self.widget_y);
+                out.volley = Some(if self.vx >= 0.0 {
+                    [(ix + 90, iy - 35), (ix + 105, iy - 30), (ix + 120, iy - 25)]
+                } else {
+                    [(ix - 10, iy - 35), (ix - 25, iy - 30), (ix - 40, iy - 25)]
+                });
+            }
+        }
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
-        self.animate();
+        if out.volley.is_none() {
+            self.animate();
+        }
         out.died = self.health <= 0.0;
     }
 
@@ -397,18 +433,24 @@ impl Alien {
 
     /// §3.3 wander.
     fn wander(&mut self, rng: &mut MtRand) {
+        let floor = self.kind == 5;
         match self.mode {
+            0 if floor => self.tvx = -1.0,
+            2 if floor => self.tvx = -1.0,
+            1 | 3 if floor => self.tvx = 1.0,
             0 => self.tvx = -1.5,
             1 => self.tvx = 1.5,
             2 => self.tvy = -1.5,
             3 => self.tvy = 1.5,
             _ => {}
         }
-        if self.tvy < self.vy {
-            self.vy -= 0.1;
-        }
-        if self.vy < self.tvy {
-            self.vy += 0.1;
+        if !floor {
+            if self.tvy < self.vy {
+                self.vy -= 0.1;
+            }
+            if self.vy < self.tvy {
+                self.vy += 0.1;
+            }
         }
         if self.tvx < self.vx {
             self.vx -= 0.1;
@@ -417,13 +459,28 @@ impl Alien {
             self.vx += 0.1;
         }
         self.counter += 1;
-        self.reroll += 1;
+        // The Destructor's re-roll timer pauses during the fire animation.
+        if !(floor && self.fire_anim != 0) {
+            self.reroll += 1;
+        }
         if self.reroll > 20 {
             self.reroll = 0;
             if rng.next_range(10) == 0 {
                 self.mode = (rng.next_u31() & 3) as i32;
             }
         }
+    }
+
+    /// After a volley the board made: reset the timer, draw the next
+    /// interval (`rand(50) + 150`), start the fire animation if any missile
+    /// went out, then the animation step the update postponed.
+    pub fn finish_volley(&mut self, fired: bool, rng: &mut MtRand) {
+        self.fire_timer = 0;
+        self.fire_interval = rng.next_range(50) as i32 + 150;
+        if fired {
+            self.fire_anim = 10;
+        }
+        self.animate();
     }
 
     /// §3.4 (`0x004daa00`): animation; strokes also move the alien.
@@ -438,11 +495,21 @@ impl Alien {
         } else if self.turn < 0 {
             self.turn += 1;
         }
-        if self.turn > 0 {
+        // The Destructor's fire animation comes first (alien-kind5.md#33).
+        let firing = self.fire_anim > 0 && {
+            self.fire_anim -= 1;
+            if self.fire_anim == 0 {
+                self.anim = 0;
+            }
+            self.fire_anim > 0
+        };
+        if firing {
+            self.cel = self.fire_anim;
+        } else if self.turn > 0 {
             self.cel = 9 - self.turn;
         } else if self.turn < 0 {
             self.cel = self.turn + 10;
-        } else if (-1.6..=1.6).contains(&self.vx) {
+        } else if self.kind == 5 || (-1.6..=1.6).contains(&self.vx) {
             self.anim += 1;
             if self.anim > 19 {
                 self.anim = 0;
@@ -496,8 +563,25 @@ impl Alien {
         if self.cooldown > 0 {
             return None;
         }
-        self.health -= f64::from(3 * laser);
         let s = self.divisor;
+        if matches!(self.kind, 5 | 6) {
+            // Kinds 5/6 (alien-kind5.md#42): 2·laser + 2; sideways
+            // knockback only, none during the fire animation.
+            self.health -= f64::from(2 * laser + 2);
+            if self.fire_anim == 0 {
+                if cx < self.x + 60.0 {
+                    self.vx = 3.0 * s;
+                } else if cx > self.x + 100.0 {
+                    self.vx = -3.0 * s;
+                }
+            }
+            if self.health <= 0.0 {
+                return Some(true);
+            }
+            self.cooldown = 10;
+            return Some(false);
+        }
+        self.health -= f64::from(3 * laser);
         let (left, right) = (cx < self.x + 60.0, cx > self.x + 100.0);
         let (top, bottom) = (cy < self.y + 60.0, cy > self.y + 100.0);
         // Knockback away from the click (§4.2 step 5).

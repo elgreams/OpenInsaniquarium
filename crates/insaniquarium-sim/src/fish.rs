@@ -191,6 +191,10 @@ pub struct Fish {
     pub reverting: bool,
     /// The pet's state right after step 7 on its revert tick.
     pub revert_state: Option<(f64, f64, f64, f64, i32, i32)>,
+    /// `+0x98`: the id of the missile homing on this fish (alien-kind5.md#61).
+    pub missile: Option<u32>,
+    /// `+0x90`: the crosshair counter (0..19) while a missile is on it.
+    pub crosshair: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -329,6 +333,8 @@ impl Fish {
             tired: 0,
             reverting: false,
             revert_state: None,
+            missile: None,
+            crosshair: 0,
             widget_x: x,
             widget_y: y,
         };
@@ -367,6 +373,10 @@ impl Fish {
     /// TODO(spec): the cursor-follow branch, coin drop and alien-present
     /// behaviour are not modelled yet.
     pub fn update(&mut self, env: FishEnv, w: &mut World<'_>) {
+        // The crosshair counter while a missile is on it (`0x004d7020`).
+        if self.missile.is_some() {
+            self.crosshair = (self.crosshair + 1) % 20;
+        }
         if env.paused {
             return;
         }

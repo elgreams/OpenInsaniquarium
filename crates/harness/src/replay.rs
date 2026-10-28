@@ -154,6 +154,9 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         },
         reverting: false,
         revert_state: None,
+        // `+0x98`: a pointer in the capture; kept as "a missile is on it".
+        missile: (b.len() > 0x9c && rd_i32(b, 0x98) != 0).then_some(0),
+        crosshair: 0,
         // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
         blink: rd_i32(b, 0x8c) == 0x15
             && match rd_i32(b, 0x234) {
@@ -285,6 +288,9 @@ pub fn alien_from_raw(b: &[u8]) -> Alien {
         health: rd_f64(b, 0x1f0),
         max_health: rd_f64(b, 0x1f8),
         cooldown: rd_i32(b, 0x200),
+        fire_timer: rd_i32(b, 0x1a4),
+        fire_interval: rd_i32(b, 0x1a8),
+        fire_anim: rd_i32(b, 0x1ac),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -604,6 +610,7 @@ fn fish_json(f: &Fish) -> Value {
         "push": f.push, "coin_t": f.coin_timer, "coin_iv": f.coin_interval,
         "widget": [f.widget_x, f.widget_y], "blink": f.blink, "clicks": f.clicks,
         "presto": [f.presto, f.recharge, f.puff], "t23c": f.timer_23c, "c240": f.count_240,
+        "targeted": f.missile.is_some(),
         "grow": f.grow, "walter": [f.glove.is_some(), f.punches, f.tired],
     })
 }
@@ -623,7 +630,7 @@ fn alien_json(a: &Alien) -> Value {
         "kind": a.kind, "warp": a.warp, "x": a.x, "y": a.y, "vx": a.vx, "vy": a.vy,
         "tv": [a.tvx, a.tvy], "eat": a.eat_delay, "anim": [a.anim, a.turn, a.cel],
         "last_vx": a.last_vx, "mode": [a.mode, a.counter, a.reroll],
-        "hp": a.health, "cool": a.cooldown, "widget": [a.widget_x, a.widget_y],
+        "hp": a.health, "cool": a.cooldown, "fire": [a.fire_timer, a.fire_interval, a.fire_anim], "widget": [a.widget_x, a.widget_y],
     })
 }
 
@@ -663,6 +670,7 @@ pub fn missile_from_raw(b: &[u8]) -> insaniquarium_sim::missile::Missile {
         kind: rd_i32(b, 0x19c),
         row: rd_i32(b, 0x1a0),
         target: (rd_i32(b, 0x1a4) != 0).then_some(0),
+        id: 0,
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -706,7 +714,7 @@ fn missile_json(m: &insaniquarium_sim::missile::Missile) -> Value {
     json!({
         "x": m.x, "y": m.y, "vx": m.vx, "vy": m.vy, "launch": m.launch, "spin": m.spin,
         "div": m.divisor, "bounced": m.bounced, "cel": m.cel, "kind": m.kind, "row": m.row,
-        "targeted": m.target.is_some(), "widget": [m.widget_x, m.widget_y],
+        "targeted": m.target.is_some() || m.kind == 0, "widget": [m.widget_x, m.widget_y],
     })
 }
 
