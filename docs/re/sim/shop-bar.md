@@ -87,8 +87,27 @@ Helpers (our names):
 
 The same switch also writes `+0x2bc` (tank 1: 0/1/2/3/3 by level; 1-2 also sets `+0x2c0 = 1750`). These are not shop fields; they look like alien/wave parameters and belong to the alien spec.
 
+Tank 2 (`0x00541200`, the tank-2 branch):
+
+| Slot | Pos | Price |
+|---|---|---|
+| 0 guppy | 0 | 100 |
+| 2 food quality | 1 | 200 |
+| 3 food quantity | 2 | 300 |
+| 5 star potion | 3 | 250 |
+| 6 Starcatcher | 4 | 750 |
+| 10 weapon | 5 | 1000 |
+| 11 egg piece | 6 | per level |
+
+| Level | Egg price | Wave kind `+0x2bc` | Slots set back to −1 | RNG |
+|---|---|---|---|---|
+| 2-1 | 750 | 2 | 6, 10 | – |
+| 2-2 | 3000 | 3 | – | – (shares tank 1's level-4 case) |
+| 2-3 | 5000 | 4 | – | – |
+| 2-4 | 7500 | 5 | – | – |
+| 2-5 | 10000 | `(r & 1) \| 4`: 4 or 5 | – | 1 app draw |
+
 Other tanks, for reference:
-- Tank 2: slots 0, 2, 3, 5 ($250), 6 ($750), 10, 11.
 - Tank 3: slots 0, 2, 3, 7 ($750), 8 ($2000), 10 ($2000), 11.
 - Tank 4: slots 1 ($200), 2, 3, 4, 9 ($10000), 10 ($5000), 11.
 
