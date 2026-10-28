@@ -907,7 +907,7 @@ impl Fish {
                 }
             }
             if let Some(i) = pick {
-                out.shoot_missile = Some(i);
+                out.shoot_missile = Some((i, (self.widget_x + 40, self.widget_y + 10)));
                 self.coin_timer = 0;
                 if self.eat_timer == 0 {
                     self.eat_timer = 10;
@@ -1666,8 +1666,9 @@ pub struct PetFishOut {
     pub ball: Option<(i32, i32, usize)>,
     /// Walter's glove can hit around this fist point this tick.
     pub fist: Option<(i32, i32)>,
-    /// Stanley shoots down missile `i` (the board draws the cooldown).
-    pub shoot_missile: Option<usize>,
+    /// Stanley shoots down missile `i` from this point, his widget before
+    /// this tick's move (the board draws the cooldown).
+    pub shoot_missile: Option<(usize, (i32, i32))>,
     /// A punched Presto pet reverts to Presto (slot 73 with 19).
     pub revert: bool,
 }

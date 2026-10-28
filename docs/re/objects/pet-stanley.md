@@ -16,9 +16,11 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-22 differen
 - Ball: `Board::AddMissle` `0x00544130` → `Missle::Missle` @ `0x004eae40` (vtable `0x00596c1c`); `Missle::Update` (slot 22) @ `0x004ffb30`; steer `0x004ff4e0`; hit `0x004fc070` (kind-2 half); spin `0x004e2170`; removal (slot 76) @ `0x004d80e0`; draw `0x004e1d00`
 - Animation (slot 89) @ `0x004dfc50` (id-0x16 branch after the Nimbus/Brinkley one); draw body `0x004f8610` case 0x16 → `0x004dfac0` with `IMAGE_STANLEY`
 
-Confidence: everything below is `static` (read from the code; nothing captured yet).
+Capture: `stanley_01` (1-2, him alone, the wave countdown pushed to 320 with Cheat Engine, the alien left to him), replayed exactly from the game's own demo: the grow counter 0→10, three balls (colour from the global stream), hits for 15 (50 → 35 → 20 → 5) and bounces. The guppies died before a 4th hit, so the ball kill is not covered.
 
-Capture: `stanley_01` (1-2, him alone, the wave countdown pushed to 320 with Cheat Engine, the alien left to him), replayed exactly from the game's own demo: the grow counter 0→10, three balls (colour from the global stream), hits for 15 (50 → 35 → 20 → 5) and bounces. The guppies died before a 4th hit, so the ball kill and the missile shoot-down (kinds 0/1, later tanks) are not covered. `traced` where a section says so, else `static`.
+Capture: `tank2-4_stanley_01` (2-4 with him alone, money pushed to 2000 and the countdown to 400), replayed exactly by `stanley_shoots_missiles`: the Destructor's two missiles, both shot down (one reaches its guppy before the 18-tick delay runs out, the other explodes after 14), the cooldown draw (30), GROW. Kind-1 missiles (priorities 1/2) don't exist in the normal game's tanks seen so far and aren't covered.
+
+`traced` where a section says so, else `static`.
 
 ## Fields used by id 22
 
@@ -77,7 +79,7 @@ Each tick, in order:
 
 So with an alien in, a ball goes every 101 ticks (2.8 s at 28 ms/tick), as long as some alien has no ball on it. With one alien that means a new ball only after the last one hit (or left the tank). A shoot-down restarts the 101-tick clock.
 
-`traced` by `stanley_balls` (`stanley_01`) for the grow counter, the throw clock and the target. The shoot-down step is `static`.
+`traced` by `stanley_balls` (`stanley_01`) for the grow counter, the throw clock and the target; the shoot-down step by `stanley_shoots_missiles` (`tank2-4_stanley_01`).
 
 ## The ball (`Missle`, kind 2)
 
@@ -153,7 +155,9 @@ The cooldown branch for `+0x23c > 0` after the loop (`cooldown −= 2` when a pr
 
 The ball of a shoot-down is drawn only: the missile's draw (`0x004e1d00`) puts `IMAGE_BALLS` cel `+0x1a8 % 10`, row `+0x1a0` (the missile's own `grand() & 3` row from its ctor) at the integer interpolation `((dur − t)·start + t·centre) / dur` from his start point to the missile's centre, offset by −25. No ball object exists.
 
-`static`.
+The start point is his widget **as it was when the pick ran**, i.e. before this tick's move (`+0x1b0` in `tank2-4_stanley_01` is 232 = 192 + 40, his widget the tick before).
+
+`traced` by `stanley_shoots_missiles` (`tank2-4_stanley_01`) for the kind-0 pick, the cooldown draw, GROW, the start point and duration, and the delayed explosion (and a missile that hits its fish first). Kind-1 priorities and the ball draw are `static`.
 
 ## Effects on other objects and the board
 
@@ -196,8 +200,8 @@ The ball: `0x004e1d00` kind 2 → `IMAGE_BALLS` (global `0x005e8ee8`; `balls`, 1
 
 ## Open questions
 
-- Everything is static. The grow counter, the 101-tick throw, the ball's steering and bounce, and the 15 damage are the parts to capture first; the global-stream colour draw (`& 3`) needs the global MT state in the capture.
-- Who fires the missiles he shoots: `Alien::Update` (`0x004fd560`) makes missile **kind 0** for alien kind 5 (call at `0x004fdb7b`, from `(wx − 10, wy − 35)`) and **kind 1** for alien kind 6 (`0x004fddac`, from `(wx + 10, wy − 24)`), each at a target from `0x004e8df0`. Which named aliens these are, what the kind-1 byte `+0x190` means, and on which tank they first come: not followed.
+- Still `static`: the ball kill, kind-1 missile priorities (alien kind 6), the Bilaterus bands.
+- Who fires the missiles he shoots: `Alien::Update` (`0x004fd560`) makes missile **kind 0** for alien kind 5 (call at `0x004fdb7b`, from `(wx − 10, wy − 35)`) and **kind 1** for alien kind 6 (`0x004fddac`, from `(wx + 10, wy − 24)`), each at a target from `0x004e8df0`. Kind 5 is the Destructor (2-4, `alien-kind5.md`). Kind 6, what the kind-1 byte `+0x190` means, and on which tank it first comes: not followed.
 - The ball's generic steering bands with a Bilaterus present were not written out.
 - The board pet counter `board+0x19c` (id 22): readers not looked for.
 - Whether alien missiles can target Stanley (his `+0x98`): the missile target pick was not followed.

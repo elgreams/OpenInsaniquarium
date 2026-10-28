@@ -975,8 +975,17 @@ pub fn decode_capture(t: &Trace) -> Trace {
             // fields) so long traces stay small in memory.
             s.state.remove("raw");
             s.state.remove("guppies");
-            if let Some(Value::Object(b)) = s.state.get_mut("board") {
-                b.remove("samples");
+            if let Some(Value::Object(b)) = s.state.get_mut("board")
+                && let Some(Value::String(h)) = b.remove("samples")
+                && let Some(raw) = hex_bytes(&h)
+            {
+                // Keep the RNG-picked shot sounds' last-play clocks, for
+                // the deviation re-syncs (`replay_resync_global`).
+                let slot = |id: usize| {
+                    raw.get((id - 0x106) * 4..(id - 0x106) * 4 + 4)
+                        .map(|w| i32::from_le_bytes(w.try_into().unwrap()))
+                };
+                b.insert("rng_samples".into(), json!([slot(0x145), slot(0x132)]));
             }
             s
         })
@@ -2295,6 +2304,21 @@ pub fn replay_resync_global(
             && !dirty.contains(&board.tick)
         {
             board.rng = r.clone();
+            // The shifted draws also picked which shot-sound variants
+            // (ZZAM, RICOCHET) played, and their 3-tick throttle carries
+            // into the next ticks: take the capture's last-play clocks.
+            if let Some(Value::Array(v)) = t
+                .snapshots
+                .iter()
+                .find(|s| s.tick == board.tick)
+                .and_then(|s| s.state.get("board")?.get("rng_samples"))
+            {
+                for (id, c) in [0x145, 0x132].into_iter().zip(v) {
+                    if let Some(c) = c.as_i64() {
+                        board.sample_last[id - 0x106] = c as i32;
+                    }
+                }
+            }
         }
         snapshots.push(snapshot(&board));
     }

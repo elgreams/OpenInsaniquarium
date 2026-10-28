@@ -887,6 +887,16 @@ fn destructor_missiles() {
     }
 }
 
+/// Stanley against the Destructor (`tank2-4_stanley_01`): 2-4 with Stanley
+/// only, money pushed to 2000 and the countdown to 400; he shoots its
+/// missiles down (pet-stanley.md#shooting-down-missiles).
+#[test]
+fn stanley_shoots_missiles() {
+    if captured("tank2-4_stanley_01") {
+        replay_level_tank("tank2-4_stanley_01", 2, 4);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

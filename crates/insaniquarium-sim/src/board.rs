@@ -2779,7 +2779,7 @@ impl Board {
                 f.update();
                 self.foods.push(f);
             }
-            if let Some(mi) = out.shoot_missile {
+            if let Some((mi, from)) = out.shoot_missile {
                 // Stanley's shot (`0x004e55d0`): the cooldown from a global
                 // `% 100`, GROW, and the missile's shoot-down timeline: from
                 // his widget centre-top, 1 tick per 16 px.
@@ -2792,8 +2792,6 @@ impl Board {
                     90
                 };
                 self.play(0x122, Sound::Grow);
-                let f = &self.fish_pets[i];
-                let from = (f.widget_x + 40, f.widget_y + 10);
                 let m = &mut self.missiles[mi];
                 let dx = from.0 - (m.widget_x + 40);
                 let dy = from.1 - (m.widget_y + 40);
