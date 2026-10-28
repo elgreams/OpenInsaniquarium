@@ -63,7 +63,7 @@ Mostly content now; the hard problems are solved.
 
 - [ ] All fish types: Carnivore, Ultravore, Starcatcher, Guppycruncher, Beetlemuncher, Breeder.
 - [ ] All aliens + Cyrax boss; shots/missiles; boss-specific mechanics.
-- [ ] All 24 pets and their unlock flow. *(Status 2026-10-27: 22 of 24 pets built and replayed exactly against the original (`docs/re/INDEX.md`): the 20 Adventure pets incl. Presto, plus bonus pets Brinkley and Nostradamus. Stanley and Walter are specced, not built. The bonus pets' unlock (bought with shells on the Bonus screen) is specced, `screens/bonus-screen.md`, not built.)*
+- [ ] All 24 pets and their unlock flow. *(Status 2026-10-27: All 24 pets built and replayed exactly against the original (`docs/re/INDEX.md`): the 20 Adventure pets incl. Presto, and the bonus pets Brinkley, Nostradamus, Stanley and Walter. The bonus pets' unlock (bought with shells on the Bonus screen) is specced, `screens/bonus-screen.md`, not built.)*
 - [ ] Store, upgrades, egg pieces, per-level config for tanks 1–4.
 - [ ] Screens: title, menu, story/interlude, hatch, bonus, game over, help, options.
 - [ ] Profiles and save data — format compatible with the original if feasible.

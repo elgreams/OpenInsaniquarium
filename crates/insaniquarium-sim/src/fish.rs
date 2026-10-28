@@ -189,6 +189,8 @@ pub struct Fish {
     /// Set at step 7 when a punched Presto pet reverts (the rest of the
     /// update is skipped by the caller).
     pub reverting: bool,
+    /// The pet's state right after step 7 on its revert tick.
+    pub revert_state: Option<(f64, f64, f64, f64, i32, i32)>,
 }
 
 /// Board facts a guppy update reads.
@@ -322,6 +324,7 @@ impl Fish {
             punches: 0,
             tired: 0,
             reverting: false,
+            revert_state: None,
             widget_x: x,
             widget_y: y,
         };
@@ -1175,6 +1178,17 @@ impl Fish {
             if self.presto && self.kind != FishKind::Presto && self.push_timer < 41 {
                 self.recharge = 0;
                 self.reverting = true;
+                // The update returns here: the rest (drift, clamp, move,
+                // widget) doesn't run. Undo the steps the callers chain
+                // after this one by saving the state they'd change.
+                self.revert_state = Some((
+                    self.x,
+                    self.y,
+                    self.vx,
+                    self.vy,
+                    self.widget_x,
+                    self.widget_y,
+                ));
             }
         }
         if self.misc_timer > 0 {

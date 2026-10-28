@@ -66,6 +66,9 @@ PET_DIALOG = 0x1f
 HUNGER = int(sys.argv[sys.argv.index("--hunger") + 1]) if "--hunger" in sys.argv else 450
 # Leave aliens alone (`--no-shoot`): pets that fight them (Stanley) do it.
 NO_SHOOT = "--no-shoot" in sys.argv
+# Walter (`--walter N`): click him N times, ~2 s apart, preferring moments
+# with a guppy beside him (pet-walter.md#clicks-slot-54-0x004fbe20--0x004fb680).
+WALTER = int(sys.argv[sys.argv.index("--walter") + 1]) if "--walter" in sys.argv else 0
 
 
 def window():
@@ -137,6 +140,8 @@ def main():
     picks = list(PRESTO)
     presto_at = time.time() + 5  # next right-click on the Presto pet
     buzzed = True
+    punches = 0
+    punch_at = time.time() + 4
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -170,6 +175,17 @@ def main():
                 print("presto right-click", pid, "recharge", recharge, flush=True)
                 buzzed = True
                 presto_at = now + (2 if recharge == 0 else 4)
+                time.sleep(0.35)
+                continue
+        walter = [q for q in st.get("pets", []) if q[0] == 23]
+        if WALTER and punches < WALTER and walter and now >= punch_at and not st["dialogs"]:
+            _, wx, wy, _, _ = walter[0]
+            near = any(abs(g[0] - wx) < 120 and abs(g[1] - wy) < 60 for g in st["guppies"])
+            if near or now >= punch_at + 6:
+                click(win, wx + 40, min(max(wy + 35, 70), 470))
+                print("walter click", punches, "near" if near else "", flush=True)
+                punches += 1
+                punch_at = now + 2.2
                 time.sleep(0.35)
                 continue
         if st["dialogs"]:

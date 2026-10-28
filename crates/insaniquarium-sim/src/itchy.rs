@@ -287,8 +287,13 @@ impl Fish {
         let mut out = self.update_fish_pet_kind(ctx, rng);
         if self.reverting {
             // Reverted at step 7: the update returned there; the board
-            // replaces the pet with Presto.
+            // replaces the pet with Presto at its widget spot, which the
+            // rest of the update must not have moved.
             self.reverting = false;
+            if let Some((x, y, vx, vy, wx, wy)) = self.revert_state.take() {
+                (self.x, self.y, self.vx, self.vy) = (x, y, vx, vy);
+                (self.widget_x, self.widget_y) = (wx, wy);
+            }
             out = PetFishOut {
                 revert: true,
                 ..Default::default()

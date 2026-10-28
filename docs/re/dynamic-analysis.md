@@ -84,6 +84,7 @@ Keep each recording **short and focused on one ability**: one capture of ~2800 t
 - **No pets in the tank after starting:** the chosen bytes were written before entering Adventure (cleared) or on a previous level. Write them on the Instructions screen, just before the start click.
 - **Game over** (all guppies died: Brinkley eats their food, potions turn them into noses, no feeding): GAME OVER dialog; click Continue at **(312, 258)** → main menu. Quit from there (step 7's second half). Feed the guppies (autoplay's default or `--hunger N`) unless the ability needs them hungry, and keep the recording short.
 - **Leaving a level writes `adv1.dat`**: the next Adventure resumes mid-level with the old pets. Delete it before re-entering.
+- **"Game Paused" swallows the quit clicks:** the board pauses whenever the game window loses focus (CE, a screenshot tool). If the Menu click does nothing, click Resume (312, 258) first, then Menu → Back to Main Menu → Leave.
 - **Danger dialog** (1-2's first wave, ~1750 ticks in): autoplay clicks its button; if autoplay has stopped, click (315, 271).
 - **CE broken pipe / connection reset** in `/tmp/ce.log`: the bridge dropped. Restart CE (`sudo pkill -9 -x cheatengine-x86`, not `-f`, which also matches your own shell), relaunch, `open_process` again.
 - **The capture file is root-owned**: copy it before editing; its last line is often torn when the game quits.

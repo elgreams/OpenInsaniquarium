@@ -983,33 +983,24 @@ impl Board {
             return;
         };
         let s = if g.right { 1.0 } else { -1.0 };
-        let mut hit = false;
-        let global = &mut self.global_rng;
-        let mut knock = |f: &mut Fish, k: i32| {
-            if f.push_timer > 0 {
-                return;
-            }
+        let hit_by = |f: &Fish| {
             let (cx, cy) = (f.widget_x + 40, f.widget_y + 40);
-            if !(px - 40 < cx && cx < px + 40 && py - 40 < cy && cy < py + 40) {
-                return;
-            }
-            if k > 0 {
-                f.coin_timer = f.coin_interval - k;
-            }
-            f.push_timer = 50;
-            f.misc_timer = 180;
-            f.push = if global.next_u31() & 1 == 0 {
-                s * 15.0
-            } else {
-                s * 10.0
-            };
-            hit = true;
+            f.push_timer <= 0 && px - 40 < cx && cx < px + 40 && py - 40 < cy && cy < py + 40
         };
-        for f in self.guppies.iter_mut().chain(self.carnivores.iter_mut()) {
-            knock(f, 5);
+        // Candidates: (list, index, k): 0 guppies, 1 carnivores, 2 fish pets.
+        let mut hits: Vec<(u8, usize, i32)> = Vec::new();
+        for (j, f) in self.guppies.iter().enumerate() {
+            if hit_by(f) {
+                hits.push((0, j, 5));
+            }
         }
-        for (j, f) in self.fish_pets.iter_mut().enumerate() {
-            if j == w || f.kind == K::Prego {
+        for (j, f) in self.carnivores.iter().enumerate() {
+            if hit_by(f) {
+                hits.push((1, j, 5));
+            }
+        }
+        for (j, f) in self.fish_pets.iter().enumerate() {
+            if j == w || f.kind == K::Prego || !hit_by(f) {
                 continue;
             }
             // A pet Presto made fewer than 30 updates ago can't be hit.
@@ -1021,7 +1012,28 @@ impl Board {
                 K::Nostradamus => 10,
                 _ => -1,
             };
-            knock(f, k);
+            hits.push((2, j, k));
+        }
+        if self.artifacts.glove_reversed {
+            hits.reverse();
+        }
+        let hit = !hits.is_empty();
+        for (list, j, k) in hits {
+            let f = match list {
+                0 => &mut self.guppies[j],
+                1 => &mut self.carnivores[j],
+                _ => &mut self.fish_pets[j],
+            };
+            if k > 0 {
+                f.coin_timer = f.coin_interval - k;
+            }
+            f.push_timer = 50;
+            f.misc_timer = 180;
+            f.push = if self.global_rng.next_u31() & 1 == 0 {
+                s * 15.0
+            } else {
+                s * 10.0
+            };
         }
         let glove = self.fish_pets[w].glove.as_mut().expect("glove");
         if hit && glove.sound_cooldown == 0 {

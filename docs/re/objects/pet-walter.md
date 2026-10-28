@@ -16,6 +16,8 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-23 differen
 
 Confidence: everything below is `static` (read from the code; nothing captured yet).
 
+Capture: `walter_01` (1-2 with Walter and Presto; Presto changed into Itchy, then Walter clicked 8 times: 6 punches, guppies and the Itchy knocked, the Itchy turning back into Presto, tired after the 5th punch and awake 360 ticks later, clicks during a punch falling through), replayed exactly from the game's own demo. `traced` where a section says so, else `static`.
+
 ## Fields used by id 23
 
 As Itchy's (`pet-itchy.md#fields-used-by-id-2`), with:
@@ -34,7 +36,7 @@ Divisor `+0x180` stays `Fish::Init`'s draw; bounds are a guppy's (floor 370, min
 
 Correction to the bonus-pet plan (`bonus-pets-plan.md`): it is the tired timer `+0x264`, not the Presto recharge `+0x238`, whose end sets the widget byte `+0x7c`. `+0x238` behaves as for any pet.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`) (`+0x1c8`, the glove's presence, `+0x260`, `+0x264`).
 
 ## Construction
 
@@ -47,7 +49,7 @@ Correction to the bonus-pet plan (`bonus-pets-plan.md`): it is the tired timer `
 
 So adding Walter costs **9 app draws**, as Itchy; made by Presto (`pet-presto.md#the-change`), 7. A Walter made by Presto (or Presto made from Walter) takes the old pet's `+0x260` and `+0x264` (`0x004f8a56`: copied only between ids 19 and 23, either way), so changing through Presto neither resets the punch count nor wakes a tired Walter.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`). The Walter↔Presto hand-over is `static`.
 
 ## Update (`0x004f7ad0`), id 23
 
@@ -64,7 +66,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`), with:
 
 App-stream RNG: the re-roll only. The glove's hits draw from the **global** stream (`Sexy::Rand`, `0x0040f9e0`), one draw per object hit.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`) (tired sinking, the single re-roll draw while tired).
 
 ## Clicks (slot 54 `0x004fbe20` → `0x004fb680`)
 
@@ -90,7 +92,7 @@ Walter is mouse-visible from construction, so clicks inside his widget (80 × 80
 
 No RNG in the click. The click handler doesn't look at aliens: he can punch during a wave.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`) for the gate, direction and the punch; the mouse insets are as built (clicks at wy + 35).
 
 ## The boxing glove
 
@@ -158,7 +160,7 @@ So a punch has **17 hit ticks**, each object is hit at most once per glove (the 
 
 The hits happen inside Walter's update (the `+0xb4` pass, `sim/board.md#tick-order`): an object updated earlier in the tick (guppies, aliens) starts moving next tick; a FishTypePet later in `+0xb4` moves in the same tick.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`) for the 5-tick wait, reach, hit window, the 15/10 push from the global stream, guppy coin clocks, and the Presto revert on the 10th tick (the reverting pet's update returns at step 7, before it moves). Pets other than Itchy/Presto in reach are `static`.
 
 ## Animation (`0x004dfc50`), id 23
 
@@ -171,7 +173,7 @@ The hits happen inside Walter's update (the `+0xb4` pass, `sim/board.md#tick-ord
 
 No RNG.
 
-`static`.
+`traced` by `walter_punches` (`walter_01`).
 
 ## Drawing (`0x004f8610` → `0x004dfa00`)
 
@@ -197,9 +199,9 @@ Relative to Walter (left glove at `wx − 60`): the fist goes from `wx + 10` (d 
 
 ## Deviations
 
-- **Hit order is heap order.** The glove walks the master set in pointer-address order, and each hit draws one global `grand()` that decides 15 or 10. With two or more objects hit in the same tick, which object gets which draw depends on heap addresses: an implementation artifact. Intent: walk the hit candidates in a deterministic order (proposal: board list order, guppies first, then the pets in `+0xb4`), and let the harness re-sync the push values to the capture when more than one object is hit in a tick. Single hits per tick are exact.
+- **Hit order is heap order.** The glove walks the master set in pointer-address order, and each hit draws one global `grand()` that decides 15 or 10. With two or more objects hit in the same tick, which object gets which draw depends on heap addresses: an implementation artifact. The sim walks guppies, then carnivores, then the fish pets in `+0xb4`. Replays try the reverse order when the capture's pushes say so (`ArtifactPlan::glove_reversed`, replay-only; `walter_01` has one such tick, a guppy and a pet hit together).
 
-`static` (a proposal).
+`traced` (`walter_punches`).
 
 ## Open questions
 

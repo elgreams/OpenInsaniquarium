@@ -147,12 +147,13 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         } else {
             0
         },
-        tired: if rd_i32(b, 0x8c) == 0x15 && b.len() > 0x268 {
+        tired: if rd_i32(b, 0x8c) == 0x15 && b.len() >= 0x268 {
             rd_i32(b, 0x264)
         } else {
             0
         },
         reverting: false,
+        revert_state: None,
         // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
         blink: rd_i32(b, 0x8c) == 0x15
             && match rd_i32(b, 0x234) {
@@ -1865,6 +1866,32 @@ fn eat_choice(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> Option<u
     })
 }
 
+/// Should this tick's glove hits run in reverse order to match the
+/// capture's pushes? (Replay-only; see `ArtifactPlan::glove_reversed`.)
+fn glove_reversed(board: &Board, inputs: &[Input], t: &Trace, tick: u32) -> bool {
+    let Some(target) = t.snapshots.iter().find(|s| s.tick == tick) else {
+        return false;
+    };
+    let pushes = |s: &Snapshot| -> Vec<Value> {
+        ["fish", "fish_pets"]
+            .iter()
+            .filter_map(|k| s.state.get(*k)?.as_array().cloned())
+            .flatten()
+            .map(|f| f.get("push").cloned().unwrap_or(Value::Null))
+            .collect()
+    };
+    let want = pushes(target);
+    let mut b = board.clone();
+    b.step(inputs);
+    if pushes(&snapshot(&b)) == want {
+        return false;
+    }
+    let mut b = board.clone();
+    b.artifacts.glove_reversed = true;
+    b.step(inputs);
+    pushes(&snapshot(&b)) == want
+}
+
 /// The artifact plan for one replayed tick (see [`replay_resync_dirty`]).
 /// Tries every set of delayed sparks, fewest first; returns the first that
 /// matches the capture's RNG position and its fish, food and shots, else
@@ -2057,6 +2084,12 @@ pub fn replay_resync_global(
         // reproduce): if the capture lost a different fish, pick that one.
         if !dirty.contains(&next) && !board.aliens.is_empty() {
             board.artifacts.eat_choice = eat_choice(&board, step_inputs, t, next);
+        }
+        // Walter's glove: several hits in one tick take the global draws in
+        // heap order (`pet-walter.md#deviations`). If our order gives the
+        // wrong pushes, try the reverse.
+        if !dirty.contains(&next) && board.fish_pets.iter().any(|f| f.glove.is_some()) {
+            board.artifacts.glove_reversed = glove_reversed(&board, step_inputs, t, next);
         }
         board.step(step_inputs);
         board.artifacts = Default::default();

@@ -568,6 +568,11 @@ pub struct ArtifactPlan {
     /// list order. A replay can name the preferred fish's index in the prey
     /// list (guppies, then carnivores).
     pub eat_choice: Option<usize>,
+    /// Walter's glove hitting several objects in one tick walks them in
+    /// heap-address order in the original (`pet-walter.md#deviations`); the
+    /// sim walks guppies, carnivores, then fish pets. A replay can reverse
+    /// that order (`true`) when the capture's pushes say so.
+    pub glove_reversed: bool,
     /// Effect shots made so far this tick.
     pub made: usize,
 }

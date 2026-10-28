@@ -815,6 +815,17 @@ fn stanley_balls() {
     }
 }
 
+/// Walter with Presto (`walter_01`): 1-2; Presto changed into Itchy, then
+/// Walter clicked 8 times (6 punches: guppies knocked, the Itchy knocked
+/// back into Presto, tired after the 5th, awake 360 ticks later)
+/// (pet-walter.md).
+#[test]
+fn walter_punches() {
+    if captured("walter_01") {
+        replay_level("walter_01", 2, true);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).
@@ -980,7 +991,7 @@ fn pet_screen_matches_original() {
 /// Captures whose pets decide on the global stream (Nostradamus's sneeze):
 /// their replays re-sync it every tick.
 fn needs_global(name: &str) -> bool {
-    name.starts_with("nostradamus") || name.starts_with("stanley")
+    name.starts_with("nostradamus") || name.starts_with("stanley") || name.starts_with("walter")
 }
 
 fn captured(name: &str) -> bool {
