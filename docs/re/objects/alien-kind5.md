@@ -89,7 +89,7 @@ Each tick that reaches step 7, if the kind is 5 **and "has prey"** (`0x004d4580`
 
 **Rhythm:** the timer counts only on ticks that get past the warp-in freeze and have prey. The first volley comes on the **76th** such tick (interval 75 from the ctor; about 82 ticks after the spawn counting the 6 frozen ticks). After that, each volley comes `interval + 1` = **151 to 200** counted ticks after the previous one. With no guppies (or other prey) the timer stops; it doesn't reset.
 
-**Within-tick order:** the alien's update runs (in z-order after the guppies), creates up to 3 missiles, and draws the interval. Each new missile is brought to the front of the widget list by `AddMissile`, so by `sim/board.md#tick-order` (objects created during the object pass update in it) it **probably runs its first update later in the same tick**, after every other object, and its launch timer reads 14 on the first snapshot (see Open questions).
+**Within-tick order:** the alien's update runs (in z-order after the guppies), creates up to 3 missiles, and draws the interval. Each new missile is brought to the front of the widget list by `AddMissile`, so by `sim/board.md#tick-order` (objects created during the object pass update in it) it **probably runs its first update later in the same tick**, after every other object, and its launch timer reads 14 on the first snapshot (see Open questions). Corpses made in an update are known to behave this way (`sim/board.md`); missiles are not checked yet.
 
 `static`.
 
@@ -275,7 +275,7 @@ So **a missile is an instant kill**, whatever the fish's size or hunger. Coins t
 4. Sample **`0x11d` `EXPLODE`**, gap 3 (kind 1 also plays `0x11f` first).
 5. Debris, app stream: **`n = r % 3 + 2`**, then n times **`size = r % 3 + 3`**, **`y = wy + r % 30 − 10`**, **`x = wx + r % 30 − 10`**, `EffectShot(x, y, size)` (+1–2 ctor draws each, below the cap).
 
-Every way a kind-0 missile ends goes through here: hitting its fish (§6.2), a click (§6.4), Stanley (§5.2 step 1), its target leaving (the fish's own removal releases its `+0x98` missile, e.g. `Fish` slot 88 `0x004df0b0`), or a missing target (§5.2 step 2).
+Every way a kind-0 missile ends goes through here: hitting its fish (§6.2), a click (§6.4), Stanley (§5.2 step 1), its target leaving (the fish's removal hook, `Fish` slot 87 `0x004df0b0`, releases its `+0x98` missile; this covers starving, being eaten or sold), or a missing target (§5.2 step 2).
 
 `static`.
 
