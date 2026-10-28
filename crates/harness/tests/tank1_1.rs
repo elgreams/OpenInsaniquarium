@@ -881,7 +881,6 @@ fn gus_killed() {
 /// three missiles, some reaching their guppies, some clicked down, the
 /// laser kill with a missile still flying (alien-kind5.md).
 #[test]
-#[ignore = "WIP: matches to tick 4999; guppies must see only the live alien list (not has_aliens, which waits for missiles) for coins/hunger"]
 fn destructor_missiles() {
     if captured("tank2-4_destructor_01") {
         replay_level_tank("tank2-4_destructor_01", 2, 4);

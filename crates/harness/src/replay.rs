@@ -1761,9 +1761,11 @@ pub fn debris_ticks(t: &Trace) -> Vec<u32> {
             let life = dead_alien_from_raw(b).life;
             life % 7 == 0 && life > 50
         });
+        // Age up to 2: a spark made inside the object pass can already have
+        // been aged twice by the snapshot (missile smoke, alien-kind5.md#52).
         let fresh = shots.iter().any(|x| {
             x.kind != 0
-                && x.age <= 1
+                && x.age <= 2
                 && !prev.iter().any(|p| {
                     p.kind == x.kind
                         && p.widget_x == x.widget_x

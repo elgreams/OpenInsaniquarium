@@ -734,6 +734,11 @@ impl DeadAlien {
         if self.x < -10.0 {
             self.x = -10.0;
         }
+        // Kinds 5/6 lie on the floor: y ≤ 280 before the move
+        // (alien-kind5.md#44).
+        if matches!(self.kind, 5 | 6) && self.y > 280.0 {
+            self.y = 280.0;
+        }
         self.x += self.vx;
         self.y += self.vy;
         self.widget_x = self.x as i32;

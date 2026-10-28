@@ -730,7 +730,14 @@ impl Board {
         // (alien-kind5.md#41).
         if !self.aliens.is_empty() || self.missiles.iter().any(|m| m.kind == 0) {
             if let Some(i) = self.coins.iter().rposition(|c| !c.collected && c.hit(x, y)) {
-                if self.aliens.iter().any(|a| a.contains(x, y)) {
+                // A click inside an alien's or a missile's widget is also a
+                // shot (`0x00539d40`, alien-kind5.md#41).
+                let in_missile = self.missiles.iter().any(|m| {
+                    m.kind == 0
+                        && (m.widget_x..m.widget_x + 80).contains(&x)
+                        && (m.widget_y..m.widget_y + 80).contains(&y)
+                });
+                if in_missile || self.aliens.iter().any(|a| a.contains(x, y)) {
                     self.shoot(x, y);
                 }
                 let c = &mut self.coins[i];
@@ -2145,7 +2152,10 @@ impl Board {
     fn update_newborns(&mut self, born: &[usize]) {
         let env = FishEnv {
             paused: self.paused,
-            has_aliens: self.has_aliens,
+            // `0x004da780`: the alien lists only. Missiles still flying after
+            // the last alien died don't count (alien-kind5.md#8); the
+            // end-of-wave flag `has_aliens` waits for them.
+            has_aliens: !self.aliens.is_empty(),
             gus_first: self.aliens.first().is_some_and(|a| a.kind == 4),
         };
         let mut stage_ups = Vec::new();
@@ -2363,7 +2373,10 @@ impl Board {
         self.money = (self.money + potion_money).min(9_999_999);
         let env = FishEnv {
             paused: self.paused,
-            has_aliens: self.has_aliens,
+            // `0x004da780`: the alien lists only. Missiles still flying after
+            // the last alien died don't count (alien-kind5.md#8); the
+            // end-of-wave flag `has_aliens` waits for them.
+            has_aliens: !self.aliens.is_empty(),
             gus_first: self.aliens.first().is_some_and(|a| a.kind == 4),
         };
         let mut stage_ups = Vec::new();

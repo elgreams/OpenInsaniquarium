@@ -8,6 +8,9 @@ In short: the Destructor **walks along the bottom** of the tank (its y is fixed 
 
 Confidence: `static` for the whole file (per section below).
 
+
+Capture: `tank2-4_destructor_01` (2-4, no pets, money pushed to 2000 and the countdown to 500 with Cheat Engine): two volleys of three missiles, missiles reaching their guppies and clicked down, the laser kill with a missile still flying, the corpse on the floor; replayed exactly from the game's own demo. `traced` where a section says so, else `static`.
+
 ## 1. Wave timing
 
 Differences from `alien-sylvester.md` §1 (and `alien-kind4.md` §1, which covers 2-5):
@@ -19,13 +22,13 @@ Differences from `alien-sylvester.md` §1 (and `alien-kind4.md` §1, which cover
 - **Music:** the same as kind 1.
 - **Countdown freeze:** the wave block is skipped while `+0xb8`, `+0xf4` **or `+0xdc`** is non-empty (`alien-sylvester.md#per-tick-countdown`, step 2). The Destructor's missiles live on `+0xdc` (§8), so **the next countdown doesn't start until the last missile is gone**, even after the alien has died.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) for 2-4 (the countdown frozen by a missile after the kill). 2-5 is `static`.
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 
 The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The only difference is the arrival sample: for kind 5 the code at `0x0054589e` loads global `0x005e8bc8` (sound-table slot `0x5e0eac`, sample **`0x127` `SOUND_INTERFER`**) and plays it directly through the app's sound manager (vtable `+0xd8`), unthrottled, like `ROAR` for kinds 1–3. (The slot-to-sample mapping is linear: `0x5e0e9c` = `0x123` GUFFAW, `0x5e0edc` = `0x133` ROAR, so `0x5e0eac` = `0x127`. Kind 6 uses `0x134` ROAR2, kind 7 `0x135` ROAR3.)
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### Constructor (`0x004ecfa0`), kind 5
 
@@ -36,7 +39,7 @@ The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The on
 - RNG: the same 2 app draws in the same order (`rand()` direction → vx ±3.0, then `rand(10)` wander mode).
 - Virtual Tank only (`app+0x880`): health = `grand() % 100 + 150`, `+0x1a8 = 144`. Not reached in Adventure.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ## 3. `Alien::Update` (`0x004fd560`), kind 5
 
@@ -51,7 +54,7 @@ The top-level steps of `alien-sylvester.md` §3, with these differences:
 7. **Firing** (§3.2), kinds 5 only.
 8. Widget resize, **animation** (§3.3), death check: unchanged order. Health ≤ 0 → `0x004f9c70(1)` (§4.3).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### 3.1 Wander, kind 5
 
@@ -63,7 +66,7 @@ The kind-1 wander (`alien-sylvester.md` §3.3) with three changes:
 
 There is no wall bounce. It presses against x = −10 or 490 until the mode changes.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### 3.2 Firing (`0x004fdb06`..`0x004fdd2f`)
 
@@ -91,7 +94,7 @@ Each tick that reaches step 7, if the kind is 5 **and "has prey"** (`0x004d4580`
 
 **Within-tick order:** the alien's update runs (in z-order after the guppies), creates up to 3 missiles, and draws the interval. Each new missile is brought to the front of the widget list by `AddMissile`, so by `sim/board.md#tick-order` (objects created during the object pass update in it) it **probably runs its first update later in the same tick**, after every other object, and its launch timer reads 14 on the first snapshot (see Open questions). Corpses made in an update are known to behave this way (`sim/board.md`); missiles are not checked yet.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`). A distance tie in PickTarget goes by heap address (two guppies at the same spot on the floor): the replay passes the original's choice (`ArtifactPlan::volley_ties_last`), see Deviations.
 
 ### 3.3 Animation (`0x004daa00`), kind 5
 
@@ -101,7 +104,7 @@ Each tick that reaches step 7, if the kind is 5 **and "has prey"** (`0x004d4580`
 - Otherwise: **always the slow loop**: `+0x1b0 += 1`, wrap at 20, `cel = +0x1b0 / 2`. Kinds 5, 7 and 0x15 skip the |vx| > 1.6 "stroke" branch, so **the animation never moves the Destructor** (no 0.25/0.75/0.5 pushes, even at the ±3.0 entry speed or after knockback).
 - Last-vx update and the attached-ball counter (`+0x98`, Stanley): unchanged.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ## 4. Clicks and damage
 
@@ -113,7 +116,7 @@ Kind 5 takes the **normal laser path** of the Board mouse-down (`alien-sylvester
 
 **Coin under a missile:** `Coin` mouse-down re-dispatches a click inside any `+0xdc` widget to the board handler (`alien-sylvester.md` §4.1), so clicking a coin that overlaps a missile is also a shot (and the coin is collected).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`): clicks stay shots while a missile flies after the kill, and a click on a coin inside a missile's widget is also a shot.
 
 ### 4.2 `Alien::Hit(cx, cy)` (`0x004fa6f0`), kind 5
 
@@ -129,7 +132,7 @@ Kind 5 takes the **normal laser path** of the Board mouse-down (`alien-sylvester
    **vy is never changed**, whatever the click height. The move divides by 1.2 again, so a push is 3 px/tick, decaying by 0.1 per tick toward the wander target. There is no stroke animation (§3.3).
 5. Death or the 10-tick cooldown: unchanged.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### 4.3 Pets and other damage sources
 
@@ -156,7 +159,7 @@ Kind 5 takes the **generic branch** (only kinds 4 and 0x14 have their own), so i
 
 **The corpse lies on the floor.** In `DeadAlien::Update` (`0x004f6050`) kinds 5 and 6 clamp y to **≤ 280** before the move (`0x597550`; the second bound 310 can't trigger), then `y += vy`. So the corpse starts at 280, and each tick is reset to 280 and moved down by its current vy (≤ 2.0): it hovers at 280 + vy instead of sinking out of the tank. Its draw uses image `0xc0` (`IMAGE_DESTRUCTOR`, §7.1).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) (the corpse's y ≤ 280 clamp before its move).
 
 ## 5. The missile: `Sexy::Missle` kind 0
 
@@ -185,7 +188,7 @@ Differences from the kind-2 ball table in `pet-stanley.md`:
 
 RNG: **1 global draw** (`Sexy::Rand`, the row). The two app draws `r % 6` (a random initial vx and vy from a 6-value table) run only when `0x004d80c0` is true, i.e. **kinds 3, 4, 5** (the `+0xe0` missiles). **Kind 0 doesn't take them.** The ctor clears the widget byte at `+0x55` as for the ball, so the widget manager doesn't route clicks to it; clicks reach it only through the board walk (§6.4).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### 5.2 `Missle::Update` (`0x004ffb30`), kind 0
 
@@ -204,7 +207,7 @@ Each tick, return if there is no board or it is paused; then the `GameObject` pr
 
 Speed: vx and vy each step by 0.2 up to about ±1.8–2.0 (§6.1), so through the 0.8 divisor a missile flies at up to **2.25–2.5 px/tick per axis**, faster than the Destructor walks and than a guppy swims at cruise.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) (smoke included: a puff made in the object pass can be two ticks old on the snapshot).
 
 ## 6. Targets, steering, hits, explosions, clicks
 
@@ -243,7 +246,7 @@ Score: `d² = (acx − (o.ix + o.w/2))² + (acy − (o.iy + o.h/2))²` (ints), w
 
 **Ultravore targets** (type 6, 160×160) use the wide bands of the ball (`pet-stanley.md`): `tx + 200`, `tx − 40`, `tx + 110`, `tx + 50`, `tx + 80` (and the same for y), still with `c = 40`, so the centre goes to `tx + 120`.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) for guppies. Ultravore targets are `static`.
 
 ### 6.2 Hit test (`0x004fc070`, kind-0 path at `0x004fd44d`) and what a hit does
 
@@ -265,7 +268,7 @@ On a hit, the missile calls its own vtable `+0x134` (`0x004f93a0`, Ghidra's `vfu
 
 So **a missile is an instant kill**, whatever the fish's size or hunger. Coins the fish would have dropped are lost; the corpse is the usual `DeadFish`.
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`) for guppies.
 
 ### 6.3 Removal and explosion (slot 76, `0x004d80e0`), kind 0
 
@@ -277,7 +280,7 @@ So **a missile is an instant kill**, whatever the fish's size or hunger. Coins t
 
 Every way a kind-0 missile ends goes through here: hitting its fish (§6.2), a click (§6.4), Stanley (§5.2 step 1), its target leaving (the fish's removal hook, `Fish` slot 87 `0x004df0b0`, releases its `+0x98` missile; this covers starving, being eaten or sold), or a missing target (§5.2 step 2).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ### 6.4 Clicks on missiles (`0x004d82a0`), kind 0
 
@@ -288,7 +291,7 @@ Called by the board mouse-down for each missile in list order until one returns 
 
 **Yes, the player can shoot missiles down, one per click**, once they are 15 ticks old. The click still makes its click shot and the two shot-sound draws afterwards. Kind 1 (tank 3) is different: a click redirects it instead (`0x004d82a0` kind-1 branch, out of scope).
 
-`static`.
+`traced` by `destructor_missiles` (`tank2-4_destructor_01`).
 
 ## 7. Drawing and sound
 
@@ -307,7 +310,7 @@ Called by the board mouse-down for each missile in list order until one returns 
 
 - First `0x004d6ae0` (calls `0x00538060` while global byte `0x005e89cd` is set; not followed).
 - **`IMAGE_MISSILE`** (global `0x005e8a2c`, written at `0x0050a45b`; image id `0x9e`; manifest `missile`, 16 columns), source rect `(cel · 80, 0, 80, 80)`, normal blend, at the widget.
-- **Heading cel** (`0x004e2170`, kind 0, after every move): cel 0 = down, 4 = left, 8 = up, 12 = right.
+- **Heading cel** (`0x004e2170`, kind 0, after every move). **Correction (`traced` by `destructor_missiles`):** the band tests below are on **vy**, not vx, and the outer test on vx: with −0.8 < vx < 0.8 the cel is 12 if vy > 0, else 4; otherwise vy > 2.5 → 12, vy < −2.5 → 4, then by vy bands (> 2, < −2, > 1.5, < −1.5, > 1, < −1, else) the cels 13/3/14/2/15/1/0 when vx > 0 and 11/5/10/6/9/7/8 when vx ≤ 0. The original list below had the axes swapped:
   - `|vy| < 0.8` (`−0.8 < vy < 0.8`): cel **12** if vx > 0, else **4**.
   - otherwise, by vx (same for both): vx > 2.5 → **12**; vx < −2.5 → **4**;
     - moving up (vy ≤ −0.8): vx ∈ (2, 2.5] → 11, (1.5, 2] → 10, (1, 1.5] → 9, [−1, 1] → **8**, [−1.5, −1) → 7, [−2, −1.5) → 6, [−2.5, −2) → 5;
@@ -365,7 +368,9 @@ Called by the board mouse-down for each missile in list order until one returns 
 
 ## Deviations
 
-`static`. None of our own yet. The heap-dependent effect-shot start delay (`alien-sylvester.md#deviations`) applies to every smoke puff, every explosion piece and every click spark here. With a smoke draw on about a third of all missile ticks, the harness will need to re-sync or model the stale-field draw often on 2-4.
+- **PickTarget ties by heap address** (§6.1): two candidates at exactly the same distance (guppies resting side by side on the floor) go to the earlier object in address order. The sim takes the earlier in list order; the replay checks the capture and takes the later one when that matches (`ArtifactPlan::volley_ties_last`, replay-only). An implementation artifact, no toggle.
+
+`traced` (`destructor_missiles`, one such tie at the second volley). The heap-dependent effect-shot start delay (`alien-sylvester.md#deviations`) applies to every smoke puff, every explosion piece and every click spark here. With a smoke draw on about a third of all missile ticks, the harness will need to re-sync or model the stale-field draw often on 2-4.
 
 ## Open questions
 
