@@ -114,7 +114,7 @@ Callers: shop slot 6 (`0x0054964b`, in `0x00549380`) and the debug key `'4'` (`0
 
 **Re-creation** `0x00545360(x)` (DeadFish kind-8 revival, `pet-angie.md`): the same as BuyStarcatcher but without the x draw and without the y override. The Starcatcher starts at the ctor's y (360..364), which is already on the floor. That's 4 + 1 (shadow) draws.
 
-**Splash-in:** a bought Starcatcher starts at y 65 with vy 0. Gravity (+0.4 per tick to vy, below) pulls it down, and it lands on the floor at y 359 after about 30 ticks (divisor ≈ 2.6). During the first 45 ticks it emits bubbles (see Update step 6).
+**Splash-in:** a bought Starcatcher starts at y 65 with vy 0. Gravity (+0.4 per tick to vy, applied before integrating) gives `y ≈ 65 + (0.2 / div)·n(n+1)` after n ticks. It hits the floor at y 359 after about **60 ticks** (≈ 1.7 s; 60–63 depending on the divisor), at vy ≈ 24, which the floor clamp zeroes. During the first 45 ticks it emits bubbles (see Update step 6).
 
 `static`.
 
@@ -150,6 +150,8 @@ Callers: shop slot 6 (`0x0054964b`, in `0x00549380`) and the debug key `'4'` (`0
    - cel → `+0x1a0`. If a missile is attached, `0x004d7020` updates it.
 10. **Integrate:** div = `+0x178` (if byte `+0xf6` is set: 0.8 while `+0xf8 ≠ 0`, else 0.3). `x += vx / div`, `y += vy / div`.
 11. Widget position (slot 42) = `(trunc(x), trunc(y))`.
+
+**Death tick:** when step 2.3 kills it, the update **carries on** for the removed object: the swim mode, timers, reroll (a possible RNG draw), clamps, splash and integrate all run. Only the position of an object that no longer exists changes, but **the reroll draw on that tick is real**.
 
 So the Starcatcher lives on the floor: the clamp holds it at y 359 with vy 0. Only the swim mode and the chase steer vx, and nothing steers it upward. A Starcatcher catches only stars that fall to it. With vx 0 (modes 0/5/6) it still animates backwards: −1 < 0 < 1 and "vx > 0" is false.
 
@@ -228,7 +230,7 @@ Then return: **at most one star per Starcatcher per tick.** The filter doesn't l
 
 So in Adventure, **every star eaten yields one kind-5 coin and the `BUY` sound, with no RNG.** There's no growth and no gore.
 
-**The kind-5 coin** (`coin.md`: "pearl", **$200**; `pet-amp.md` drops the same kind): list `+0xa8` (subtype 0). In `Coin::Update` it is a **rising** kind (5, 8–14, 0x12 rise until the "risen" byte `+0x168` is set). Per tick, y moves by −8.0 while y ≥ 150, −2.5 for 135..150, −1.5 for 130..135, −1.0 for 125..130 and −0.5 for 120..125. Below 120 it sets risen and then falls and rests like any coin (1.5 per tick to y 370; `pet-nimbus.md`). From the floor (spawn wy ≈ 347) it shoots up to the top in about 30 ticks and floats back down in about 165. How it's drawn hasn't been checked.
+**The kind-5 coin** (`coin.md`: "pearl", **$200**; `pet-amp.md` drops the same kind): list `+0xa8` (subtype 0). In `Coin::Update` it is a **rising** kind (5, 8–14, 0x12 rise until the "risen" byte `+0x168` is set). Per tick, y moves by −8.0 while y ≥ 150, −2.5 for 135..150, −1.5 for 130..135, −1.0 for 125..130 and −0.5 for 120..125. Below 120 it sets risen and then falls and rests like any coin (1.5 per tick to y 370; `pet-nimbus.md`). From the floor (spawn y 347) it climbs to y 150 in about 25 ticks and creeps up to just under 120 in about 25 more. It then falls back to 370 in about 167 ticks. How it's drawn hasn't been checked.
 
 `static`.
 
@@ -332,13 +334,14 @@ It is dropped at `(wx + 5, wy + 10)` with the same −1.0 argument and the guppy
 | Hunger, chase, find, bite, drop, death, remove | – | none |
 | Re-creation (`0x00545360`) | app | y, divisor, hunger, mode, shadow (5) |
 
-Within its update the order is: behaviour (no draws in Adventure), then the reroll, then the splash bubbles.
+Within its update the order is: behaviour (no draws in Adventure), then the reroll, then the splash bubbles. The reroll still runs on the tick it starves (see Per-tick update).
 
 `static`.
 
 ## Open questions
 
 - Everything is `static`. See [Recording](#recording).
+- Hunger timeline (static arithmetic): it starts at 900–1099, so the first chase begins 1–200 ticks after purchase. A meal caps at 1300 (400 ticks of no chasing). An unfed Starcatcher dies 900–1099 ticks (25–31 s) after purchase. Stars from one stage-3 guppy come every 150–349 ticks, so one star guppy can keep a Starcatcher alive (+900 per star), and each star is turned into $200 instead of $40.
 - Coin kind 0x12 passes the star filter (and is a rising kind worth $15). Who drops kind 0x12 isn't known yet.
 - `app+0x880`: taken as "Virtual Tank" from `carnivore.md`/`alien-sylvester.md`. In that mode the Starcatcher eats silver and gold coins, and its death message is "The purple guys eat coins!". This hasn't been verified.
 - How the kind-5 coin is drawn (diamond art? pearl art?) and its collect sound (`coin.md` says pearls play a fixed sample).
