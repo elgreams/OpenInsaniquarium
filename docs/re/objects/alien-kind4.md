@@ -24,6 +24,8 @@ Differences from `alien-sylvester.md` §1:
 
 The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The only difference is the arrival sample at the end. Kind 4 plays **`SOUND_GUFFAW`** (sample `0x123`, global `0x005e8e98`, image-table slot `0x5e0e9c`), played directly through the app's sound manager (vtable `+0xd8`), unthrottled, at `0x0054587b`. Kinds 1–3 play `SOUND_ROAR` instead.
 
+`static`.
+
 ### Constructor (`0x004ecfa0`), kind 4
 
 - **Divisor `+0x1b8` = 1.6** (`0x596730`), **health `+0x1f0` = max `+0x1f8` = 100.0** (`0x5c3bd0`).
@@ -199,7 +201,7 @@ Within the tick, everything Gus does happens in his own `Update` (food step, the
 | Event | Sample | Notes |
 |---|---|---|
 | Spawn | `0x123` `SOUND_GUFFAW` | direct, unthrottled (kinds 1–3: `ROAR`) |
-| Click | `SOUND_DROPFOOD` | from `AddFood` (no laser sounds) |
+| Click | `SOUND_DROPFOOD` | from `AddFood` (no laser sounds); not played when an armed star potion drops |
 | Pellet eaten | `0x138` `SLURP` / `SLURP2` / `SLURP3` | `r % 5`: 0 → SLURP3, 1 → SLURP2, else SLURP; throttle 3 |
 | Star potion eaten | `0x11d` `EXPLODE` | gap 3, before the slurp |
 | Fish eaten | `CHOMP` / `CHOMP2` | as kind 1 |
@@ -209,7 +211,7 @@ Within the tick, everything Gus does happens in his own `Update` (food step, the
 
 ## Deviations
 
-None of our own yet. The heap-dependent effect-shot start delay (`alien-sylvester.md#deviations`) applies to every spark here: the star-potion burst, the death debris and the fish gore.
+`static`. None of our own yet. The heap-dependent effect-shot start delay (`alien-sylvester.md#deviations`) applies to every spark here: the star-potion burst, the death debris and the fish gore.
 
 ## Open questions
 
@@ -229,3 +231,5 @@ A 2-3 recording (the game's `-record` demo plus a CE capture, `dynamic-analysis.
 4. Guppies **not chasing** food while he is in, and Gus **eating a guppy** after the eat delay (−15 HP, gulp).
 5. **The kill**: the explosion debris (2–3 / 4–6 / 2–3), no corpse, the diamond and its collection, the music back to the tank song and the 36-tick lockout. Then the countdown restarts from 3000 and a second wave runs.
 6. Optional, in a separate zoo: Itchy, Gash or Rufus biting him (0.25 / 0.5 / 0.5).
+
+`static` (a plan).
