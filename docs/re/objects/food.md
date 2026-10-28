@@ -122,7 +122,7 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
    - Level 0: `hunger += 500`, plus 200 more with `+0x228`. **Clamp at 800.** `growth (+0x1a4) += 1`.
    - Level 1: +700, cap 1000, growth +2.
    - Level 2: +1100, cap 1400, growth +3 (the fall-through branch at `0x004f2079`).
-   - Level 3 (star potion), by the eater's stage `+0x1a0` (`static`: `tank2-1_full_01`'s potions weren't eaten):
+   - Level 3 (star potion), by the eater's stage `+0x1a0` (stage 2 → star guppy `traced` by `tank_2_2_star_guppies`; the explosion in a small guppy is `static`):
      - **0 or 1** (small, medium): it **explodes**: sample `0x11d` (`EXPLODE`, gap 3), then app draws `n = r % 3 + 2` and n times `k = r % 3 + 3`, `y = wy + r % 30 − 10`, `x = wx + r % 30 − 10` and an effect shot `0x005436f0(x, y, k)` (which may draw more, `alien-sylvester.md`); on 2-1 and 2-2 (not after beating the game) one-time hints (ids 0x21 "Hint: Feed star potions to BIG guppies!", 0x20 "Hint: Star potions are for big guppies only!", 0x1f "Hint: Only certain fish can handle star potions!", each only if its board byte `+0x4d0/+0x4cf/+0x4ce` is set) and **0x1e "Warning! Use star potions carefully!"**; the board's lost-fish stat `+0x49c += 1`; then **dies** (slot 88 with 1: the death sound with a per-type pitch, then a corpse, `fish-guppy.md#death`). No hunger or growth.
      - **2** (large): hunger +1100 capped at 1400, **stage = 3** (star guppy), sample (stage-up `SOUND_GROW`-style, `0x00538230`, not checked).
      - **3 or more**: hunger +1100 capped at 1400; nothing else.

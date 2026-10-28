@@ -19,6 +19,9 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`. `grand` = global `S
 
 Confidence: per section below.
 
+
+Captures: `tank2-2_full_01` (2-2, star potions turning large guppies into star guppies, stars left uncollected) and `tank2-2_full_02` (the next chunk: a Starcatcher bought, five stars eaten for $200 coins, then eaten by the wave's alien), replayed exactly from the game's own demo. No starvation and no Virtual Tank behaviour was captured. `traced` where a section says so, else `static`.
+
 ## Slot overrides
 
 Compared with `GameObject` (vtable `0x00596844`):
@@ -77,7 +80,7 @@ Helpers that aren't slots: behaviour step `0x004f9460`, star chase `0x004eff50`,
 
 Positions, velocities and the divisor are `double` (x87). Everything else is `int`. Double → int conversions use `_ftol2` (truncation toward zero).
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`) (every field in `starcatcher_json`).
 
 ## Construction (`Penta::Penta(x)` @ `0x004ec080`)
 
@@ -94,7 +97,7 @@ Positions, velocities and the divisor are `double` (x87). Everything else is `in
 
 **4 app draws** (y, divisor, hunger, mode). No Virtual Tank colour draw (unlike the Oscar).
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`).
 
 ## Spawn (`Board::BuyStarcatcher` @ `0x00545260`)
 
@@ -116,7 +119,7 @@ Callers: shop slot 6 (`0x0054964b`, in `0x00549380`) and the debug key `'4'` (`0
 
 **Splash-in:** a bought Starcatcher starts at y 65 with vy 0. Gravity (+0.4 per tick to vy, applied before integrating) gives `y ≈ 65 + (0.2 / div)·n(n+1)` after n ticks. It hits the floor at y 359 after about **60 ticks** (≈ 1.7 s; 60–63 depending on the divisor), at vy ≈ 24, which the floor clamp zeroes. During the first 45 ticks it emits bubbles (see Update step 6).
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`) (the 7 draws, the drop-in from y 65). Re-creation is `static`.
 
 ## Per-tick update (slot 22 @ `0x004f94e0`)
 
@@ -157,7 +160,7 @@ So the Starcatcher lives on the floor: the clamp holds it at y 359 with vy 0. On
 
 `+0xd0` comes before the guppies in `RebuildZOrder` (`sim/board.md`). So **Starcatchers update before guppies** (and before food). Coins update last. A star dropped by a guppy this tick is first seen by the Starcatcher next tick.
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`). The death-tick continuation is `static`.
 
 ### Star chase (`0x004eff50`)
 
@@ -180,7 +183,7 @@ So the Starcatcher lives on the floor: the clamp holds it at y 359 with vy 0. On
 
 The timer starts at 40, so the first chase tick steers at once. After that it steers every 5th tick. **No RNG.**
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`).
 
 ### Find star (`0x004ec180`)
 
@@ -198,7 +201,7 @@ If `best < 10000`: `+0xf8 = 100` (no effect, see Fields). Return the star or non
 
 Only list `+0xa8` is searched. `AddGameObject` (`0x00543182`) puts every coin with subtype `+0x1a0 ≤ 1` there, except kinds 0xf/0x10.
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`) for kind 3 (the Virtual Tank filter is `static`).
 
 ### Bite (`0x004ec2f0`)
 
@@ -213,7 +216,7 @@ that passes the star filter is eaten:
 
 Then return: **at most one star per Starcatcher per tick.** The filter doesn't look at a coin's expiry, so a star that has begun to expire can still be eaten. On the floor (y = 359, cy = 399), a star resting at y 370 is inside the y range (333 < wy < 383). **No RNG.**
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`).
 
 ### Eat (slot 77 @ `0x004e3140`)
 
@@ -232,7 +235,7 @@ So in Adventure, **every star eaten yields one kind-5 coin and the `BUY` sound, 
 
 **The kind-5 coin** (`coin.md`: "pearl", **$200**; `pet-amp.md` drops the same kind): list `+0xa8` (subtype 0). In `Coin::Update` it is a **rising** kind (5, 8–14, 0x12 rise until the "risen" byte `+0x168` is set). Per tick, y moves by −8.0 while y ≥ 150, −2.5 for 135..150, −1.5 for 130..135, −1.0 for 125..130 and −0.5 for 120..125. Below 120 it sets risen and then falls and rests like any coin (1.5 per tick to y 370; `pet-nimbus.md`). From the floor (spawn y 347) it climbs to y 150 in about 25 ticks and creeps up to just under 120 in about 25 more. It then falls back to 370 in about 167 ticks. How it's drawn hasn't been checked.
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`) (hunger, the kind-5 coin, `BUY`). The Virtual Tank slurp is `static`.
 
 ## Death
 
@@ -276,7 +279,7 @@ Sylvester's prey filter accepts types 5..10 always (`alien-sylvester.md#31-neare
 
 With aliens present, hunger is frozen (step 2.2 is skipped) but the chase and bite still run. Guppies don't drop coins while aliens are in the tank, so in practice there are no new stars then.
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`) (the alien picked it as prey and it left without a corpse).
 
 ## Interactions with other objects
 

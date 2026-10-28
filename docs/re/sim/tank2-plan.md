@@ -23,7 +23,7 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 Same workflow as tank 1 and the pets: spec from the binary → build → record the original playing the level (its own `-record` demo + a CE capture) → replay and fix until exact.
 
 1. **2-1**: done. `tank_2_1` replays `tank2-1_full_01` exactly (the whole level to the 4th egg: shop, reveals, two waves, two star potions exploding at the bottom). A guppy eating a star potion (star guppy / explosion) wasn't captured: record it with the Starcatcher (2-2), which needs star guppies anyway.
-2. **Starcatcher** (`Penta`): spec, build, record (2-2, where its slot is mapped).
+2. **Starcatcher**: done. `tank_2_2_star_guppies` (`tank2-2_full_01`: star guppies from star potions) and `tank_2_2_starcatcher` (`tank2-2_full_02`: a Starcatcher eating stars, then eaten by the alien) replay exactly. Starvation isn't captured yet.
 3. **Alien kind 4** (2-3, "lasers can't hurt this baddie"): spec, build, record.
 4. **Alien kind 5 and its missiles** (2-4): spec, build, record; then Stanley's missile shoot-down with him in that recording.
 5. **2-5** (kind 4 or 5 by a draw) and the hatch/pet screens between tank-2 levels: record a full level.

@@ -1763,7 +1763,14 @@ pub fn debris_ticks(t: &Trace) -> Vec<u32> {
                         && p.age + 1 == x.age
                 })
         });
-        if burst || fresh {
+        // A paused board updates nothing: its frozen sparks aren't new.
+        let paused = s
+            .state
+            .get("board")
+            .and_then(|b| b.get("paused"))
+            .and_then(Value::as_bool)
+            == Some(true);
+        if (burst || fresh) && !paused {
             out.push(s.tick);
         }
         prev = shots;

@@ -836,6 +836,25 @@ fn tank_2_1() {
     }
 }
 
+/// Tank 2-2 (`tank2-2_full_01`): autoplay with star potions dropped on
+/// large guppies (star guppies, their stars left uncollected), no pets.
+#[test]
+fn tank_2_2_star_guppies() {
+    if captured("tank2-2_full_01") {
+        replay_level_tank("tank2-2_full_01", 2, 2);
+    }
+}
+
+/// `tank2-2_full_02`: the next chunk of the same session: a Starcatcher
+/// bought, five stars eaten for $200 coins, then the wave's alien eats the
+/// guppies and the Starcatcher (starcatcher.md).
+#[test]
+fn tank_2_2_starcatcher() {
+    if captured("tank2-2_full_02") {
+        replay_level_tank("tank2-2_full_02", 2, 2);
+    }
+}
+
 /// Amp's zap (`amp_zap_01`): 1-2 with Amp; his charge pushed to 2900
 /// with Cheat Engine, then three clicks on him (autoplay `--zap-amp`): every
 /// guppy dies into a $200 coin and a free guppy drops in (`pet-amp.md`).

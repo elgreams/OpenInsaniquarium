@@ -75,6 +75,12 @@ WALTER = int(sys.argv[sys.argv.index("--walter") + 1]) if "--walter" in sys.argv
 # is no large one after a while, so the explosion is covered too.
 STAR = int(sys.argv[sys.argv.index("--star") + 1]) if "--star" in sys.argv else 0
 STAR_BTN = (BTN_X[3] + 29, 33)
+# Buy one Starcatcher (slot 6, position 4) once revealed and affordable
+# (`--starcatcher`): it lives on stars (starcatcher.md).
+STARCATCHER = "--starcatcher" in sys.argv
+STARCATCHER_BTN = (BTN_X[4] + 29, 33)
+# Leave stars (coin kinds 3, 10) for the Starcatcher (`--no-stars`).
+NO_STARS = "--no-stars" in sys.argv
 
 
 def window():
@@ -117,6 +123,8 @@ def read_state():
             st["guppies"].append(tuple(map(int, p[1:4])))
             st.setdefault("stages", []).append(int(p[4]) if len(p) > 4 else 0)
         elif p[0] == "C":
+            if NO_STARS and len(p) > 4 and int(p[4]) in (3, 10):
+                continue
             st["coins"].append(tuple(map(int, p[1:4])))
         elif p[0] == "P":
             st.setdefault("pets", []).append(tuple(map(int, p[1:6])))
@@ -151,6 +159,7 @@ def main():
     punch_at = time.time() + 4
     stars = 0
     armed = False
+    bought_starcatcher = False
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -242,6 +251,11 @@ def main():
         elif st["revealed"][3] and bought_quantity < MAX_QUANTITY and st["money"] >= 400:
             click(win, *QUANTITY_BTN)
             bought_quantity += 1
+        elif (STARCATCHER and not bought_starcatcher and st["revealed"][6] and st["money"] >= 750
+              and not armed):
+            click(win, *STARCATCHER_BTN)
+            print("starcatcher bought", flush=True)
+            bought_starcatcher = True
         elif (STAR and stars < STAR and not armed and st["revealed"][5] and st["money"] >= 250
               and any(s >= 2 for s in st.get("stages", []))):
             click(win, *STAR_BTN)

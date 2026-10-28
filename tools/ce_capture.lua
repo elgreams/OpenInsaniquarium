@@ -218,7 +218,7 @@ while captured < max_ticks and polls < max_ticks * 40 do
           gf:write(string.format("G %d %d %d %d\n", i32(g + 0x30), i32(g + 0x34), i32(g + 0x9c), i32(g + 0x1a0)))
         end
         for _, c in ipairs(vec_ptrs(u32(board + 0xa8))) do
-          gf:write(string.format("C %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0))
+          gf:write(string.format("C %d %d %d %d\n", i32(c + 0x30), i32(c + 0x34), readBytes(c + 0x198, 1) or 0, i32(c + 0x194)))
         end
         for _, a in ipairs(vec_ptrs(u32(board + 0xb8))) do
           gf:write(string.format("A %d %d\n", i32(a + 0x30), i32(a + 0x34)))

@@ -2254,21 +2254,45 @@ impl Board {
             // Wadsworth's shelter hides small and medium guppies from every
             // alien (`0x00500ff0`). Indices stay those of the full list.
             let sheltered = |f: &Fish| self.shelter.is_some() && !f.is_carnivore() && f.stage < 2;
-            // TODO(spec): Starcatchers are prey too (types 5..10,
-            // alien-sylvester.md#31-nearest-prey-0x004e8b60).
-            let prey: Vec<&Fish> = self.guppies.iter().chain(&self.carnivores).collect();
+            // Starcatchers are prey too (types 5..10,
+            // alien-sylvester.md#31-nearest-prey-0x004e8b60); the alien only
+            // reads a prey's widget position, so they go in as stand-ins.
+            let stand_ins: Vec<Fish> = self
+                .starcatchers
+                .iter()
+                .map(|s| {
+                    let mut f = Fish::new(s.widget_x, s.widget_y, &mut MtRand::new(0));
+                    (f.widget_x, f.widget_y, f.stage) = (s.widget_x, s.widget_y, 5);
+                    f
+                })
+                .collect();
+            let prey: Vec<&Fish> = self
+                .guppies
+                .iter()
+                .chain(&self.carnivores)
+                .chain(&stand_ins)
+                .collect();
             let prey_mask: Vec<bool> = prey.iter().map(|f| sheltered(f)).collect();
             // Replay-only: the original's address-order tie break
             // (`ArtifactPlan::eat_choice`); `None` in play.
             let prefer = self.artifacts.eat_choice;
             self.aliens[i].update_masked(&prey, &prey_mask, prefer, &mut self.rng, &mut out);
             if let Some(g) = out.ate {
-                let victim = if g < self.guppies.len() {
+                let (ng, nc) = (self.guppies.len(), self.carnivores.len());
+                let victim = if g < ng {
                     self.guppies.remove(g)
-                } else {
-                    let c = self.carnivores.remove(g - self.guppies.len());
+                } else if g < ng + nc {
+                    let c = self.carnivores.remove(g - ng);
                     self.carnivore_died();
                     c
+                } else {
+                    // A Starcatcher eaten (slot 75 → remove(true): no
+                    // corpse; messages only if it was starving).
+                    let s = self.starcatchers.remove(g - ng - nc);
+                    if s.hunger <= 0 && (self.tank, self.level) == (2, 2) {
+                        self.starcatcher_died_messages();
+                    }
+                    stand_ins[g - ng - nc].clone()
                 };
                 // Eat sound (`0x00538560`): one draw when not throttled.
                 if self.sample_ready(0x113, 3) {
