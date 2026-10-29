@@ -93,4 +93,4 @@ jobs:
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --title "OpenInsaniquarium $GITHUB_REF_NAME" --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip --draft --title "OpenInsaniquarium $GITHUB_REF_NAME" --notes-file notes.md
