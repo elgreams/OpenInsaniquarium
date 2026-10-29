@@ -802,8 +802,11 @@ impl Board {
         // board's own handler: clicks a coin or pearl takes don't reach it.
         // TODO(spec): whether a guppy's own handler checks it.
         if self.food_lockout > 0 {
-            let (dx, dy) = (self.last_shot.0 - x, self.last_shot.1 - y);
-            if dx * dx + dy * dy > 2500 {
+            // 32-bit ints that wrap (`IMUL` at `0x0054398e`): the last shot
+            // can still hold its uninitialised value (seen in a 2-3 capture).
+            let dx = self.last_shot.0.wrapping_sub(x);
+            let dy = self.last_shot.1.wrapping_sub(y);
+            if dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) > 2500 {
                 self.food_lockout = 0;
             }
         }

@@ -938,6 +938,17 @@ fn tank_2_3_nopets() {
     }
 }
 
+/// `tank2-3_nopets_02`: 2-3 with no pets, the countdown pushed to 300 once
+/// food quality is for sale; Gus eats two star potions (20 HP and the
+/// burst each), level-1 and then level-2 pellets (6 and 8 HP) and two
+/// guppies, and is fed to death (alien-kind4.md#32).
+#[test]
+fn tank_2_3_nopets_b() {
+    if captured("tank2-3_nopets_02") {
+        replay_level_tank("tank2-3_nopets_02", 2, 3);
+    }
+}
+
 /// The Destructor, alien kind 5 (`tank2-4_destructor_01`): 2-4, money
 /// pushed to 2000 (seven guppies) and the countdown to 500; two volleys of
 /// three missiles, some reaching their guppies, some clicked down, the
