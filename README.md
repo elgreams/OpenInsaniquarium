@@ -4,12 +4,28 @@ An open-source, clean-room reimplementation of **Insaniquarium Deluxe 1.1** in R
 
 **You need your own copy of Insaniquarium Deluxe.** This repository contains no game assets. The engine reads them from your install at runtime.
 
-## Status
+## Status: preview
 
-Tank 1-1 is playable and replays a recorded game of the original bit-exactly. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+**v0.1.0 is an early preview.** Adventure's first tank (levels 1-1 to 1-5, with pets) plays from the main menu; tank 1 and all 24 pets are tested tick by tick against recordings of the original. There are no saves yet, and tanks 2–5 and the other modes are still to come. See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Playing
+
+1. **You need your own copy of Insaniquarium Deluxe**, installed (for example from Steam). OpenInsaniquarium ships none of the game's pictures, sounds or music; it reads them from your install. Please don't share game files.
+2. Download the archive for your system from [Releases](https://github.com/elgreams/OpenInsaniquarium/releases) and unpack it anywhere.
+3. Run `openinsaniquarium` (`openinsaniquarium.exe` on Windows).
+
+It looks for the game in the usual Steam folders. If it can't find it, it tells you how to point it there, in one of these ways:
+
+- start it with `openinsaniquarium --data "/path/to/Insaniquarium Deluxe"`;
+- set `INSANIQUARIUM_DATA` to that folder;
+- put the folder path in `~/.config/openinsaniquarium/data-path.txt` (Linux) or `%APPDATA%\openinsaniquarium\data-path.txt` (Windows).
+
+The folder is the one that contains `images`, `sounds` and `properties`. On Linux, music needs libopenmpt (package `libopenmpt0` or similar); without it the game plays silently.
+
+## Building
 
 ```sh
-cargo run --bin tank -- --data "/path/to/Insaniquarium Deluxe"
+cargo run --bin openinsaniquarium -- --data "/path/to/Insaniquarium Deluxe"
 cargo run --bin asset-browser -- --data "/path/to/Insaniquarium Deluxe"
 cargo test
 ```

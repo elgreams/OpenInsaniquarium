@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.97.1"
 publish = false
@@ -32,3 +32,9 @@ debug = "line-tables-only"
 # unoptimised; build the app crate with optimisations in dev too.
 [profile.dev.package.insaniquarium-app]
 opt-level = 2
+
+# Release binaries: no debug info, symbols stripped (dynamic_linking is only
+# in the app's opt-in `dev` feature, never in release builds).
+[profile.release]
+strip = true
+debug = false

@@ -1,0 +1,93 @@
+name: Release
+
+# A v* tag builds both archives and attaches them to a DRAFT release (it is
+# published by hand, docs/RELEASING.md). workflow_dispatch is a dry run:
+# the same build and checks, archives uploaded as workflow artifacts only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  OPENMPT: "0.8.9"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install Bevy Linux deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: Swatinem/rust-cache@v2
+      # Release profile; the app's `dev` feature (Bevy dynamic_linking) is
+      # not enabled.
+      - run: cargo build --release --locked --bin openinsaniquarium --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c "import json,sys; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name']=='insaniquarium-app'))")
+          DIR=openinsaniquarium-$VERSION-${{ matrix.name }}
+          mkdir "$DIR"
+          cp LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md "$DIR"/
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/openinsaniquarium.exe "$DIR"/
+            # libopenmpt for music (BSD-3-Clause), from its official build.
+            curl -sSfL -o openmpt.zip "https://lib.openmpt.org/files/libopenmpt/dev/libopenmpt-${OPENMPT}+release.dev.windows.vs2022.zip"
+            mkdir openmpt && cd openmpt && unzip -q ../openmpt.zip && cd ..
+            cp openmpt/bin/amd64/*.dll "$DIR"/
+            mkdir "$DIR/licenses-libopenmpt"
+            cp openmpt/LICENSE.txt "$DIR/licenses-libopenmpt/"
+            cp openmpt/Licenses/* "$DIR/licenses-libopenmpt/"
+            7z a -tzip "$DIR.zip" "$DIR" >/dev/null
+            echo "ARCHIVE=$DIR.zip" >> "$GITHUB_ENV"
+          else
+            cp target/${{ matrix.target }}/release/openinsaniquarium "$DIR"/
+            tar -czf "$DIR.tar.gz" "$DIR"
+            echo "ARCHIVE=$DIR.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: No game assets in the archive
+        run: bash tools/check_release.sh "$ARCHIVE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ARCHIVE }}
+
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Notes from CHANGELOG.md
+        run: |
+          V=${GITHUB_REF_NAME#v}
+          awk -v v="$V" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --title "OpenInsaniquarium $GITHUB_REF_NAME" --notes-file notes.md

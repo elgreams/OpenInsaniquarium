@@ -52,7 +52,7 @@ The smallest real game, provably 1:1.
 
 - [x] Sim: `Board`, guppy (hunger, growth stages, coin drops, death), food (drop, sink), coins (types, fall, collect), money, shop (guppy, egg pieces), mercy guppy. *(Food-quality/quantity upgrades and DeadFish visuals deferred: not on 1-1.)*
 - [x] Sim: the first alien (Sylvester): spawn timing, targeting, health, click damage. *(Tank 1-2, with Stinky and the food-quality upgrade. `full_tank_1_2_replays`: `tank1-2_full_02`, level start to the third egg piece, ~6200 ticks, two waves, bit-exact apart from the documented effect-shot deviation.)*
-- [x] App: tank render, click-to-feed/collect, shop bar, money counter, help arrows, sounds, music, win condition (egg pieces). *(`cargo run --bin tank`. Hatch screen is M4.)*
+- [x] App: tank render, click-to-feed/collect, shop bar, money counter, help arrows, sounds, music, win condition (egg pieces). *(`cargo run --bin openinsaniquarium`. Hatch screen is M4.)*
 - [x] Trace-based tests for all of the above. *(`crates/harness/tests/tank1_1.rs`: 6 captures, ~16k ticks, incl. a full level.)*
 
 **Exit:** a recorded play of Tank 1-1 on the original replays in our sim with zero divergence for its full length. ✅ *`tank1-1_full_01`: 5222 ticks from level start (after the mercy guppy) to the third egg piece, 48 inferred inputs, bit-exact (app RNG, all guppy/food/coin fields, money, shop). Played by `tools/autoplay_tank11.py`.*

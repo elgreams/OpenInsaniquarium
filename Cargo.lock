@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "harness"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "insaniquarium-sim",
  "serde",
@@ -3199,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "insaniquarium-app"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "bevy",
  "harness",
@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "insaniquarium-sim"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "sexy-core",
 ]
@@ -4835,7 +4835,7 @@ dependencies = [
 
 [[package]]
 name = "sexy-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "gif",
  "image",

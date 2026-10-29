@@ -49,6 +49,6 @@ What the frame diff found and fixed:
 
 ## The window shows the tested picture
 
-The playable app (`bin/tank.rs`) draws through the same CPU compositor (`render.rs`) that the frame tests compare with the original. Each frame becomes one 640×480 texture; there are no GPU sprites or blend modes, so translucency, additive light and tinting look exactly as tested.
+The playable app (`bin/openinsaniquarium.rs`) draws through the same CPU compositor (`render.rs`) that the frame tests compare with the original. Each frame becomes one 640×480 texture; there are no GPU sprites or blend modes, so translucency, additive light and tinting look exactly as tested.
 
 Check: `--dump-frames DIR` saves every new frame. X11 screenshots of the window matched the dumped frame for the same tick with a maximum channel difference of 0 (3 of 3, tank 1-2).

@@ -1,9 +1,8 @@
-//! Playable Adventure prototype (tank 1): runs `insaniquarium-sim` at the
-//! original's 28 ms tick and draws its state. Click to drop food, collect
-//! coins and shoot aliens; the last egg piece leads to the hatch screen and
-//! on to the next level (progress lasts for the session).
+//! OpenInsaniquarium: the game. Starts at the main menu; Adventure runs
+//! `insaniquarium-sim` at the original's 28 ms tick and draws its state
+//! (tank 1 in v0.1.0; progress lasts for the session).
 //!
-//! Usage: `cargo run --bin tank -- --data <install> [--level N] [--seed N] [--no-music] [--finish]`
+//! Usage: `cargo run --bin openinsaniquarium -- --data <install> [--level N] [--seed N] [--no-music] [--finish]`
 //! (`--finish` puts the last egg piece up for sale, to reach the hatch screen.)
 //!
 //! What a frame shows comes from [`insaniquarium_app::scene`] (Bevy-free,
