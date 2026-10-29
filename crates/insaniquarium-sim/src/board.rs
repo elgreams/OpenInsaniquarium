@@ -147,6 +147,9 @@ pub struct Board {
     /// Paused by focus loss or the menu ("Game Paused", dialog 18): board
     /// clicks are swallowed until it's resumed.
     pub focus_paused: bool,
+    /// `+0x4ee`: a fish has eaten this level ("level in progress"); Back to
+    /// Main Menu asks to confirm only then (screens/options-dialog.md).
+    pub fed: bool,
     /// One-time hint bytes `+0x4b0..` (message.rs): each hint dialog or
     /// one-time message is shown once per level.
     pub hints: [bool; HINTS],
@@ -267,6 +270,7 @@ impl Board {
             pet_dialog: None,
             owned: [false; crate::profile::PET_COUNT],
             focus_paused: false,
+            fed: false,
             hints: [false; HINTS],
             message: Message::default(),
             guppies: Vec::new(),
@@ -2200,10 +2204,12 @@ impl Board {
                 .iter()
                 .find(|f| f.kind == crate::fish::FishKind::Gumbo)
                 .map(|f| (f.widget_x, f.widget_y)),
+            fed: false,
         };
         for &i in born {
             self.guppies[i].update(env, &mut world);
         }
+        self.fed |= world.fed;
         for s in stage_ups {
             self.on_stage_up(s);
         }
@@ -2421,6 +2427,7 @@ impl Board {
                 .iter()
                 .find(|f| f.kind == crate::fish::FishKind::Gumbo)
                 .map(|f| (f.widget_x, f.widget_y)),
+            fed: false,
         };
         // Guppies Angie revived this tick sit at the end of the widget
         // list: they update after the pets (with the newborns).
@@ -2440,6 +2447,7 @@ impl Board {
                 carnivore_died += 1;
             }
         }
+        self.fed |= world.fed;
         for i in eaten {
             // Fish slot 87 (`true`): removed, no corpse; `board+0x488 += 1`.
             self.guppies[i].dead = true;

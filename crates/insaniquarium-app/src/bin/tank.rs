@@ -11,6 +11,8 @@
 //! [`insaniquarium_app::render`], the same code the frame-diff tests check
 //! against the original, and shown as one texture.
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,19 +24,21 @@ use bevy::audio::{AddAudioSource, Volume};
 use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::window::PrimaryWindow;
+use bevy::window::{PrimaryWindow, WindowFocused};
 use insaniquarium_app::assets::{ALIEN_SONG, GameImages, TANK1_SONG, load_sound_bytes};
+use insaniquarium_app::menus::{self, Btn, Layer, MenuArt};
 use insaniquarium_app::render::render;
 use insaniquarium_app::scene::{self, Fonts, HATCH_CONTINUE};
 use insaniquarium_app::song::Song;
 use insaniquarium_sim::Board;
 use insaniquarium_sim::board::Input;
-use insaniquarium_sim::game::{Game, HatchInput, Screen};
+use insaniquarium_sim::game::{
+    Game, HatchInput, MenuButton, MenuInput, MenuOut, Options, OptionsInput, Screen,
+};
 use insaniquarium_sim::pet_screen::{self, PetInput};
 use insaniquarium_sim::profile::Profile;
 use insaniquarium_sim::shop::Slot;
 use insaniquarium_sim::sound::{Played, Sound};
-use sexy_core::data_dir::DataDir;
 use sexy_core::image::Rgba;
 use sexy_core::music::Openmpt;
 use sexy_core::rand::MtRand;
@@ -52,10 +56,14 @@ fn main() {
             .position(|a| a == name)
             .and_then(|i| args.get(i + 1))
     };
-    let data = match DataDir::resolve(arg("--data").map(PathBuf::from).as_deref()) {
+    if args.iter().any(|a| a == "--version") {
+        println!("openinsaniquarium {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    let data = match insaniquarium_app::setup::find_data(arg("--data").map(PathBuf::from)) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("error: {e}");
+        Err(msg) => {
+            insaniquarium_app::setup::report(&msg);
             std::process::exit(2);
         }
     };
@@ -107,7 +115,13 @@ fn main() {
         // TODO(spec): the bonus round; skip to the next tank.
         profile.advance();
     }
-    let mut game = Game::new(profile, app_rng, global);
+    // The main menu first; `--level N` / `--finish` (dev) go straight in.
+    let direct = arg("--level").is_some() || args.iter().any(|a| a == "--finish");
+    let mut game = if direct {
+        Game::new(profile, app_rng, global.clone())
+    } else {
+        Game::menu(profile)
+    };
     if args.iter().any(|a| a == "--finish") {
         // Dev shortcut: the last egg piece is up and affordable (buy it to
         // reach the hatch screen).
@@ -123,7 +137,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Insaniquarium".into(),
+                        title: "OpenInsaniquarium".into(),
                         resolution: (W as u32, H as u32).into(),
                         resizable: false,
                         ..default()
@@ -141,7 +155,11 @@ fn main() {
             pet_inputs: Vec::new(),
             pet_hover: None,
             hatch_sound: false,
+            menu_inputs: Vec::new(),
+            options_inputs: Vec::new(),
+            global,
         })
+        .insert_resource(Menus(MenuArt::load(&data)))
         .insert_resource(Sheets(scene::sheets(&images, &manifest)))
         .insert_resource(Sources(images))
         .insert_resource(DumpDir(arg("--dump-frames").map(PathBuf::from).inspect(
@@ -154,7 +172,7 @@ fn main() {
         .insert_resource(songs)
         .insert_resource(Hud(Fonts::load(&data)))
         .add_systems(Startup, setup)
-        .add_systems(Update, (mouse, draw, title).chain())
+        .add_systems(Update, (focus, mouse, draw, title).chain())
         .add_systems(FixedUpdate, (step, play_sounds, play_music).chain())
         .run();
 }
@@ -171,7 +189,15 @@ struct Sim {
     pet_hover: Option<i32>,
     /// The hatch screen asked for its sound this tick.
     hatch_sound: bool,
+    menu_inputs: Vec<MenuInput>,
+    options_inputs: Vec<OptionsInput>,
+    /// The app's global stream; Adventure from the menu seeds a level's
+    /// streams from it (the sim never reads the clock).
+    global: MtRand,
 }
+
+#[derive(Resource)]
+struct Menus(MenuArt);
 
 impl Sim {
     /// The tank, when it's the current screen.
@@ -279,7 +305,10 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, dump: Res<Du
     commands.insert_resource(ScreenImage(handle, dump.0.clone()));
 }
 
-fn step(mut sim: ResMut<Sim>) {
+fn step(mut sim: ResMut<Sim>, mut exit: MessageWriter<AppExit>) {
+    for i in std::mem::take(&mut sim.options_inputs) {
+        sim.game.options_input(i);
+    }
     let inputs = std::mem::take(&mut sim.pending);
     let hatch_inputs = std::mem::take(&mut sim.hatch_inputs);
     sim.hatch_sound = false;
@@ -290,10 +319,19 @@ fn step(mut sim: ResMut<Sim>) {
             let inputs = std::mem::take(&mut sim.pet_inputs);
             sim.game.step_pets(&inputs);
         }
-        // TODO: the main menu; for now, straight back into Adventure.
-        Screen::Menu => {
-            let profile = sim.game.profile.clone();
-            sim.game = Game::new(profile, MtRand::new(0), MtRand::new(1));
+        Screen::Menu(_) | Screen::PreviewEnd => {
+            let inputs = std::mem::take(&mut sim.menu_inputs);
+            match sim.game.step_menu(&inputs) {
+                MenuOut::StartAdventure => {
+                    let rng = MtRand::new(sim.global.next_u31());
+                    let global = sim.global.clone();
+                    sim.game.start_adventure(rng, global);
+                }
+                MenuOut::Quit => {
+                    exit.write(AppExit::Success);
+                }
+                MenuOut::Stay => {}
+            }
         }
     }
 }
@@ -378,10 +416,23 @@ fn play_music(
     }
 }
 
+/// Focus loss pauses the tank ("Game Paused", dialog 0x12); regaining
+/// focus doesn't resume it (framework/dialog.md#game-paused-dialog-0x12).
+fn focus(mut events: MessageReader<WindowFocused>, mut sim: ResMut<Sim>) {
+    for e in events.read() {
+        if !e.focused && sim.game.options.is_none() {
+            sim.pending.push(Input::SetPaused(true));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // Bevy system parameters.
 fn mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     window: Query<&Window, With<PrimaryWindow>>,
     hud: Res<Hud>,
+    menus: Res<Menus>,
+    src: Res<Sources>,
     mut cursor: ResMut<Cursor>,
     mut sim: ResMut<Sim>,
 ) {
@@ -389,6 +440,103 @@ fn mouse(
     cursor.pos = w.cursor_position().map(|p| (p.x as i32, p.y as i32));
     cursor.down = buttons.pressed(MouseButton::Left);
     let Some((x, y)) = cursor.pos else { return };
+    let released = buttons.just_released(MouseButton::Left);
+    let on =
+        |(rx, ry, rw, rh): menus::Rect| (rx..rx + rw).contains(&x) && (ry..ry + rh).contains(&y);
+    // Buttons act on release over them (ButtonWidget).
+    match &sim.game.screen {
+        Screen::Menu(m) => {
+            if released {
+                let input = if m.quit_confirm {
+                    menus
+                        .0
+                        .two_button_screen_rects(&src.0, menus::QUIT_BODY)
+                        .and_then(|[yes, no]| {
+                            if on(yes) {
+                                Some(MenuInput::QuitYes)
+                            } else if on(no) {
+                                Some(MenuInput::QuitNo)
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    match menus::menu_widget_at((x, y)) {
+                        Some(menus::MenuWidget::Adventure) => {
+                            Some(MenuInput::Press(MenuButton::Adventure))
+                        }
+                        Some(menus::MenuWidget::Quit) => Some(MenuInput::Press(MenuButton::Quit)),
+                        _ => None,
+                    }
+                };
+                sim.menu_inputs.extend(input);
+            }
+            return;
+        }
+        Screen::PreviewEnd => {
+            if released {
+                sim.menu_inputs.push(MenuInput::Click);
+            }
+            return;
+        }
+        _ => {}
+    }
+    if let Some(o) = sim.game.options {
+        if released {
+            let input = match o {
+                Options::Open => {
+                    let [_help, back, ok] = menus::options_screen_rects();
+                    if on(back) {
+                        Some(OptionsInput::BackToMainMenu)
+                    } else if on(ok) {
+                        Some(OptionsInput::Ok)
+                    } else {
+                        None
+                    }
+                }
+                Options::LeaveConfirm => menus
+                    .0
+                    .two_button_screen_rects(&src.0, menus::LEAVE_BODY)
+                    .and_then(|[leave, cancel]| {
+                        if on(leave) {
+                            Some(OptionsInput::Leave)
+                        } else if on(cancel) {
+                            Some(OptionsInput::Cancel)
+                        } else {
+                            None
+                        }
+                    }),
+            };
+            sim.options_inputs.extend(input);
+        }
+        return;
+    }
+    if let Some(b) = sim.board()
+        && b.focus_paused
+        && b.dialog.is_none()
+    {
+        // Only Resume Game closes it, on release.
+        if released
+            && menus
+                .0
+                .one_button_screen_rect(&src.0, menus::PAUSED_BODY)
+                .is_some_and(on)
+        {
+            sim.pending.push(Input::DismissDialog);
+        }
+        return;
+    }
+    if let Some(b) = sim.board()
+        && b.dialog.is_none()
+        && b.pet_dialog.is_none()
+        && on(menus::TANK_MENU_BUTTON)
+    {
+        // The Menu button takes the press; it opens Options on release.
+        if released {
+            sim.options_inputs.push(OptionsInput::Open);
+        }
+        return;
+    }
     if let Screen::Pets(p) = &sim.game.screen {
         // Pet screen (`pet-screen.md#input`): enter/leave as the mouse
         // moves between bubbles, clicks act on release, the confirm
@@ -485,8 +633,8 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
         return;
     };
     let t = match sim.board() {
-        Some(b) => format!("Insaniquarium — tank {}-{} — ${}", b.tank, b.level, b.money),
-        None => "Insaniquarium".into(),
+        Some(b) => format!("OpenInsaniquarium — tank {}-{}", b.tank, b.level),
+        None => "OpenInsaniquarium".into(),
     };
     if w.title != t {
         w.title = t;
@@ -496,18 +644,104 @@ fn title(sim: Res<Sim>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
 /// Composite the frame on the CPU (`render.rs`, the same compositor the
 /// frame-diff harness checks against the original's screenshots) into the
 /// screen texture. Redrawn only when the frame changes.
+/// The menus layers over the scene for the current state
+/// (`menus.rs`): the main menu, Options / Leave Game?, Game Paused, the
+/// tank's Menu button hover.
+fn menu_layers(
+    sim: &Sim,
+    cursor: &Cursor,
+    menus: &mut MenuArt,
+    img: &GameImages,
+) -> Vec<scene::Text> {
+    let c = cursor.pos;
+    let hot2 = |rects: Option<[menus::Rect; 2]>| {
+        rects.and_then(|r| {
+            (0..2).find_map(|k| match Btn::of(r[k], c, cursor.down) {
+                Btn::Up => None,
+                b => Some((k, b)),
+            })
+        })
+    };
+    let mut layers = Vec::new();
+    match &sim.game.screen {
+        Screen::Menu(m) => {
+            let hot = if m.quit_confirm {
+                None
+            } else {
+                c.and_then(menus::menu_widget_at).map(|w| {
+                    let r = menus::MENU_WIDGETS.iter().find(|x| x.0 == w).unwrap().1;
+                    (w, Btn::of(r, c, cursor.down))
+                })
+            };
+            layers.push(Layer::Menu { hot });
+            if m.quit_confirm {
+                let r = menus.two_button_screen_rects(img, menus::QUIT_BODY);
+                layers.push(Layer::QuitConfirm { hot: hot2(r) });
+            }
+        }
+        Screen::PreviewEnd => layers.push(Layer::PreviewEnd),
+        Screen::Tank(b) => match sim.game.options {
+            Some(Options::Open) => {
+                let r = menus::options_screen_rects();
+                let hot = (0..3).find_map(|k| match Btn::of(r[k], c, cursor.down) {
+                    Btn::Up => None,
+                    s => Some((k, s)),
+                });
+                layers.push(Layer::Options { hot });
+            }
+            Some(Options::LeaveConfirm) => {
+                layers.push(Layer::Options { hot: None });
+                let r = menus.two_button_screen_rects(img, menus::LEAVE_BODY);
+                layers.push(Layer::Leave { hot: hot2(r) });
+            }
+            None if b.focus_paused && b.dialog.is_none() => {
+                let r = menus.one_button_screen_rect(img, menus::PAUSED_BODY);
+                layers.push(Layer::Paused(
+                    r.map_or(Btn::Up, |r| Btn::of(r, c, cursor.down)),
+                ));
+            }
+            None if b.dialog.is_none() && b.pet_dialog.is_none() => {
+                let s = Btn::of(menus::TANK_MENU_BUTTON, c, cursor.down);
+                if s != Btn::Up {
+                    layers.push(Layer::TankMenuButton(s));
+                }
+            }
+            None => {}
+        },
+        _ => {}
+    }
+    layers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            let (image, (x, y)) = menus.layer(img, l)?;
+            Some(scene::Text {
+                image,
+                x: x as f32,
+                y: y as f32,
+                z: 100.0 + i as f32,
+                colour: [255; 3],
+            })
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)] // Bevy system parameters.
 fn draw(
     sim: Res<Sim>,
     src: Res<Sources>,
     sheets: Res<Sheets>,
     mut hud: ResMut<Hud>,
+    mut menus: ResMut<Menus>,
     cursor: Res<Cursor>,
     screen: Res<ScreenImage>,
     mut images: ResMut<Assets<Image>>,
     mut last: Local<Option<Vec<u8>>>,
 ) {
-    let frame = scene::frame(&sim.game, cursor.pos, cursor.down, &mut hud.0, &src.0);
+    let mut frame = scene::frame(&sim.game, cursor.pos, cursor.down, &mut hud.0, &src.0);
+    frame
+        .texts
+        .extend(menu_layers(&sim, &cursor, &mut menus.0, &src.0));
     let rgba = render(&frame, &sheets.0);
     let bytes = rgba.as_bytes();
     if last.as_deref() == Some(bytes) {

@@ -4,7 +4,9 @@
 
 pub mod assets;
 pub mod framediff;
+pub mod menus;
 pub mod render;
 pub mod scene;
+pub mod setup;
 pub mod song;
 pub mod text;

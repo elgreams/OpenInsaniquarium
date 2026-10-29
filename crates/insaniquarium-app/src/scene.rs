@@ -727,7 +727,8 @@ pub fn frame(
             cels: pets_cels(&p.screen, cursor, mouse_down),
             texts: fonts.pets_text(&p.screen),
         },
-        Screen::Menu => Frame::default(),
+        // Drawn by the app from `menus` (whole-screen layers).
+        Screen::Menu(_) | Screen::PreviewEnd => Frame::default(),
     }
 }
 

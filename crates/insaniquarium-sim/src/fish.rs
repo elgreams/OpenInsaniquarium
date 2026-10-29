@@ -250,6 +250,9 @@ pub struct World<'a> {
     /// The first Gumbo's widget position, if one is in the tank
     /// (`board+0x174`, pet-gumbo.md).
     pub lure: Option<(i32, i32)>,
+    /// Set when any fish eats (`board+0x4ee`, "level in progress";
+    /// `0x004d6a30`, screens/options-dialog.md#buttons).
+    pub fed: bool,
 }
 
 impl World<'_> {
@@ -793,6 +796,7 @@ impl Fish {
         }
         let was_hungry = self.looks_hungry();
         self.timer_f8 = 0;
+        w.fed = true;
         self.hunger = (self.hunger + 900).min(1300);
         let (vx, vy) = (w.guppies[victim].widget_x, w.guppies[victim].widget_y);
         let n = w.rng.next_range(3) + 2;
@@ -978,6 +982,7 @@ impl Fish {
         let was_hungry = self.looks_hungry();
         w.play_slurp();
         self.timer_f8 = 0;
+        w.fed = true;
         if food.level == 3 {
             // A star potion (food.md#guppy-hunger-and-feeding, level 3).
             match self.stage {
