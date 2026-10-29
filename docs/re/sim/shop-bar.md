@@ -87,7 +87,7 @@ Helpers (our names):
 
 The same switch also writes `+0x2bc` (tank 1: 0/1/2/3/3 by level; 1-2 also sets `+0x2c0 = 1750`). These are not shop fields; they look like alien/wave parameters and belong to the alien spec.
 
-Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_full_01`, slots, prices, reveals and purchases compared); the 2-2..2-4 rows are `static`. 2-5's kind draw is `traced` (`level_2_5_start`); its slots and egg price are `static` (the 2-5 capture buys guppies only).
+Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_full_01`, slots, prices, reveals and purchases compared); 2-3 is `traced` for the slots revealed and the prices paid (guppy 100, food quality 200 twice, star potion 250, Starcatcher 750; `tank_2_3_nopets`, `tank_2_3_nopets_b`), its egg price is `static` (no egg bought); the 2-2 and 2-4 rows are `static`. 2-5's kind draw is `traced` (`level_2_5_start`); its slots and egg price are `static` (the 2-5 capture buys guppies only).
 
 | Slot | Pos | Price |
 |---|---|---|
@@ -207,7 +207,7 @@ The RNG order shown is within the purchase call. Sound ids: `SOUND_BUY` = 0x111,
 
 TODO: RNG inside the spawn functions for slots 1, 4, 6–9 (not reachable on 1-1).
 
-`traced` for slots 0, 2, 3 and 11. Slots 1 and 4–10 are `static`.
+`traced` for slots 0, 2, 3 and 11; for slot 5 (star potion: armed, $250) and slot 6 (Starcatcher: spawn, reveal 10/11, splash) by `tank_2_1`, `tank_2_2_starcatcher` and `tank_2_3_nopets`; slot 10 for the laser upgrade (above). Slots 1, 4 and 7–9 are `static`.
 
 ## Egg pieces
 

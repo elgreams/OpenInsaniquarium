@@ -1,6 +1,6 @@
 # Starcatcher (`Sexy::Penta`, type `0x08`)
 
-Status: `draft (static)`. Nothing here has been checked against a capture yet. Every section is `static` until a 2-2 recording is replayed (see [Recording](#recording)).
+Status: `traced` for the Adventure behaviour (purchase, chase, eating, starving; see the tags per section). The Virtual Tank mode and the 2-2 death messages are `static`.
 
 Class `Sexy::Penta`, vtable `0x00596ee4`, board list `+0xd0`, object size **`0x1b0`** (the `operator new` size in both spawn routines). It is **not a `Fish`**: it derives from `GameObject` directly and has its own update (slot 22 @ `0x004f94e0`) and draw (slot 26 @ `0x004e3030`). It shares a few small slots with `Sexy::Grubber`.
 
@@ -20,7 +20,7 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`. `grand` = global `S
 Confidence: per section below.
 
 
-Captures: `tank2-2_full_01` (2-2, star potions turning large guppies into star guppies, stars left uncollected) and `tank2-2_full_02` (the next chunk: a Starcatcher bought, five stars eaten for $200 coins, then eaten by the wave's alien), replayed exactly from the game's own demo. No starvation and no Virtual Tank behaviour was captured. `traced` where a section says so, else `static`.
+Captures: `tank2-2_full_01` (2-2, star potions turning large guppies into star guppies, stars left uncollected) and `tank2-2_full_02` (the next chunk: a Starcatcher bought, five stars eaten for $200 coins, then eaten by the wave's alien), and `tank2-3_nopets_01` (2-3: a Starcatcher bought with no stars to eat, which **starves** 903 ticks later), all replayed exactly from the game's own demo. No Virtual Tank behaviour was captured. `traced` where a section says so, else `static`.
 
 ## Slot overrides
 
@@ -160,7 +160,7 @@ So the Starcatcher lives on the floor: the clamp holds it at y 359 with vy 0. On
 
 `+0xd0` comes before the guppies in `RebuildZOrder` (`sim/board.md`). So **Starcatchers update before guppies** (and before food). Coins update last. A star dropped by a guppy this tick is first seen by the Starcatcher next tick.
 
-`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`). The death-tick continuation is `static`.
+`traced` by `tank_2_2_starcatcher` (`tank2-2_full_02`). The death-tick continuation (the reroll draw still made) is `traced` by `tank_2_3_nopets` (`tank2-3_nopets_01`).
 
 ### Star chase (`0x004eff50`)
 
@@ -243,7 +243,7 @@ So in Adventure, **every star eaten yields one kind-5 coin and the `BUY` sound, 
 
 1. Die sound `0x00538610(8)`: `DIE` `0x117`, gap 3, **pitch +4** (type 8). No RNG.
 2. **Remove** `0x004f3ad0(false)` (below). The shadow is kept.
-3. `AddDeadFish(trunc x, trunc y, vx, vy = 0.0, divisor, kind 8, facing right = vx > 0, shadow)`. The dead fish gets **vy 0.0**, not the Starcatcher's vy (a `FLDZ` left on the FPU stack is stored there).
+3. `AddDeadFish(trunc x, trunc y, vx, vy = 0.0, divisor, kind 8, facing right = vx > 0, shadow)`. The dead fish gets **vy 0.0**, not the Starcatcher's vy (a `FLDZ` left on the FPU stack is stored there). The x and vx are the ones **at step 2.3**, before the rest of that tick's update (damping, integrate) moves the removed object.
 
 The `DeadFish` of **kind 8** (`fish-guppy.md#dead-fish`, update `0x004f64e0`):
 - AddDeadFish's start-vy rule turns vy 0 into −2 (y ≥ 115), so the corpse hops up, then settles at +0.05 per tick toward 2.0.
@@ -254,7 +254,7 @@ The `DeadFish` of **kind 8** (`fish-guppy.md#dead-fish`, update `0x004f64e0`):
 
 **No RNG** in the death itself.
 
-`static`.
+`traced` by `tank_2_3_nopets` (`tank2-3_nopets_01`: hunger to 0, removal, the kind-8 corpse with vy 0 → −2 and the step-2.3 vx, no RNG). The sound, the draw and revival are `static`.
 
 ### Remove (`0x004f3ad0`)
 
@@ -271,7 +271,7 @@ Used by starvation (`false`), by being eaten (slot 75, `true`) and by Shrapnel's
      As with the carnivore chain (`carnivore.md#carnivore-remove`), the 1st death on 2-2 shows the warning, the 2nd the "need stars" hint, the 3rd the "star potions" hint, and later deaths show nothing new.
    - `app+0x880 ≠ 0`: "The purple guys eat coins!", id `0x22`.
 
-`static`.
+`traced` by `tank_2_3_nopets` for step 1 (removed from `+0xd0`, shadow kept). The counter and messages are `static` (the replay doesn't compare them; on 2-3 the message chain doesn't apply).
 
 ### Eaten by an alien
 
@@ -339,12 +339,12 @@ It is dropped at `(wx + 5, wy + 10)` with the same −1.0 argument and the guppy
 
 Within its update the order is: behaviour (no draws in Adventure), then the reroll, then the splash bubbles. The reroll still runs on the tick it starves (see Per-tick update).
 
-`static`.
+`traced` by `tank_2_2_starcatcher` (purchase, reroll, splash, eat) and `tank_2_3_nopets` (death). The Virtual Tank rows and re-creation are `static`.
 
 ## Open questions
 
-- Everything is `static`. See [Recording](#recording).
-- Hunger timeline (static arithmetic): it starts at 900–1099, so the first chase begins 1–200 ticks after purchase. A meal caps at 1300 (400 ticks of no chasing). An unfed Starcatcher dies 900–1099 ticks (25–31 s) after purchase. Stars from one stage-3 guppy come every 150–349 ticks, so one star guppy can keep a Starcatcher alive (+900 per star), and each star is turned into $200 instead of $40.
+- Not yet captured: the 2-2 death messages, the Virtual Tank mode, revival. See [Recording](#recording).
+- Hunger timeline: it starts at 900–1099, so the first chase begins 1–200 ticks after purchase. A meal caps at 1300 (400 ticks of no chasing). An unfed Starcatcher dies 900–1099 ticks (25–31 s) after purchase (`tank2-3_nopets_01`: 903 ticks). Stars from one stage-3 guppy come every 150–349 ticks, so one star guppy can keep a Starcatcher alive (+900 per star), and each star is turned into $200 instead of $40.
 - Coin kind 0x12 passes the star filter (and is a rising kind worth $15). Who drops kind 0x12 isn't known yet.
 - `app+0x880`: taken as "Virtual Tank" from `carnivore.md`/`alien-sylvester.md`. In that mode the Starcatcher eats silver and gold coins, and its death message is "The purple guys eat coins!". This hasn't been verified.
 - How the kind-5 coin is drawn (diamond art? pearl art?) and its collect sound (`coin.md` says pearls play a fixed sample).

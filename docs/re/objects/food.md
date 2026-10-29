@@ -4,7 +4,7 @@ Status: `draft`. Static analysis of the inner PE, checked against the live captu
 
 Covers basic pellets dropped by the player. Potions (type 2), the "drop from above" variant (`+0x190`), drifting food (`+0x18c` ≠ 0) and level-3 food are only noted.
 
-Confidence: basic pellets (level 0 and 1) on tank 1 are `traced`. Level 2 food, star potions, drifting/carried variants and alien-type-4 rules are `static`.
+Confidence: basic pellets (level 0 and 1) on tank 1 are `traced`; star potions (tank 2) and Gus eating levels 0-3 (`alien-kind4.md`) are `traced`. A guppy eating level 2 and drifting/carried variants are `static`.
 
 ## Fields (raw offsets)
 
@@ -33,7 +33,7 @@ Confidence: basic pellets (level 0 and 1) on tank 1 are `traced`. Level 2 food, 
 1. The click must be inside the tank: `31 ≤ x ≤ 586` and `61 ≤ y ≤ 399` (unsigned-range checks on `x − 31 ≤ 0x22b`, `y − 61 ≤ 0x152`). Also requires `board+0x2c8 ≤ 0`.
 2. Unless free food is active (`board+0x440`), spend the food price `board+0x4ac` (5) via `0x00540b30`. If money is short, the buzzer and message play, and nothing else happens.
 3. **`Board::AddFood`** (`0x00543280`) with `(x − 10, y − 10, motion 0, flag 0, delay 0, level −1)`:
-   - **Count limit:** count = pellets on the board; `extra` = those with motion ≠ 0 or kind ≠ 0. If `count ≥ max_food + extra` (`max_food` = global `0x005df58c`, 1 at the start of tank 1-1), refund the price (`0x0053c280`: only when there are no aliens and free food is off) and show "You can only drop 1 food pellet at a time for now". No food.
+   - **Count limit:** count = pellets on the board; `extra` = those with motion ≠ 0 or kind ≠ 0. If `count ≥ max_food + extra` (`max_food` = global `0x005df58c`, 1 at the start of tank 1-1), refund the price (`0x0053c280`: only when there are no aliens and free food, i.e. an armed star potion `board+0x440`, is off; so a guppy click that paid $5 while a potion is armed and the limit is hit keeps the $5, `traced` by `tank_2_3_nopets`) and show "You can only drop 1 food pellet at a time for now". No food.
    - Otherwise construct the food (`0x004ef840`): x, y as given; vx −3.0; vy −2.0; anim 0; fade 0; **RNG `(Next() & 1) + 3`** → speed; delay 20, then overwritten with 0 by AddFood. Level = the global food level. Play `SOUND_DROPFOOD`. Append to `board+0xac` and rebuild the z-order.
 
 So a successful drop costs exactly one app-RNG draw (confirmed: one extra draw on each drop tick).
@@ -122,7 +122,7 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
    - Level 0: `hunger += 500`, plus 200 more with `+0x228`. **Clamp at 800.** `growth (+0x1a4) += 1`.
    - Level 1: +700, cap 1000, growth +2.
    - Level 2: +1100, cap 1400, growth +3 (the fall-through branch at `0x004f2079`).
-   - Level 3 (star potion), by the eater's stage `+0x1a0` (stage 2 → star guppy `traced` by `tank_2_2_star_guppies`; the explosion in a small guppy is `static`):
+   - Level 3 (star potion), by the eater's stage `+0x1a0` (stage 2 → star guppy `traced` by `tank_2_2_star_guppies`; the explosion in a small/medium guppy `traced` by `tank_2_3_nopets` (`tank2-3_nopets_01`); the 2-1/2-2 hints are `static`):
      - **0 or 1** (small, medium): it **explodes**: sample `0x11d` (`EXPLODE`, gap 3), then app draws `n = r % 3 + 2` and n times `k = r % 3 + 3`, `y = wy + r % 30 − 10`, `x = wx + r % 30 − 10` and an effect shot `0x005436f0(x, y, k)` (which may draw more, `alien-sylvester.md`); on 2-1 and 2-2 (not after beating the game) one-time hints (ids 0x21 "Hint: Feed star potions to BIG guppies!", 0x20 "Hint: Star potions are for big guppies only!", 0x1f "Hint: Only certain fish can handle star potions!", each only if its board byte `+0x4d0/+0x4cf/+0x4ce` is set) and **0x1e "Warning! Use star potions carefully!"**; the board's lost-fish stat `+0x49c += 1`; then **dies** (slot 88 with 1: the death sound with a per-type pitch, then a corpse, `fish-guppy.md#death`). No hunger or growth.
      - **2** (large): hunger +1100 capped at 1400, **stage = 3** (star guppy), sample (stage-up `SOUND_GROW`-style, `0x00538230`, not checked).
      - **3 or more**: hunger +1100 capped at 1400; nothing else.
@@ -132,7 +132,7 @@ With `cx = x + 40`, `cy = y + 40` (doubles), iterate the food list in order:
 
 Checked against the trace: hunger −14 + 700 = 686, and 297 + 700 → clamped to 800. The eat timer goes 20 → … while approaching, then is held because it's non-zero at the bite. The fade runs 5 → 0 after eating and 1 → 5 → 0 at hunger 304.
 
-`traced` for levels 0 and 1 (1-2 buys food quality once). Level 2 and star potions are `static`.
+`traced` for levels 0 and 1 (1-2 buys food quality once) and for star potions in stage-2 (`tank_2_2_star_guppies`) and stage-0/1 guppies (`tank_2_3_nopets`). A guppy eating level 2 is `static` (on 2-3 only Gus ate level-2 pellets, `alien-kind4.md#32`).
 
 ## Open questions
 

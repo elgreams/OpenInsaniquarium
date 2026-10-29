@@ -1,15 +1,15 @@
 # Alien kind 4: Gus, the "new breed" (`Sexy::Alien`, type `0x16`, kind 4)
 
-Status: `draft (static)`. Nothing here has been captured yet. Every claim comes from reading the binary, and every section is `static` until a 2-3 recording replays (see "Recording" at the end). Addresses are inner-PE VAs. Offsets are raw `this`-relative, the same as in `alien-sylvester.md`.
+Status: 2-3 behaviour `traced` (see the tags per section); pets and the 2-5 swap are `static`. Addresses are inner-PE VAs. Offsets are raw `this`-relative, the same as in `alien-sylvester.md`.
 
 Kind 4 is the tank 2-3 alien. The 2-3 dialog says "A new breed of alien is fast approaching! Lasers can't hurt this baddie, so find another way to defeat it!" (`framework/dialog.md`). Its sprite sheet is `IMAGE_GUS` (§7.1), so this spec calls it **Gus**. It is the same `Alien` class as Sylvester, with the same update (`0x004fd560`), ctor (`0x004ecfa0`), death (`0x004f9c70`), prey search (`0x004e8b60`) and steering/eating (`0x004ed460` → `0x004e8f70`). **This spec only describes what differs for kind 4.** Anything not mentioned here behaves as in `alien-sylvester.md`. Notation (`rand(n)`, `grand()`, `ix, iy`, tick) is the same as there.
 
 In short: clicks don't shoot Gus. While he is the first alien, a click in the tank **drops a free pellet** instead. Gus chases and **eats food**, and each pellet costs him health according to its quality. When his health reaches 0 he **explodes** (bigger debris, no corpse) and leaves the usual diamond. After his 100-tick eat delay he also eats fish, and each fish costs him 15 HP.
 
-Confidence: `static` for the whole file (per section below).
+Confidence: per section below.
 
 
-Captures: `tank2-3_gus_01` and `tank2-3_gus_02` (2-3, no pets, the wave countdown pushed with Cheat Engine, clicks dropping pellets just above him), replayed exactly from the game's own demo. They cover the spawn, food targeting, level-0 pellets (−4), guppies eaten (−15), the burst with no corpse and the diamond. Star potions, level-1/2 pellets, the 20-tick delay near his middle and pets are not covered. `traced` where a section says so, else `static`.
+Captures: `tank2-3_gus_01` and `tank2-3_gus_02` (2-3, no pets, the wave countdown pushed with Cheat Engine, clicks dropping pellets just above him), replayed exactly from the game's own demo. They cover the spawn, food targeting, level-0 pellets (−4), guppies eaten (−15), the burst with no corpse and the diamond. `tank2-3_nopets_01`/`_02` add level-1/2 pellets and star potions. The 20-tick delay near his middle and pets are not covered. `traced` where a section says so, else `static`.
 
 ## 1. Wave timing
 
@@ -109,7 +109,7 @@ elif y + 80 < ty: if vy <  3.0: vy += 0.3      # dives faster
 
 Numbers for a fresh Gus (100 HP, no fish eaten): **25 level-0 pellets, 17 level-1 (16 × 6 = 96, so the 17th kills), 13 level-2, or 5 star potions.** Mixes add up the same way. Each fish he eats takes 15 off.
 
-`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for level-0 pellets and fish. The "ate" hook's 15 HP and gulp happen **inside his update**, before its timers (the gulp counter reads 9 on the eat tick's snapshot). Star potions and levels 1/2 are `static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for level-0 pellets and fish. The "ate" hook's 15 HP and gulp happen **inside his update**, before its timers (the gulp counter reads 9 on the eat tick's snapshot). Star potions (−20 and the burst), level-1 (−6) and level-2 (−8) pellets are `traced` by `tank_2_3_nopets_b` (`tank2-3_nopets_02`: 100 → 94 → 74 → 68 → 53 → 38 → 32 → 12 → 4 HP, then killed) and `tank_2_3_nopets` (`tank2-3_nopets_01`, one level-1 pellet). The Virtual Tank −8 and food kinds 3/4/5 are `static`.
 
 ## 4. Clicks and damage
 
@@ -129,7 +129,9 @@ If kind 4 is **not first** in the list, or a boss is present, the normal laser p
 
 **Coin under Gus.** `Coin` mouse-down (`0x004e5450`) re-dispatches a click that lies inside an alien widget to the board's handler (`alien-sylvester.md#41`). With Gus, that **drops a free pellet** at the click (step 3 may give it delay 20), and the coin is collected as well.
 
-`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for the free pellet away from his middle. The 20-tick delay and the coin re-dispatch are `static`.
+`traced` by `gus_feeds` (`tank2-3_gus_01`) and `gus_killed` (`tank2-3_gus_02`) for the free pellet away from his middle; the armed star potion dropped on this path (level 3, disarmed, no charge) by `tank_2_3_nopets_b`. The 20-tick delay and the coin re-dispatch are `static`.
+
+The food lockout distance check before this branch (`0x00543972`) is 32-bit int arithmetic that **wraps**: the last-shot point can still hold its uninitialised value when no shot was fired yet, and `tank2-3_nopets_02` replays only with wrapping (`traced` by `tank_2_3_nopets_b`).
 
 ### 4.2 Pets and other damage sources
 
@@ -189,7 +191,7 @@ Effect shots can be capped (fewer than 20 in `+0xd8`) and carry the heap-depende
 
 Within the tick, everything Gus does happens in his own `Update` (food step, then fish step, then the death check), in z-order after the guppies. Click draws happen in the input phase.
 
-`static`.
+`traced` for the 2-3 rows by `gus_feeds`, `gus_killed` and `tank_2_3_nopets_b` (star-potion burst included). The 2-5 rows: see §1.
 
 ## 7. Drawing and sound
 

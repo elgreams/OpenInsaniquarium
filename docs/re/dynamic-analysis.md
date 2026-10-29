@@ -103,5 +103,8 @@ Keep each recording **short and focused on one ability**: one capture of ~2800 t
 - **CE broken pipe / connection reset** in `/tmp/ce.log`: the bridge dropped. Restart CE (`sudo pkill -9 -x cheatengine-x86`, not `-f`, which also matches your own shell), relaunch, `open_process` again.
 - **CE already running:** `pgrep -x cheatengine-x86` misses it (the process name is truncated to 15 characters, `cheatengine-x86_64` → no match). Check with `pgrep -f cheatengine-x86_64` or the CE MCP `ping` before starting a second one.
 - **The capture file is root-owned**: copy it before editing; its last line is often torn when the game quits.
+- **"Game still running" after quit**: `pgrep -f 'game.exe -changedir'` run from a shell also matches that shell's own command line. Check that `popcap.dmo` was rewritten (its mtime) instead.
+- **Autoplay's `--max-seconds` runs out mid-wave**: the tank is then left to itself (an armed potion stays armed, Gus eats the guppies). Size it for the whole plan (wave included) or restart autoplay at once.
+- **Holding a wave off**: push the countdown up (`orig_mem.py PID cd=9000`); the replay adopts a pushed value above 3000 as well as a drop.
 
 **Long sessions in several capture chunks:** each `ce_capture.lua` run writes its own header with the full RNG state at its start. When joining chunks into one trace, keep each later chunk's header as a snapshot line carrying `"rng"` (or store the chunks as separate traces). Without it, a chunk after a hole can't be replayed, because the RNG can't be walked across ticks nobody captured. `zoo_e_01` lost its later chunks' headers, so only its first chunk (ticks 2538–11155) is replayable.
