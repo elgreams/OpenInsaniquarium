@@ -73,3 +73,20 @@ Every board dialog's button **ignores clicks for its first 30 updates**. `WinFis
 - the click at 3262 closed it.
 
 The sim counts board updates with the dialog up (`Board::dialog_age`) and ignores a dismiss below `DIALOG_BUTTON_DELAY`.
+
+## Game Paused (dialog 0x12)
+
+`App::ShowPaused` @ `0x0054eca0`: if a board exists, the app isn't in demo playback (`app+0x358`, `0x00479fc0`) and the board isn't already paused (`board+0x94`), it pauses the board (`0x0053db80(1)`), closes the Presto dialog (`0x0054b4c0`), and opens dialog **0x12**: header **"GAME PAUSED"**, body **"Click to resume game"**, button mode 3 with the label **"Resume Game"**. `static`.
+
+Callers: `WinFishApp` slot 83 (`0x00551d50`, the app losing focus: with a board and not in Virtual Tank, mode 5) and the board's key handler (`0x00549d70`, key `0x20`, space). `static`; focus loss is `confirmed` (`traces/frames/menus_01/13_paused_raw.png`) and `traced` in the replays (`dynamic-analysis.md`).
+
+- Regaining focus doesn't close it; only its button does. `traced` (replay harness: `DemoEvent::Activate(true)` is ignored, and the captures resume on the click).
+- Layout: the standard one-button dialog (above): panel at (143, 142), width 348. The Resume Game button spans screen (187, 248)–(442, 269). `confirmed` (hover diff between `14_paused_mouse_off.png` and `15_paused_hover.png`).
+- The button is purple, blue on hover (`IMAGE_DIALOGBUTTON` cels). `confirmed`.
+- Its button resumes the board (`WinFishApp` handler, id 0x12 → close dialog). `static`; the resume is `traced`.
+
+## GAME OVER button
+
+Dialog 0x11's button ("Click to Continue") goes to the main menu: the `WinFishApp` dialog-button handler (`0x005527c0`, jump table at `0x00552d48`, case 0x11 @ `0x00552a94`) closes the dialog, destroys the board (`0x0054bc30`) and shows the GameSelector (`0x00552100`, `screens/game-selector.md`). There is no restart. `static`. The 30-update button delay ([Button delay](#button-delay)) applies as for every board dialog. `static` for GAME OVER specifically.
+
+Our sim ignored this button until v0.1.0 (the board stayed paused under GAME OVER).
