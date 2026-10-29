@@ -2306,8 +2306,9 @@ pub fn replay_resync_global(
         }
         // The wave countdown pushed by the recorder to bring a wave forward
         // (`docs/re/dynamic-analysis.md`): it only ever counts down by one,
-        // or jumps up to a new wave's start. A drop of more than 100 in one
-        // tick is the recorder's write. Adopt it.
+        // or jumps up to a new wave's start (3000 at most). A drop of more
+        // than 100 in one tick, or a value above 3000 (pushed up to hold a
+        // wave off), is the recorder's write. Adopt it.
         if let Some(c) = t
             .snapshots
             .iter()
@@ -2315,7 +2316,8 @@ pub fn replay_resync_global(
             .and_then(|s| s.state.get("waves"))
             .and_then(|w| w.get("countdown"))
             .and_then(Value::as_i64)
-            && i64::from(board.wave_countdown) - c > 100
+            && (i64::from(board.wave_countdown) - c > 100
+                || (c > 3000 && c != i64::from(board.wave_countdown)))
         {
             board.wave_countdown = c as i32;
         }

@@ -46,6 +46,9 @@ pub struct StarOut {
     pub ate: Option<(usize, i32, i32)>,
     /// Starved: die (sound, corpse, messages).
     pub died: bool,
+    /// Position and vx when it starved: the corpse is made then, before
+    /// the rest of the update moves the removed object (starcatcher.md#death).
+    pub died_at: (f64, f64, f64),
 }
 
 /// Star filter (`0x004d6bf0`, normal game): an uncollected star.
@@ -110,6 +113,7 @@ impl Starcatcher {
         }
         let busy = if self.hunger <= 0 {
             out.died = true;
+            out.died_at = (self.x, self.y, self.vx);
             false
         } else if self.hunger < 900 {
             self.chase(coins, &mut out)

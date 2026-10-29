@@ -87,6 +87,15 @@ SHOOT_MISSILES = "--shoot-missiles" in sys.argv
 FEED_GUS = "--feed-gus" in sys.argv
 # Leave stars (coin kinds 3, 10) for the Starcatcher (`--no-stars`).
 NO_STARS = "--no-stars" in sys.argv
+# While Gus is in (with `--feed-gus`): from 1 s on arm and drop N star
+# potions above him, one at a time when no pellet is out (`--gus-star N`),
+# then buy the second food quality upgrade (`--gus-quality`): he eats
+# potions and pellets of two food levels (alien-kind4.md#32).
+GUS_QUALITY = "--gus-quality" in sys.argv
+# Hold the `--star` potions until S seconds after the Starcatcher was bought
+# (`--star-delay S`), so it starves first (no star guppies, no stars).
+STAR_DELAY = float(sys.argv[sys.argv.index("--star-delay") + 1]) if "--star-delay" in sys.argv else 0
+GUS_STAR = int(sys.argv[sys.argv.index("--gus-star") + 1]) if "--gus-star" in sys.argv else 0
 
 
 def window():
@@ -170,6 +179,11 @@ def main():
     missile_clicks = 0
     missile_pause = 0.0
     bought_starcatcher = False
+    gus_at = 0.0
+    starcatcher_at = 0.0
+    gus_quality = False
+    gus_stars = 0
+    gus_star_at = 0.0
     while time.time() - start < MAX_S:
         st = read_state()
         if st is None:
@@ -247,7 +261,26 @@ def main():
             ax, ay = st["aliens"][0]
             x = min(max(ax + 80, 40), 580)
             y = min(max(ay + 80 - 90, 70), 370)
-            if now - last_feed > 0.25:
+            gus_at = gus_at or now
+            if (GUS_QUALITY and not gus_quality and gus_stars >= GUS_STAR and not armed
+                    and st["money"] >= 300):
+                click(win, *QUALITY_BTN)
+                print("gus: quality bought", flush=True)
+                gus_quality = True
+            elif (gus_stars < GUS_STAR and not armed and now - gus_at > 1 and st["revealed"][5]
+                  and st["money"] >= 300 and now - gus_star_at > 1.2):
+                click(win, *STAR_BTN)
+                print("gus: star potion bought", flush=True)
+                armed = True
+            elif armed and st["foods"] == 0:
+                click(win, x, y)
+                print("gus: star potion dropped", flush=True)
+                armed = False
+                gus_stars += 1
+                last_feed = gus_star_at = now
+            elif armed:
+                pass
+            elif now - last_feed > 0.25:
                 click(win, x, y)
                 last_feed = now
         elif st["aliens"] and not NO_SHOOT:
@@ -283,7 +316,9 @@ def main():
             click(win, *STARCATCHER_BTN)
             print("starcatcher bought", flush=True)
             bought_starcatcher = True
+            starcatcher_at = now
         elif (STAR and stars < STAR and not armed and st["revealed"][5] and st["money"] >= 250
+              and (not STAR_DELAY or (bought_starcatcher and now - starcatcher_at > STAR_DELAY))
               and any(s >= 2 for s in st.get("stages", []))):
             click(win, *STAR_BTN)
             print("star potion bought", flush=True)

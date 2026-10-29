@@ -926,6 +926,18 @@ fn gus_killed() {
     }
 }
 
+/// 2-3 with no pets (`tank2-3_nopets_01`): money pushed to 3000 (six
+/// guppies), food quality bought, a Starcatcher bought with no star guppies
+/// that starves; two star potions, one exploding at the bottom and one
+/// eaten by a small guppy; the countdown pushed to 300, then Gus eats a
+/// level-1 pellet and all five guppies (GAME OVER).
+#[test]
+fn tank_2_3_nopets() {
+    if captured("tank2-3_nopets_01") {
+        replay_level_tank("tank2-3_nopets_01", 2, 3);
+    }
+}
+
 /// The Destructor, alien kind 5 (`tank2-4_destructor_01`): 2-4, money
 /// pushed to 2000 (seven guppies) and the countdown to 500; two volleys of
 /// three missiles, some reaching their guppies, some clicked down, the

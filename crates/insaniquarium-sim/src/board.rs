@@ -995,7 +995,8 @@ impl Board {
                 // Starved (`0x004f3c60`): DIE (pitch +4), a kind-8 corpse
                 // with vy 0, the 2-2 message chain. The rest of the update
                 // already ran this tick (its reroll draw is real).
-                let s = self.starcatchers.remove(i);
+                let mut s = self.starcatchers.remove(i);
+                (s.x, s.y, s.vx) = out.died_at;
                 self.play(0x117, Sound::Die);
                 let mut d = crate::fish::DeadFish::starcatcher(&s);
                 d.update();
@@ -1653,7 +1654,9 @@ impl Board {
             .filter(|f| f.motion != 0 || f.kind != 0)
             .count() as i32;
         if self.foods.len() as i32 >= self.max_food + extra {
-            if !self.has_aliens {
+            // The refund `0x0053c280`: not with aliens in, nor while a star
+            // potion is armed (a guppy click still paid; food.md#dropping-food).
+            if !self.has_aliens && !self.potion_armed {
                 self.money += self.food_price;
             }
             // `AddFood` (`0x00543386`): on 1-1 the one-pellet hint; on 1-2,
