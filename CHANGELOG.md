@@ -16,6 +16,7 @@ You need your own copy of Insaniquarium Deluxe. This download contains no game f
 - **Game Paused** when the window loses focus; Resume Game continues.
 - **GAME OVER** returns to the main menu, as in the original.
 - Music and sound effects.
+- **Finding your game:** it looks in every Steam library by itself. Otherwise copy the game's files into the `gameData` folder that comes with the download, or put the game's folder path into `data-path.txt` next to the program.
 
 ### How close it is to the original
 

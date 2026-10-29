@@ -49,6 +49,9 @@ jobs:
           DIR=openinsaniquarium-$VERSION-${{ matrix.name }}
           mkdir "$DIR"
           cp LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md "$DIR"/
+          # Ready-to-fill setup: a commented data-path.txt and an empty
+          # gameData folder to drag the game's files into.
+          cp -r dist/data-path.txt dist/gameData "$DIR"/
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp target/${{ matrix.target }}/release/openinsaniquarium.exe "$DIR"/
             # libopenmpt for music (BSD-3-Clause), from its official build.

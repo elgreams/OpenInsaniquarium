@@ -1,0 +1,5 @@
+Copy the files of your own Insaniquarium Deluxe install into this folder:
+the folders "images", "sounds", "properties", "data" (and the rest), so that
+this folder contains gameData/images, gameData/sounds, and so on.
+
+OpenInsaniquarium ships none of the game's files. Please don't share them.

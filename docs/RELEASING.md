@@ -22,5 +22,5 @@ If anything fails after the tag is pushed, don't delete or move the tag and don'
 
 ## Rules
 
-- Release archives contain our binary, the two licence files, `README.md`, `CHANGELOG.md` and, on Windows, the libopenmpt DLLs with their licences. Never anything from the original game (`tools/check_release.sh` enforces this).
+- Release archives contain our binary, the two licence files, `README.md`, `CHANGELOG.md`, `dist/data-path.txt` and `dist/gameData/` (the setup placeholders) and, on Windows, the libopenmpt DLLs with their licences. Never anything from the original game (`tools/check_release.sh` enforces this).
 - Release builds never enable the app's `dev` feature (Bevy `dynamic_linking`).

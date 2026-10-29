@@ -14,11 +14,13 @@ An open-source, clean-room reimplementation of **Insaniquarium Deluxe 1.1** in R
 2. Download the archive for your system from [Releases](https://github.com/elgreams/OpenInsaniquarium/releases) and unpack it anywhere.
 3. Run `openinsaniquarium` (`openinsaniquarium.exe` on Windows).
 
-It looks for the game in the usual Steam folders. If it can't find it, it tells you how to point it there, in one of these ways:
+It finds the game by itself if it's in a Steam library (any drive, Flatpak too). Otherwise pick one:
 
-- start it with `openinsaniquarium --data "/path/to/Insaniquarium Deluxe"`;
-- set `INSANIQUARIUM_DATA` to that folder;
-- put the folder path in `~/.config/openinsaniquarium/data-path.txt` (Linux) or `%APPDATA%\openinsaniquarium\data-path.txt` (Windows).
+- **Drag and drop:** copy the game's files (the folders `images`, `sounds`, `properties`, `data` and the rest) into the `gameData` folder next to the program.
+- **Point to it:** open `data-path.txt` next to the program and put the game folder's path on a line of its own.
+- **Command line:** `openinsaniquarium --data "/path/to/Insaniquarium Deluxe"` (or set `INSANIQUARIUM_DATA`).
+
+If it still can't find the game, it says where it looked and what to do.
 
 The folder is the one that contains `images`, `sounds` and `properties`. On Linux, music needs libopenmpt (package `libopenmpt0` or similar); without it the game plays silently.
 
