@@ -135,7 +135,7 @@ So a thrown ball starts at rest, accelerates by 0.2 per tick up to 1.8 (4.5 px p
 
 If the alien dies some other way while a ball is still on it, the death releases its `+0x98` missile (slot 76): the ball vanishes. A bounced ball has already been cleared from `+0x98`, so it keeps falling.
 
-`traced` by `stanley_balls` (`stanley_01`) for the throw, steering, the 15-HP hit, bounce, gravity, leaving the tank and the countdown freeze. The kill inside the ball's update and the Bilaterus bands are `static`.
+`traced` by `stanley_balls` (`stanley_01`) for the throw, steering, the 15-HP hit, bounce, gravity, leaving the tank and the countdown freeze. The kill inside the ball's update is `traced` by `tank_2_3_stanley_gus` (`tank2-3_stanley_gus_01`: two Gus waves killed by balls alone on 2-3, second wave is pure ball damage, 100 → 85 → … → 10 → dead). The Bilaterus bands are `static`.
 
 ## Shooting down missiles (`0x004e55d0`)
 
@@ -200,7 +200,7 @@ The ball: `0x004e1d00` kind 2 → `IMAGE_BALLS` (global `0x005e8ee8`; `balls`, 1
 
 ## Open questions
 
-- Still `static`: the ball kill, kind-1 missile priorities (alien kind 6), the Bilaterus bands.
+- Still `static`: kind-1 missile priorities (alien kind 6), the Bilaterus bands.
 - Who fires the missiles he shoots: `Alien::Update` (`0x004fd560`) makes missile **kind 0** for alien kind 5 (call at `0x004fdb7b`, from `(wx − 10, wy − 35)`) and **kind 1** for alien kind 6 (`0x004fddac`, from `(wx + 10, wy − 24)`), each at a target from `0x004e8df0`. Kind 5 is the Destructor (2-4, `alien-kind5.md`). Kind 6, what the kind-1 byte `+0x190` means, and on which tank it first comes: not followed.
 - The ball's generic steering bands with a Bilaterus present were not written out.
 - The board pet counter `board+0x19c` (id 22): readers not looked for.

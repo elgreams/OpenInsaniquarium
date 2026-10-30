@@ -949,6 +949,17 @@ fn tank_2_3_nopets_b() {
     }
 }
 
+/// Stanley alone on 2-3 (`tank2-3_stanley_gus_01`): money pushed to 2000,
+/// countdown to 400; two Gus waves, each killed by Stanley's balls (15 HP
+/// each). Wave 1 also has three pellet eats; wave 2 is ball-only
+/// (pet-stanley.md#the-ball).
+#[test]
+fn tank_2_3_stanley_gus() {
+    if captured("tank2-3_stanley_gus_01") {
+        replay_level_tank("tank2-3_stanley_gus_01", 2, 3);
+    }
+}
+
 /// The Destructor, alien kind 5 (`tank2-4_destructor_01`): 2-4, money
 /// pushed to 2000 (seven guppies) and the countdown to 500; two volleys of
 /// three missiles, some reaching their guppies, some clicked down, the
@@ -1138,6 +1149,7 @@ fn needs_global(name: &str) -> bool {
     name.starts_with("nostradamus")
         || name.starts_with("stanley")
         || name.starts_with("walter")
+        || name.contains("stanley")
         || name.starts_with("tank2-4")
         || name.starts_with("tank2-5")
 }

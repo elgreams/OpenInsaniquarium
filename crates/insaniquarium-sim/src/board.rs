@@ -2232,6 +2232,12 @@ impl Board {
         if self.dialog.is_some() {
             self.dialog_age += 1;
         }
+        // The food lockout timer decrements every tick, even while the
+        // board is paused (confirmed by the `tank_2_3_stanley_gus` capture:
+        // lockout 36 → 35 → 34 while ticks stays at 4285).
+        if self.food_lockout > 0 {
+            self.food_lockout -= 1;
+        }
         if self.paused {
             self.tick += 1;
             return;
@@ -2319,9 +2325,6 @@ impl Board {
         if self.paused {
             self.tick += 1;
             return;
-        }
-        if self.food_lockout > 0 {
-            self.food_lockout -= 1;
         }
         // Objects update in RebuildZOrder order: dead aliens, food, guppies,
         // aliens, pets, shots, coins.
