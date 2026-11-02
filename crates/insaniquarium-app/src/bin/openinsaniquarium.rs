@@ -31,6 +31,7 @@ use insaniquarium_app::scene::{self, Fonts, HATCH_CONTINUE};
 use insaniquarium_app::song::Song;
 use insaniquarium_sim::Board;
 use insaniquarium_sim::board::Input;
+use insaniquarium_sim::bonus::BonusInput;
 use insaniquarium_sim::game::{
     Game, HatchInput, MenuButton, MenuInput, MenuOut, Options, OptionsInput, Screen,
 };
@@ -151,6 +152,7 @@ fn main() {
             game,
             pending: Vec::new(),
             hatch_inputs: Vec::new(),
+            bonus_inputs: Vec::new(),
             pet_inputs: Vec::new(),
             pet_hover: None,
             hatch_sound: false,
@@ -183,6 +185,7 @@ struct Sim {
     /// message pump running between updates).
     pending: Vec<Input>,
     hatch_inputs: Vec<HatchInput>,
+    bonus_inputs: Vec<BonusInput>,
     pet_inputs: Vec<PetInput>,
     /// The pet bubble under the mouse last frame (enter/leave events).
     pet_hover: Option<i32>,
@@ -314,6 +317,10 @@ fn step(mut sim: ResMut<Sim>, mut exit: MessageWriter<AppExit>) {
     match sim.game.screen {
         Screen::Tank(_) => sim.game.step_tank(&inputs),
         Screen::Hatch(_) => sim.hatch_sound = sim.game.step_hatch(&hatch_inputs).sound,
+        Screen::Bonus(_) => {
+            let inputs = std::mem::take(&mut sim.bonus_inputs);
+            sim.game.step_bonus(&inputs);
+        }
         Screen::Pets(_) => {
             let inputs = std::mem::take(&mut sim.pet_inputs);
             sim.game.step_pets(&inputs);
@@ -575,6 +582,14 @@ fn mouse(
             }
         }
         sim.pet_inputs.extend(inputs);
+        return;
+    }
+    if matches!(sim.game.screen, Screen::Bonus(_)) {
+        // Bonus screen (`bonus-screen.md`): Continue on any release for now
+        // (full button layout is visual-only and not yet built).
+        if released {
+            sim.bonus_inputs.push(BonusInput::Continue);
+        }
         return;
     }
     let Some(board) = sim.board() else {

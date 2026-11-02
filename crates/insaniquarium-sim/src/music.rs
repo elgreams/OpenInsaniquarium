@@ -191,6 +191,12 @@ impl MusicState {
         self.play_now(2, 0x36);
     }
 
+    /// The bonus screen's song (`bonus-screen.md#music`): same track as hatch.
+    pub fn bonus(&mut self) {
+        self.stop_all();
+        self.play_now(2, 0x36);
+    }
+
     /// Apply a board's music request (`board.music`).
     pub fn cue(&mut self, cue: Option<Cue>, tank: i32) {
         match cue {

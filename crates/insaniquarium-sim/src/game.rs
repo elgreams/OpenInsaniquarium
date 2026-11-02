@@ -5,6 +5,7 @@
 use sexy_core::rand::MtRand;
 
 use crate::board::{Board, Input};
+use crate::bonus::{BonusInput, BonusOutcome, BonusScreen};
 use crate::hatch::{Hatch, HatchOut};
 use crate::music::MusicState;
 use crate::pet_screen::{PetInput, PetOutcome, PetScreen};
@@ -15,6 +16,9 @@ pub enum Screen {
     Tank(Box<Board>),
     /// The hatch screen and the streams it keeps drawing from.
     Hatch(Box<HatchScreen>),
+    /// The bonus screen after a bonus round (`bonus-screen.md`). No RNG:
+    /// the streams wait here.
+    Bonus(Box<BonusScreenState>),
     /// Choosing pets for the next level (`pet-screen.md`). No RNG: the
     /// streams wait here for `StartLevel`.
     Pets(Box<PetsScreen>),
@@ -83,6 +87,13 @@ pub enum MenuOut {
 #[derive(Debug, Clone)]
 pub struct PetsScreen {
     pub screen: PetScreen,
+    pub rng: MtRand,
+    pub global_rng: MtRand,
+}
+
+#[derive(Debug, Clone)]
+pub struct BonusScreenState {
+    pub screen: BonusScreen,
     pub rng: MtRand,
     pub global_rng: MtRand,
 }
@@ -231,9 +242,17 @@ impl Game {
     /// pet screen when more than 3 are owned, else straight into the level.
     fn next_level(&mut self, rng: MtRand, global_rng: MtRand) {
         if self.profile.is_bonus_round() {
-            // TODO(spec): the bonus round (`0x00537e20`) and its results
-            // screen; skipped to the next tank for now.
+            // The bonus round board isn't built yet; advance past it and
+            // show the bonus screen (`bonus-screen.md`). In the original,
+            // the profile is already advanced by the time the screen opens.
             self.profile.advance();
+            self.screen = Screen::Bonus(Box::new(BonusScreenState {
+                screen: BonusScreen::new(&self.profile),
+                rng,
+                global_rng,
+            }));
+            self.music.bonus();
+            return;
         }
         self.profile.chosen = Default::default();
         if self.profile.needs_pet_screen() {
@@ -265,6 +284,42 @@ impl Game {
                 self.start_level(rng, global_rng);
             }
             PetOutcome::Menu => self.show_menu(),
+        }
+    }
+
+    /// One tick of the bonus screen. No RNG. Continue removes the screen
+    /// and starts the next level (`App::NextLevel(1, 1)`); Menu goes back.
+    pub fn step_bonus(&mut self, inputs: &[BonusInput]) {
+        let Screen::Bonus(b) = &mut self.screen else {
+            return;
+        };
+        let mut outcome = BonusOutcome::Stay;
+        for &i in inputs {
+            match i {
+                BonusInput::Continue => outcome = BonusOutcome::NextLevel,
+                BonusInput::Menu => outcome = BonusOutcome::Menu,
+                BonusInput::Buy => {
+                    b.screen.buy(&mut self.profile);
+                    // The buy action restops and restarts the same track.
+                    self.music.bonus();
+                }
+                BonusInput::Held => {}
+            }
+        }
+        b.screen.update(inputs.contains(&BonusInput::Held));
+        self.music.update();
+        match outcome {
+            BonusOutcome::Stay => {}
+            BonusOutcome::NextLevel => {
+                let (rng, global_rng) = (b.rng.clone(), b.global_rng.clone());
+                let (t, l) = self.last_level;
+                if (self.profile.tank, self.profile.level) > (t, l) {
+                    self.screen = Screen::PreviewEnd;
+                    return;
+                }
+                self.next_level(rng, global_rng);
+            }
+            BonusOutcome::Menu => self.show_menu(),
         }
     }
 
@@ -314,7 +369,11 @@ impl Game {
         if inputs.contains(&HatchInput::Continue) && hatch.can_continue() {
             let (rng, global_rng) = (rng.clone(), global_rng.clone());
             let (t, l) = self.last_level;
-            if (self.profile.tank, self.profile.level) > (t, l) {
+            // A bonus round (level 6) is part of the tank's content: show
+            // the bonus screen before checking the preview endpoint.
+            if (self.profile.tank, self.profile.level) > (t, l)
+                && !self.profile.is_bonus_round()
+            {
                 self.screen = Screen::PreviewEnd;
                 return HatchOut::default();
             }
@@ -475,11 +534,118 @@ mod tests {
             g.step_hatch(&[]);
         }
         g.step_hatch(&[HatchInput::Continue]);
+        // After 1-5's hatch, the bonus screen appears (profile advanced to 2-1).
+        assert!(matches!(g.screen, Screen::Bonus(_)));
+        assert_eq!((g.profile.tank, g.profile.level), (2, 1));
+        g.step_bonus(&[BonusInput::Continue]);
         assert!(matches!(g.screen, Screen::PreviewEnd));
         g.step_menu(&[MenuInput::Click]);
         assert!(matches!(g.screen, Screen::Menu(_)));
         // Adventure starts over at 1-1.
         g.start_adventure(MtRand::new(3), MtRand::new(4));
         assert_eq!(g.board().map(|b| (b.tank, b.level)), Some((1, 1)));
+    }
+
+    #[test]
+    fn bonus_screen_after_tank_1_offers_brinkley() {
+        // Set up a profile that has finished levels 1-1 through 1-4.
+        let mut p = Profile::default();
+        for l in 1..5 {
+            p.finish_level(1, l);
+        }
+        p.shells = 50_000;
+        let mut g = Game::new(p, MtRand::new(1), MtRand::new(2));
+        if let Screen::Pets(_) = g.screen {
+            g.step_pets(&[PetInput::Continue]);
+            g.step_pets(&[PetInput::ConfirmYes]);
+        }
+        // Complete 1-5 to trigger the hatch then bonus flow.
+        let Screen::Tank(b) = &mut g.screen else {
+            panic!("expected 1-5")
+        };
+        b.money = 100_000;
+        b.egg_count = 3;
+        b.shop.reveal(Slot::EggPiece, false);
+        g.step_tank(&[Input::Buy(Slot::EggPiece)]);
+        while !matches!(&g.screen, Screen::Hatch(h) if h.hatch.can_continue()) {
+            g.step_hatch(&[]);
+        }
+        g.step_hatch(&[HatchInput::Continue]);
+        // The bonus screen is up, offering Brinkley for 20 000 shells.
+        let Screen::Bonus(b) = &g.screen else {
+            panic!("expected bonus screen")
+        };
+        assert_eq!(b.screen.offer, crate::bonus::Offer::Pet(20));
+        assert_eq!(b.screen.price, 20_000);
+        // Buy Brinkley.
+        g.step_bonus(&[BonusInput::Buy]);
+        assert!(g.profile.pets[20], "Brinkley owned");
+        assert_eq!(g.profile.shells, 30_000);
+        assert_eq!(g.profile.bonus_purchases, 1);
+    }
+
+    #[test]
+    fn bonus_screen_continue_goes_to_next_tank() {
+        let mut p = Profile::default();
+        for l in 1..5 {
+            p.finish_level(1, l);
+        }
+        // Raise the last level so we don't hit the preview end.
+        let mut g = Game::new(p, MtRand::new(1), MtRand::new(2));
+        g.last_level = (5, 5);
+        if let Screen::Pets(_) = g.screen {
+            g.step_pets(&[PetInput::Continue]);
+            g.step_pets(&[PetInput::ConfirmYes]);
+        }
+        let Screen::Tank(b) = &mut g.screen else {
+            panic!("expected 1-5")
+        };
+        b.money = 100_000;
+        b.egg_count = 3;
+        b.shop.reveal(Slot::EggPiece, false);
+        g.step_tank(&[Input::Buy(Slot::EggPiece)]);
+        while !matches!(&g.screen, Screen::Hatch(h) if h.hatch.can_continue()) {
+            g.step_hatch(&[]);
+        }
+        g.step_hatch(&[HatchInput::Continue]);
+        assert!(matches!(g.screen, Screen::Bonus(_)));
+        g.step_bonus(&[BonusInput::Continue]);
+        // With 5 pets owned, the pet screen appears first.
+        if let Screen::Pets(_) = g.screen {
+            g.step_pets(&[PetInput::Continue]);
+            g.step_pets(&[PetInput::ConfirmYes]);
+        }
+        let b = g.board().expect("level 2-1");
+        assert_eq!((b.tank, b.level), (2, 1));
+    }
+
+    #[test]
+    fn bonus_screen_menu_goes_back() {
+        let mut p = Profile::default();
+        for l in 1..5 {
+            p.finish_level(1, l);
+        }
+        let mut g = Game::new(p, MtRand::new(1), MtRand::new(2));
+        g.last_level = (5, 5);
+        if let Screen::Pets(_) = g.screen {
+            g.step_pets(&[PetInput::Continue]);
+            g.step_pets(&[PetInput::ConfirmYes]);
+        }
+        let Screen::Tank(b) = &mut g.screen else {
+            panic!("expected 1-5")
+        };
+        b.money = 100_000;
+        b.egg_count = 3;
+        b.shop.reveal(Slot::EggPiece, false);
+        g.step_tank(&[Input::Buy(Slot::EggPiece)]);
+        while !matches!(&g.screen, Screen::Hatch(h) if h.hatch.can_continue()) {
+            g.step_hatch(&[]);
+        }
+        g.step_hatch(&[HatchInput::Continue]);
+        assert!(matches!(g.screen, Screen::Bonus(_)));
+        g.step_bonus(&[BonusInput::Menu]);
+        assert!(matches!(g.screen, Screen::Menu(_)));
+        // Profile was already advanced to 2-1.
+        assert_eq!((g.profile.tank, g.profile.level), (2, 1));
     }
 }

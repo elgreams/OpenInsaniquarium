@@ -26,6 +26,10 @@ pub struct Profile {
     pub completed: bool,
     /// `+0x5a + id`: pets chosen on the pet screen for the next level.
     pub chosen: [bool; PET_COUNT],
+    /// `+0xb0`: bonus purchases made (0 for a fresh profile). Each
+    /// `ShowBonusScreen` visit offers one item; the order is fixed
+    /// (`bonus-screen.md#the-offer`).
+    pub bonus_purchases: i32,
     /// `+0xb4`: how many pets the pet screen lets you choose (3).
     pub pet_slots: i32,
 }
@@ -40,6 +44,7 @@ impl Default for Profile {
             times_beaten: 0,
             completed: false,
             chosen: [false; PET_COUNT],
+            bonus_purchases: 0,
             pet_slots: 3,
         }
     }
