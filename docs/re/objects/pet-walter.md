@@ -14,8 +14,6 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-23 differen
 - Animation (slot 89) @ `0x004dfc50`, id-0x17 branch (and a turn-trigger test at the top); draw body `0x004f8610` case 0x17 → `0x004dfa00` with `IMAGE_WALTER`
 - Presto hand-over of `+0x260`/`+0x264`: slot 73 @ `0x004f89a0` at `0x004f8a56`
 
-Confidence: everything below is `static` (read from the code; nothing captured yet).
-
 Capture: `walter_01` (1-2 with Walter and Presto; Presto changed into Itchy, then Walter clicked 8 times: 6 punches, guppies and the Itchy knocked, the Itchy turning back into Presto, tired after the 5th punch and awake 360 ticks later, clicks during a punch falling through), replayed exactly from the game's own demo. Also `presto_walter_nostradamus_01` (2-1 with Presto, Walter and Nostradamus), replayed by `presto_walter_nostradamus`: the Presto-flagged Itchy is punched and reverts, a potion is clicked for $1. `traced` where a section says so, else `static`.
 
 ## Fields used by id 23

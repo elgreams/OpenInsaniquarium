@@ -18,7 +18,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-21 differen
 - Sneeze: `Board::Update` @ `0x00547610` (call at `0x005482bd`) → `0x00543f40`
 - Draw body `0x004f8610` case 0x15 (shake, then the generic pet draw `0x004dfbb0` with `IMAGE_NOSTRADAMUS`, then the puff)
 
-Confidence: everything below is `static` (read from the code; nothing captured yet).
+Confidence per section below. `traced` where a section says so, else `static`.
 
 ## Fields used by id 21
 
@@ -139,7 +139,7 @@ Type-0 shadow. The potion is drawn by `Food`'s own draw (not followed; `food.md`
 
 ## Open questions
 
-- Everything is static. The transformation (guppy → nose with 8 draws, `+0x240 = 1`, AddRandomGuppy when the tank empties) and the sneeze are the parts to capture first.
+- The transformation (guppy → nose with 8 draws, `+0x240 = 1`, AddRandomGuppy when the tank empties) and the sneeze are traced (`nostradamus_potion`, `nostradamus_sneeze_roll`). The potion click is traced (`presto_walter_nostradamus`). Remaining items below are `static`.
 - The board sound queue `board+0x90` (`0x00515e30`): its time unit, so when each `SNEEZE` plays.
 - Whether the eat check's pellet removal after `Fish::Eat` behaves when the eater was just removed (the potion should still be removed; order of the two removals not followed).
 - Breeders eat food too; whether they can eat a potion (their eat code was not followed).
