@@ -62,6 +62,24 @@ for p in vec(ptr(b + 0xB4)):
     if "potion" in args and rd(o + 0x234) == 21 and rd(o + 0x240) == 0:
         wr(o + 0x220, rd(o + 0x224) - 5)
         print(" pushed")
+if "presto_near_walter" in args:
+    # Move the Presto-flagged pet next to Walter so the glove can hit it.
+    # The fist reaches ~100 px from Walter's centre; put the flagged pet
+    # 60 px to his left/right (well within glove range) and at the same y.
+    walter_x, walter_y, flagged = None, None, None
+    for p in vec(ptr(b + 0xB4)):
+        o = ptr(p)
+        if rd(o + 0x234) == 23:
+            walter_x, walter_y = rd(o + 0x30), rd(o + 0x34)
+        if (rd(o + 0x230) & 0xFF) and rd(o + 0x234) != 19:
+            flagged = o
+    if walter_x is not None and flagged is not None:
+        fx = max(10, min(walter_x - 60, 460))
+        wr(flagged + 0x30, fx)
+        wr(flagged + 0x34, walter_y)
+        print(f"flagged pet -> ({fx},{walter_y})")
+    else:
+        print(f"walter={walter_x},{walter_y} flagged={flagged}")
 for p in vec(ptr(b + 0xA0)):
     o = ptr(p)
     print("guppy hunger", rd(o + 0x9C), "stage", rd(o + 0x1A0))

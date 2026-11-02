@@ -96,6 +96,8 @@ GUS_QUALITY = "--gus-quality" in sys.argv
 # (`--star-delay S`), so it starves first (no star guppies, no stars).
 STAR_DELAY = float(sys.argv[sys.argv.index("--star-delay") + 1]) if "--star-delay" in sys.argv else 0
 GUS_STAR = int(sys.argv[sys.argv.index("--gus-star") + 1]) if "--gus-star" in sys.argv else 0
+# Click Nostradamus's potions (food kind 2) for $1 (`--potion-click`).
+POTION_CLICK = "--potion-click" in sys.argv
 
 
 def window():
@@ -147,6 +149,8 @@ def read_state():
                 st["presto"] = (int(p[2]), int(p[3]), int(p[7]), int(p[1]))
         elif p[0] == "Q" and len(p) >= 6 and int(p[4]) and "presto" not in st:
             st["presto"] = (int(p[2]), int(p[3]), int(p[5]), int(p[1]))
+        elif p[0] == "F" and len(p) >= 5:
+            st.setdefault("food_items", []).append(tuple(map(int, p[1:5])))
         elif p[0] == "O":
             st["oscars"].append(tuple(map(int, p[1:4])))
         elif p[0] == "A":
@@ -220,16 +224,31 @@ def main():
                 time.sleep(0.35)
                 continue
         walter = [q for q in st.get("pets", []) if q[0] == 23]
-        if WALTER and punches < WALTER and walter and now >= punch_at and not st["dialogs"]:
+        if WALTER and punches < WALTER and walter and now >= punch_at and not picks and not st["dialogs"]:
             _, wx, wy, _, _ = walter[0]
             near = any(abs(g[0] - wx) < 120 and abs(g[1] - wy) < 60 for g in st["guppies"])
-            if near or now >= punch_at + 6:
+            # Presto-flagged pet in glove range (~100 px x, ~40 px y).
+            presto_near = False
+            if "presto" in st:
+                px, py = st["presto"][0], st["presto"][1]
+                presto_near = abs(px - wx) < 100 and abs(py - wy) < 40
+                near = near or presto_near
+            if presto_near or near or now >= punch_at + 8:
                 click(win, wx + 40, min(max(wy + 35, 70), 470))
                 print("walter click", punches, "near" if near else "", flush=True)
                 punches += 1
                 punch_at = now + 2.2
                 time.sleep(0.35)
                 continue
+        # Click a Nostradamus potion (food kind 2, not carried) for $1.
+        potions = [fi for fi in st.get("food_items", []) if fi[2] == 2 and fi[3] == 0]
+        if POTION_CLICK and potions and not st["dialogs"]:
+            px, py = potions[0][0], potions[0][1]
+            # Potions are 40x40 widgets; click their centre.
+            click(win, min(max(px + 20, 10), 630), min(max(py + 20, 45), 470))
+            print("potion click", flush=True)
+            time.sleep(0.35)
+            continue
         if st["dialogs"]:
             # A board dialog (DANGER!, ...): click its button, centred along
             # the bottom (framework/dialog.md: inset 36, button 33 high).

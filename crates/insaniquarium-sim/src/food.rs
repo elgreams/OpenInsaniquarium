@@ -132,7 +132,13 @@ impl Food {
         }
         if self.carried {
             // A clicked potion glides to the money counter, 1/7 of the way
-            // a tick; banked ($1) once above y 40 (pet-nostradamus.md#the-potion-food-kind-2).
+            // a tick; banked ($1) once widget_y < 40 (pet-nostradamus.md).
+            // The check is on the position from the *previous* tick: the
+            // original tests before moving, so a potion that first reaches
+            // wy < 40 this tick is banked next tick.
+            if self.widget_y < 40 {
+                return FoodStep::Bank;
+            }
             if self.x > 550.0 {
                 self.x -= (self.x - 550.0) / 7.0;
             } else if self.x < 550.0 {
@@ -145,11 +151,7 @@ impl Food {
             }
             self.widget_x = self.x as i32;
             self.widget_y = self.y as i32;
-            return if self.widget_y < 40 {
-                FoodStep::Bank
-            } else {
-                FoodStep::Keep
-            };
+            return FoodStep::Keep;
         }
         if self.tossed && !self.risen {
             // Tossed by Nimbus: rise until y 120, then fall.

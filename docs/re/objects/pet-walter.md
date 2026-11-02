@@ -16,7 +16,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-23 differen
 
 Confidence: everything below is `static` (read from the code; nothing captured yet).
 
-Capture: `walter_01` (1-2 with Walter and Presto; Presto changed into Itchy, then Walter clicked 8 times: 6 punches, guppies and the Itchy knocked, the Itchy turning back into Presto, tired after the 5th punch and awake 360 ticks later, clicks during a punch falling through), replayed exactly from the game's own demo. `traced` where a section says so, else `static`.
+Capture: `walter_01` (1-2 with Walter and Presto; Presto changed into Itchy, then Walter clicked 8 times: 6 punches, guppies and the Itchy knocked, the Itchy turning back into Presto, tired after the 5th punch and awake 360 ticks later, clicks during a punch falling through), replayed exactly from the game's own demo. Also `presto_walter_nostradamus_01` (2-1 with Presto, Walter and Nostradamus), replayed by `presto_walter_nostradamus`: the Presto-flagged Itchy is punched and reverts, a potion is clicked for $1. `traced` where a section says so, else `static`.
 
 ## Fields used by id 23
 
@@ -160,7 +160,7 @@ So a punch has **17 hit ticks**, each object is hit at most once per glove (the 
 
 The hits happen inside Walter's update (the `+0xb4` pass, `sim/board.md#tick-order`): an object updated earlier in the tick (guppies, aliens) starts moving next tick; a FishTypePet later in `+0xb4` moves in the same tick.
 
-`traced` by `walter_punches` (`walter_01`) for the 5-tick wait, reach, hit window, the 15/10 push from the global stream, guppy coin clocks, and the Presto revert on the 10th tick (the reverting pet's update returns at step 7, before it moves). Pets other than Itchy/Presto in reach are `static`.
+`traced` by `walter_punches` (`walter_01`) for the 5-tick wait, reach, hit window, the 15/10 push from the global stream, guppy coin clocks, and the Presto revert on the 10th tick (the reverting pet's update returns at step 7, before it moves). The `+0x28` age check on Presto-flagged pets is `traced` by `presto_walter_nostradamus` (`presto_walter_nostradamus_01`): a newly-reverted Presto (age < 30) is not hit by the still-active glove. Pets other than Itchy/Presto in reach are `static`.
 
 ## Animation (`0x004dfc50`), id 23
 

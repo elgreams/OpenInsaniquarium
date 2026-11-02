@@ -12,7 +12,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-19 / Presto
 - Revert on a punch: Update `0x004f7ad0`, push-timer step; the glove `BoxingGlove::Update` @ `0x004e9a60` → `0x004e0ed0`
 - Drawing: draw body `0x004f8610` case 0x13 → `0x004dfbb0` with `IMAGE_PRESTO`; puff and label at the end of `0x004f8610`; label `0x004f2450`
 
-Confidence per section below. `presto_01` (1-2, Presto alone; replayed by `presto_changes` in `crates/harness/tests/tank1_1.rs` from the game's own demo) right-clicks him, changes him into Itchy, Shrapnel, Stinky and back into Presto, and right-clicks each changed pet once while it recharges. The punch revert (pet 23) and the drawing are not covered. `traced` where a section says so, else `static`.
+Confidence per section below. `presto_01` (1-2, Presto alone; replayed by `presto_changes` in `crates/harness/tests/tank1_1.rs` from the game's own demo) right-clicks him, changes him into Itchy, Shrapnel, Stinky and back into Presto, and right-clicks each changed pet once while it recharges. `presto_walter_nostradamus_01` (2-1 with Presto, Walter and Nostradamus; replayed by `presto_walter_nostradamus`) covers the punch revert (Walter punches the Presto-flagged Itchy, which reverts on the 10th tick). The drawing is not covered. `traced` where a section says so, else `static`.
 
 ## Fields
 
@@ -43,7 +43,7 @@ As Itchy's update (`pet-itchy.md#update-0x004f7ad0-id-2-normal-game`): the gate 
 - **Recharge:** `+0x238 −= 1` while non-zero (Itchy's step 9).
 - **Punch revert** (in step 7, the push timer): after the push timer is decremented, if the pet is flagged, its id isn't 19 and the new timer value is < 41 (so from the 10th tick of a 50-tick glove push), set `+0x238 = 0` and call slot 73 with **19** (the change below): it turns back into Presto, and its update returns at once.
 
-`traced` by `presto_changes` (`presto_01`) for swimming, the puff and the recharge. The punch revert is `static`.
+`traced` by `presto_changes` (`presto_01`) for swimming, the puff and the recharge. The punch revert is `traced` by `presto_walter_nostradamus` (`presto_walter_nostradamus_01`): a Presto-flagged Itchy is punched by Walter, push timer counts down from 50 to 41, and the pet reverts to Presto on the 10th tick.
 
 ## How a right-click reaches him
 

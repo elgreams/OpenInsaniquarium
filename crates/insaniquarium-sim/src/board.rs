@@ -1133,8 +1133,9 @@ impl Board {
             if j == w || f.kind == K::Prego || !hit_by(f) {
                 continue;
             }
-            // A pet Presto made fewer than 30 updates ago can't be hit.
-            if f.presto && f.kind != K::Presto && f.recharge > crate::presto::RECHARGE - 30 {
+            // A Presto-flagged pet (including Presto himself) with fewer
+            // than 30 widget updates can't be hit (pet-walter.md, `+0x28`).
+            if f.presto && f.age < 30 {
                 continue;
             }
             let k = match f.kind {

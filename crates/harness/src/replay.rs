@@ -157,6 +157,7 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
         // `+0x98`: a pointer in the capture; kept as "a missile is on it".
         missile: (b.len() > 0x9c && rd_i32(b, 0x98) != 0).then_some(0),
         crosshair: 0,
+        age: rd_i32(b, 0x28),
         // Meryl's blink flag `+0x244`; Wadsworth's sheltering flag `+0x250`.
         blink: rd_i32(b, 0x8c) == 0x15
             && match rd_i32(b, 0x234) {

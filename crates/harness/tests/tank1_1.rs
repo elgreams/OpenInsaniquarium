@@ -826,6 +826,17 @@ fn walter_punches() {
     }
 }
 
+/// Presto, Walter and Nostradamus on 2-1 (`presto_walter_nostradamus_01`):
+/// Presto changes into Itchy, Walter punches it (push revert on the 10th
+/// tick), and a Nostradamus potion is clicked for $1 (pet-presto.md,
+/// pet-walter.md, pet-nostradamus.md).
+#[test]
+fn presto_walter_nostradamus() {
+    if captured("presto_walter_nostradamus_01") {
+        replay_level_tank("presto_walter_nostradamus_01", 2, 1);
+    }
+}
+
 /// Tank 2-1 (`tank2-1_full_01`): played by autoplay from the level start,
 /// no pets, two star potions dropped, two waves (wave kind 2), three egg
 /// pieces bought (tank2-plan.md, step 1).
@@ -1147,6 +1158,7 @@ fn pet_screen_matches_original() {
 /// their replays re-sync it every tick.
 fn needs_global(name: &str) -> bool {
     name.starts_with("nostradamus")
+        || name.starts_with("presto_walter")
         || name.starts_with("stanley")
         || name.starts_with("walter")
         || name.contains("stanley")

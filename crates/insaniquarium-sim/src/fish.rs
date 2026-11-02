@@ -195,6 +195,10 @@ pub struct Fish {
     pub missile: Option<u32>,
     /// `+0x90`: the crosshair counter (0..19) while a missile is on it.
     pub crosshair: i32,
+    /// `+0x28`: widget update counter, +1 per tick (`WidgetContainer::Update`).
+    /// Used by the boxing glove: a Presto-flagged pet younger than 30 updates
+    /// can't be hit (pet-walter.md#the-boxing-glove, `0x004e0ed0`).
+    pub age: i32,
 }
 
 /// Board facts a guppy update reads.
@@ -338,6 +342,7 @@ impl Fish {
             revert_state: None,
             missile: None,
             crosshair: 0,
+            age: 0,
             widget_x: x,
             widget_y: y,
         };

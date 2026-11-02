@@ -7,7 +7,7 @@ Nostradamus swims like a guppy but keeps off the bottom. He has two powers:
 
 He is a bonus pet, bought with shells (`screens/bonus-screen.md`). Noses made from guppies carry a flag (`+0x240`) that makes Amp's zap kill them like guppies (`pet-amp.md#the-zap`).
 
-Captures: `nostradamus_01` and `nostradamus_02` (1-2, him alone, guppies kept hungry), replayed exactly from the game's own demo. They cover potions, guppies turning into noses, and one sneeze roll that failed; not a clicked potion or a postponed wave. `traced` where a section says so, else `static`.
+Captures: `nostradamus_01` and `nostradamus_02` (1-2, him alone, guppies kept hungry), replayed exactly from the game's own demo. They cover potions, guppies turning into noses, and one sneeze roll that failed. `presto_walter_nostradamus_01` (2-1 with Presto, Walter and Nostradamus; replayed by `presto_walter_nostradamus`) covers the potion click for $1 and the carried-potion banking timing. `traced` where a section says so, else `static`.
 
 Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-21 differences are listed here. All offsets are raw `this`-relative (Ghidra's `FishTypePet_data.offset_0xN` = raw `+0x22c + N`, `Fish_data.field_0xN` = raw `+0x154 + N`, `Food_data.offset_0xN` = raw `+0x154 + N`).
 
@@ -83,7 +83,7 @@ RNG per potion: 1 app draw.
 
 - **Falling:** as a basic pellet (`food.md#foodupdate-0x004f8aa0-basic-pellet`): y += 1.5 per tick, edible delay counts down, no drift (motion 0).
 - **Bottom:** when y > 410 a kind-2 item is **removed** at once (no fade, no rest).
-- **Clicked:** a left click on it (Food slot 55 `0x004d62f0`, or a tank click that lands on it, `0x00539f30`) calls `0x004d6290` once: widget slot 38 with 0, `+0x7c = 0`, `+0x55 = 0` (no longer clickable), **carried byte `+0x185 = 1`**, and the coin-collect sound `0x005383d0` (sample `0x12c` `POINTS`, gap 3; **1 app draw `r & 3`** when not throttled, `coin.md`). Then each tick it glides `x += (550 − x)/7`, `y += (30 − y)/7` (or the mirrored subtraction when past the target); once its widget y < 40 it is removed and **$1** is banked (`0x0053c1e0(1)`: money +1, level earnings +1). A carried potion can't be eaten (`0x004d5f20`).
+- **Clicked:** a left click on it (Food slot 55 `0x004d62f0`, or a tank click that lands on it, `0x00539f30`) calls `0x004d6290` once: widget slot 38 with 0, `+0x7c = 0`, `+0x55 = 0` (no longer clickable), **carried byte `+0x185 = 1`**, and the coin-collect sound `0x005383d0` (sample `0x12c` `POINTS`, gap 3; **1 app draw `r & 3`** when not throttled, `coin.md`). Then each tick it glides `x += (550 − x)/7`, `y += (30 − y)/7` (or the mirrored subtraction when past the target); the widget_y < 40 check runs **before** the move each tick, so a potion that first reaches wy < 40 is **banked next tick** — removed and **$1** banked (`0x0053c1e0(1)`: money +1, level earnings +1). A carried potion can't be eaten (`0x004d5f20`).
 
 **Who can eat it** (`0x004d5f20`, used by the guppy's find-food and eat checks, `food.md#find-food-slot-85-0x004ef050`): kind 2 is edible only when not carried, the edible delay is 0, and (outside the Virtual Tank) the fish's **stage `+0x1a0` < 3** and its **hunger `+0x9c` < 108**. So only a quite hungry small/medium/large guppy goes for it. The bite box is the pellet's.
 
@@ -98,7 +98,7 @@ No hunger, growth or coin. (The eat check then removes the potion as for any foo
 
 Other readers of kind 2: aliens' food searches skip it (`0x004ee6b0`, `0x004ee850`); Nimbus never targets it but can toss one (`pet-nimbus.md#open-questions`), and his re-drop through `AddFood` passes kind 0, so a tossed potion becomes an ordinary pellet; Brinkley's target and eat have no kind filter, so he eats potions like pellets (`pet-brinkley.md#eat-0x004fe740-id-20`).
 
-`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for falling, the bottom, who can drink it (hunger < 108) and the transformation. Clicking it ($1) is `static` (built, not captured).
+`traced` by `nostradamus_potion` (`nostradamus_01`) and `nostradamus_sneeze_roll` (`nostradamus_02`) for falling, the bottom, who can drink it (hunger < 108) and the transformation. Clicking it ($1) is `traced` by `presto_walter_nostradamus` (`presto_walter_nostradamus_01`): several potions clicked for $1 each, the carried potion glides to (550, 30) and is banked when `widget_y < 40` (checked before moving, so the potion at wy 38 is banked next tick).
 
 ## Sneeze of Power (`0x00543f40`)
 

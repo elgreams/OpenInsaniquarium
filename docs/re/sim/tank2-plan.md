@@ -28,6 +28,8 @@ Same workflow as tank 1 and the pets: spec from the binary → build → record 
 4. **Alien kind 5 (Destructor) and its missiles**: done. `destructor_missiles` (`tank2-4_destructor_01`) replays exactly: volleys, missiles hitting and clicked, the kill with a missile still flying. `stanley_shoots_missiles` (`tank2-4_stanley_01`) replays Stanley shooting two of its missiles down.
 5. **2-5** (kind 4 or 5 by a draw): `tank_2_5` replays `tank2-5_full_01` exactly (Stanley and Nostradamus picked on the pet screen; the setup draw gave kind 5; two Sneezes of Power postponed the wave, then the Destructor came, Stanley shot its missiles down, the laser killed it; the post-spawn re-roll's 2 draws). `level_2_5_start` checks the setup draw, pets and guppies. Still open: a kind-4 wave on 2-5, the egg pieces and the hatch screen after a tank-2 level (and the pet screen after it): the hatch/pet screens are `traced` after 1-1 and 1-5 (`hatch_screen_after_1_1_matches`, `pet_screen_matches_original`) and nothing in their code depends on the tank, but the 2-x → 2-(x+1) transition itself is `static`.
 
+6. **Open static claims** (the "Presto punch revert and potion click" group): `presto_walter_nostradamus` replays `presto_walter_nostradamus_01` (2-1 with Presto, Walter and Nostradamus) exactly. Presto changes into Itchy, Walter punches it (push timer 50, the 10th-tick revert), and several Nostradamus potions are clicked for $1 (carried potion banked at `widget_y < 40`, checked before moving). Two sim fixes: (1) the boxing glove now checks the widget update counter `+0x28 < 30` on Presto-flagged pets (including Presto himself after a revert); (2) the carried-potion banking tests the widget_y before the 1/7 glide step, not after. `traced`.
+
 Report back after each step.
 
-`static` (a plan).
+`static` (a plan; step 6 is `traced`).

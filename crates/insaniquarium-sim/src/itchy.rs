@@ -284,6 +284,8 @@ impl Fish {
     /// A `FishTypePet`'s update: Itchy's or Prego's. Returns what the
     /// board must apply.
     pub fn update_fish_pet(&mut self, ctx: PetCtx<'_>, rng: &mut MtRand) -> PetFishOut {
+        // WidgetContainer::Update (0x0046c4f0) increments +0x28 every tick.
+        self.age += 1;
         let mut out = self.update_fish_pet_kind(ctx, rng);
         if self.reverting {
             // Reverted at step 7: the update returned there; the board
