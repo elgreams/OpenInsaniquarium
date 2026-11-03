@@ -19,7 +19,7 @@ Class `Sexy::BonusScreen` (ctor inlined in Ghidra's `BonusScreenOverlay::BonusSc
 | `App::RemoveBonusScreen` | `0x0054ae30` | zeros `app+0x818` |
 | Dialog `0x23` handler | `0x0054b900` | WinFishApp slot 3 |
 
-Confidence: `traced` for fields, Update (app stream), offer, music, and exit flow — by `bonus_screen` (`bonus_screen_01`). The global stream finding is `confirmed` (see [RNG](#rng)). Layout/overlay visuals remain `static`.
+Confidence: `traced` for fields, Update (app stream), offer, and music — by `bonus_screen` (`bonus_screen_01`). The global stream finding is `confirmed` (see [RNG](#rng)). Buying, button handlers, exit flow, and layout/overlay visuals remain `static`. The capture ended while still on the bonus screen (purchased = 0 throughout, no exit observed).
 
 Notation: `app` = WinFishApp. `profile` = `[app+0x8b8]`. `n` = `profile+0xb0` (bonus purchases made, 0 for a fresh profile). One tick = 28 ms (`framework/timing.md`). Offsets below are `this`-relative to the BonusScreen (Ghidra's `this[1]` in the overlay ctor; the methods use them directly).
 
@@ -172,7 +172,7 @@ Confirmed from disassembly of `ButtonDepress` at `0x0051e060`:
 - **Menu** (button 1): removes the BonusScreen → save + `App::ShowGameSelector` (main menu).
 - The Continue button is labeled **"Click Here To Continue"** in Adventure. In Challenge mode with a board present, it reads **"Click for Story Time"** (leads to a `StoryScreen`). The Menu button is hidden at profile 5-2 and in Challenge mode.
 
-`static` (the ButtonDepress handler). The transition from the bonus screen is `confirmed` (the bonus screen appeared after the bonus round in `bonus_screen_01`).
+`static` (the ButtonDepress handler; no exit was observed in `bonus_screen_01` — the recording ended on the bonus screen).
 
 ## Music
 

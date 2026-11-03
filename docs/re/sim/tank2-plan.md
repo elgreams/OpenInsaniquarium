@@ -18,6 +18,10 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 
 `static` for the list itself; each item's confidence is in its own spec (Starcatcher: `objects/starcatcher.md`).
 
+## Prerequisites
+
+- **Bonus screen** (tank 1 → tank 2 transition): done. `bonus_screen` replays `bonus_screen_01` exactly (BonusScreen fields, app RNG constant, music (2, 54) for 3908 ticks). The capture is passive (purchased = 0 throughout): buying Brinkley, the confirm dialog, the shell deduction, and the exit flow (Continue → pet screen → tank 2) remain `static` in `screens/bonus-screen.md`.
+
 ## Steps
 
 Same workflow as tank 1 and the pets: spec from the binary → build → record the original playing the level (its own `-record` demo + a CE capture) → replay and fix until exact.
