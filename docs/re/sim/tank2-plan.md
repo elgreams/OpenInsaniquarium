@@ -20,7 +20,7 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 
 ## Prerequisites
 
-- **Bonus screen** (tank 1 → tank 2 transition): done. `bonus_screen` replays `bonus_screen_01` exactly (BonusScreen fields, app RNG constant, music (2, 54) for 3908 ticks). The capture is passive (purchased = 0 throughout): buying Brinkley, the confirm dialog, the shell deduction, and the exit flow (Continue → pet screen → tank 2) remain `static` in `screens/bonus-screen.md`.
+- **Bonus screen** (tank 1 → tank 2 transition): done. `bonus_screen` replays `bonus_screen_01` exactly: BonusScreen fields (tick, price, purchased), app RNG constant, music (2, 54), the buy action (Brinkley for 20 000, shells 50 000 → 30 000, purchased flag, anim start), and the exit flow (Continue → pet screen → tank 2-1 board). All bonus-screen spec sections except Menu button, "Not Enough Shells" dialog, layout/overlay visuals and the anim counter increment are now `traced`.
 
 ## Steps
 

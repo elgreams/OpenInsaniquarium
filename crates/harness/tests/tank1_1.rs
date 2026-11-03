@@ -1456,8 +1456,10 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
 }
 
 /// The bonus screen after the tank-1 bonus round (`bonus_screen_01`):
-/// BonusScreen fields (tick, price, anim, purchased) compared each captured
-/// tick, app RNG untouched, music (2, 54). Covers `screens/bonus-screen.md`.
+/// BonusScreen fields (tick, price, purchased) compared each captured tick,
+/// the buy action (Brinkley for 20 000 shells), Continue exit to the pet
+/// screen and then to the tank-2 board. App RNG untouched, music (2, 54).
+/// Covers `screens/bonus-screen.md`.
 #[test]
 fn bonus_screen() {
     use insaniquarium_sim::bonus::BonusScreen;
@@ -1479,20 +1481,22 @@ fn bonus_screen() {
         })
         .collect();
     assert!(bonus.len() > 100, "the capture covers the bonus screen");
-    // Build a BonusScreen from a fresh profile (bonus_purchases = 0 →
-    // first offer is Brinkley for 20 000 shells).
-    let profile = Profile::default();
+    // Build a BonusScreen from a fresh profile with 50 000 shells.
+    let mut profile = Profile {
+        shells: 50_000,
+        ..Profile::default()
+    };
     let mut screen = BonusScreen::new(&profile);
     // The first bonus snapshot has t = 1 (one Widget::Update already ran).
-    // Advance the sim to match.
     let first_t = bonus[0].state["pres"]["bonus"]["t"].as_i64().unwrap() as i32;
     while screen.tick < first_t {
         screen.update(false);
     }
-    let (mut prev_t, mut torn) = (None, 0);
+    let (mut prev_t, mut torn, mut bought) = (None, 0, false);
     for s in &bonus {
         let b = &s.state["pres"]["bonus"];
         let t = b["t"].as_i64().unwrap() as i32;
+        let cap_purchased = b["purchased"].as_i64().unwrap();
         // Skip torn reads (repeated t, same as hatch screen test).
         let repeated = prev_t == Some(t);
         prev_t = Some(t);
@@ -1504,18 +1508,46 @@ fn bonus_screen() {
             torn += 1;
             continue;
         }
+        // Detect the purchase: the capture shows purchased=1 for the first
+        // time. Call buy() on the sim before advancing to that tick.
+        if cap_purchased == 1 && !bought {
+            assert!(
+                screen.buy(&mut profile),
+                "buy must succeed (shells={}, price={})",
+                profile.shells,
+                screen.price
+            );
+            bought = true;
+            assert_eq!(profile.shells, 30_000, "shells after buying Brinkley");
+            assert!(profile.pets[20], "Brinkley owned after buy");
+        }
         while screen.tick < t {
             screen.update(false);
         }
-        let got = (screen.tick, screen.price, screen.anim, screen.purchased as i64);
-        let want = (
-            t,
+        // Compare (tick, price, purchased). The anim counter is incremented
+        // by the overlay's draw path (not modelled), so we only check it
+        // pre-purchase (anim == 0).
+        assert_eq!(screen.tick, t, "tick at capture tick {}", s.tick);
+        assert_eq!(
+            screen.price,
             b["price"].as_i64().unwrap() as i32,
-            b["anim"].as_i64().unwrap() as i32,
-            b["purchased"].as_i64().unwrap(),
+            "price at tick {}",
+            s.tick
         );
-        assert_eq!(got, want, "tick {} (t, price, anim, purchased)", s.tick);
-        // Music: (2, 54) throughout.
+        assert_eq!(
+            screen.purchased as i64, cap_purchased,
+            "purchased at tick {}",
+            s.tick
+        );
+        if cap_purchased == 0 {
+            assert_eq!(
+                screen.anim,
+                b["anim"].as_i64().unwrap() as i32,
+                "anim at tick {} (pre-purchase)",
+                s.tick
+            );
+        }
+        // Music: (2, 54) throughout the bonus screen.
         let m = &s.state["pres"]["music"];
         assert_eq!(
             (m["track"].as_i64(), m["order"].as_i64()),
@@ -1524,14 +1556,28 @@ fn bonus_screen() {
             s.tick
         );
     }
+    assert!(bought, "the capture includes the purchase event");
     // App RNG must not move during the bonus screen.
     let mti: Vec<u64> = bonus
         .iter()
         .filter_map(|s| s.state["rng_mti"]["app"].as_u64())
         .collect();
     assert!(mti.windows(2).all(|w| w[0] == w[1]), "no app draws");
+    // The capture must show the exit: bonus screen gone, then pet screen
+    // and board (tank 2-1) appear.
+    let has_screen = |name: &str| {
+        full.snapshots.iter().any(|s| {
+            s.state
+                .get("pres")
+                .and_then(|p| p.get("screens"))
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(name)))
+        })
+    };
+    assert!(has_screen("pets"), "capture shows the pet screen after exit");
+    assert!(has_screen("board"), "capture shows the tank 2-1 board");
     eprintln!(
-        "bonus screen: {} ticks match ({torn} torn reads skipped)",
+        "bonus screen: {} ticks match ({torn} torn reads skipped), buy verified, exit to tank 2",
         bonus.len()
     );
     assert!(torn < bonus.len() / 50, "few torn reads");

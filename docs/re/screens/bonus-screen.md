@@ -19,7 +19,7 @@ Class `Sexy::BonusScreen` (ctor inlined in Ghidra's `BonusScreenOverlay::BonusSc
 | `App::RemoveBonusScreen` | `0x0054ae30` | zeros `app+0x818` |
 | Dialog `0x23` handler | `0x0054b900` | WinFishApp slot 3 |
 
-Confidence: `traced` for fields, Update (app stream), offer, and music — by `bonus_screen` (`bonus_screen_01`). The global stream finding is `confirmed` (see [RNG](#rng)). Buying, button handlers, exit flow, and layout/overlay visuals remain `static`. The capture ended while still on the bonus screen (purchased = 0 throughout, no exit observed).
+Confidence: `traced` for fields, Update (app stream), offer, music, buying (Brinkley for 20 000 shells, shell deduction, purchased flag, anim start), and exit flow (Continue → pet screen → tank 2-1 board) — by `bonus_screen` (`bonus_screen_01`). The global stream finding is `confirmed` (see [RNG](#rng)). Layout/overlay visuals (anim counter increment, shell count-up draw) remain `static`.
 
 Notation: `app` = WinFishApp. `profile` = `[app+0x8b8]`. `n` = `profile+0xb0` (bonus purchases made, 0 for a fresh profile). One tick = 28 ms (`framework/timing.md`). Offsets below are `this`-relative to the BonusScreen (Ghidra's `this[1]` in the overlay ctor; the methods use them directly).
 
@@ -109,11 +109,11 @@ The order is fixed: the pets come one per purchase, Brinkley first. `profile+0xb
 
 No RNG anywhere in this path.
 
-`static`.
+`traced` (`bonus_screen`): Brinkley (n = 0) bought for 20 000, shells 50 000 → 30 000, purchased flag set, anim counter starts at 1 (overlay increments it each tick thereafter; the sim doesn't model the overlay draw). Price unchanged at 20 000 after buy.
 
 ## ButtonDepress (`0x0051e060`)
 
-The handler dispatches on the button id argument. `static`.
+The handler dispatches on the button id argument. `traced` (`bonus_screen`) for Continue (exit to pet screen then board) and Buy (confirm dialog → purchase); Menu is `static`.
 
 ### Button 0 — Continue
 
@@ -126,7 +126,7 @@ The handler dispatches on the button id argument. `static`.
 
 Note: the bonus screen calls `NextLevel(1, 1)` whereas the hatch screen calls `NextLevel(0, 0)`. The first arg is `resume` (enables a Mode 5 setup path), the second is `help` (enables tutorial HelpScreens for 1-1..1-3). After a bonus round the profile is at the next tank's level 1, so neither flag changes behavior in Adventure.
 
-`static`.
+`traced` (`bonus_screen`): Continue after buying Brinkley → bonus screen removed → pet screen (> 3 pets owned) → tank 2-1 board. Verified by screen transitions in `bonus_screen_01`.
 
 ### Button 1 — Menu
 
@@ -147,7 +147,7 @@ Note: the bonus screen calls `NextLevel(1, 1)` whereas the hatch screen calls `N
    - Buttons BUY / CANCEL.
 3. BUY (`0x0054b900(1)` → `0x005172e0`): see [Buying](#buying-0x005172e0-called-from-dialog-0x23-handler).
 
-`static`.
+`traced` (`bonus_screen`): confirm dialog 0x23 observed open in `bonus_screen_01` between the Buy click and the purchase; "Not Enough Shells" path is `static`.
 
 ## Update (`0x00517090`)
 
@@ -172,7 +172,7 @@ Confirmed from disassembly of `ButtonDepress` at `0x0051e060`:
 - **Menu** (button 1): removes the BonusScreen → save + `App::ShowGameSelector` (main menu).
 - The Continue button is labeled **"Click Here To Continue"** in Adventure. In Challenge mode with a board present, it reads **"Click for Story Time"** (leads to a `StoryScreen`). The Menu button is hidden at profile 5-2 and in Challenge mode.
 
-`static` (the ButtonDepress handler; no exit was observed in `bonus_screen_01` — the recording ended on the bonus screen).
+`traced` (`bonus_screen`): Continue → pet screen → tank 2-1 board observed in `bonus_screen_01`. Menu is `static`.
 
 ## Music
 
