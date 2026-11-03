@@ -1454,3 +1454,85 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
     }
     carn_ticks
 }
+
+/// The bonus screen after the tank-1 bonus round (`bonus_screen_01`):
+/// BonusScreen fields (tick, price, anim, purchased) compared each captured
+/// tick, app RNG untouched, music (2, 54). Covers `screens/bonus-screen.md`.
+#[test]
+fn bonus_screen() {
+    use insaniquarium_sim::bonus::BonusScreen;
+    use insaniquarium_sim::profile::Profile;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../traces/original/bonus_screen_01.trace.jsonl");
+    let Some(t) = Trace::open(&path) else { return };
+    let full = t.unwrap();
+    // Find all snapshots where the bonus screen is active.
+    let bonus: Vec<_> = full
+        .snapshots
+        .iter()
+        .filter(|s| {
+            s.state
+                .get("pres")
+                .and_then(|p| p.get("screens"))
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("bonus")))
+        })
+        .collect();
+    assert!(bonus.len() > 100, "the capture covers the bonus screen");
+    // Build a BonusScreen from a fresh profile (bonus_purchases = 0 →
+    // first offer is Brinkley for 20 000 shells).
+    let profile = Profile::default();
+    let mut screen = BonusScreen::new(&profile);
+    // The first bonus snapshot has t = 1 (one Widget::Update already ran).
+    // Advance the sim to match.
+    let first_t = bonus[0].state["pres"]["bonus"]["t"].as_i64().unwrap() as i32;
+    while screen.tick < first_t {
+        screen.update(false);
+    }
+    let (mut prev_t, mut torn) = (None, 0);
+    for s in &bonus {
+        let b = &s.state["pres"]["bonus"];
+        let t = b["t"].as_i64().unwrap() as i32;
+        // Skip torn reads (repeated t, same as hatch screen test).
+        let repeated = prev_t == Some(t);
+        prev_t = Some(t);
+        let next_repeats = bonus
+            .iter()
+            .find(|n| n.tick > s.tick)
+            .is_some_and(|n| n.state["pres"]["bonus"]["t"].as_i64() == Some(t as i64));
+        if repeated || next_repeats {
+            torn += 1;
+            continue;
+        }
+        while screen.tick < t {
+            screen.update(false);
+        }
+        let got = (screen.tick, screen.price, screen.anim, screen.purchased as i64);
+        let want = (
+            t,
+            b["price"].as_i64().unwrap() as i32,
+            b["anim"].as_i64().unwrap() as i32,
+            b["purchased"].as_i64().unwrap(),
+        );
+        assert_eq!(got, want, "tick {} (t, price, anim, purchased)", s.tick);
+        // Music: (2, 54) throughout.
+        let m = &s.state["pres"]["music"];
+        assert_eq!(
+            (m["track"].as_i64(), m["order"].as_i64()),
+            (Some(2), Some(54)),
+            "bonus screen music at tick {}",
+            s.tick
+        );
+    }
+    // App RNG must not move during the bonus screen.
+    let mti: Vec<u64> = bonus
+        .iter()
+        .filter_map(|s| s.state["rng_mti"]["app"].as_u64())
+        .collect();
+    assert!(mti.windows(2).all(|w| w[0] == w[1]), "no app draws");
+    eprintln!(
+        "bonus screen: {} ticks match ({torn} torn reads skipped)",
+        bonus.len()
+    );
+    assert!(torn < bonus.len() / 50, "few torn reads");
+}

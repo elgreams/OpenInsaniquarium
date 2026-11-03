@@ -137,6 +137,12 @@ local function presentation(app)
     parts[#parts+1] = string.format('"hatch":{"t":%d,"pet":%d,"jx":%d,"jy":%d}',
       i32(h + 0x94), i32(h + 0x98), i32(h + 0x9c), i32(h + 0xa0))
   end
+  -- Bonus screen (bonus-screen.md): widget update counter, price, anim, purchased.
+  local bs = u32(app + 0x818)
+  if bs and bs ~= 0 then
+    parts[#parts+1] = string.format('"bonus":{"t":%d,"price":%d,"anim":%d,"purchased":%d}',
+      i32(bs + 0x28), i32(bs + 0xd0), i32(bs + 0xd4), readBytes(bs + 0xe0, 1) or 0)
+  end
   -- Pet screen (screens/pet-screen.md): its object raw, plus the profile's
   -- owned (+0x00) and chosen (+0x5a) pet bytes.
   local ps = u32(app + 0x80c)

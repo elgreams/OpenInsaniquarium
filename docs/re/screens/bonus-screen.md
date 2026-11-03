@@ -19,7 +19,7 @@ Class `Sexy::BonusScreen` (ctor inlined in Ghidra's `BonusScreenOverlay::BonusSc
 | `App::RemoveBonusScreen` | `0x0054ae30` | zeros `app+0x818` |
 | Dialog `0x23` handler | `0x0054b900` | WinFishApp slot 3 |
 
-Confidence: `static` throughout (all from binary analysis, nothing captured).
+Confidence: `traced` for fields, Update (app stream), offer, music, and exit flow — by `bonus_screen` (`bonus_screen_01`). The global stream finding is `confirmed` (see [RNG](#rng)). Layout/overlay visuals remain `static`.
 
 Notation: `app` = WinFishApp. `profile` = `[app+0x8b8]`. `n` = `profile+0xb0` (bonus purchases made, 0 for a fresh profile). One tick = 28 ms (`framework/timing.md`). Offsets below are `this`-relative to the BonusScreen (Ghidra's `this[1]` in the overlay ctor; the methods use them directly).
 
@@ -35,7 +35,7 @@ Notation: `app` = WinFishApp. `profile` = `[app+0x8b8]`. `n` = `profile+0xb0` (b
 
 So in Adventure the player meets it after tanks 1, 2 and 3 (each bonus round), and on every replay of 5-1.
 
-`static`.
+`confirmed` (tank 1 bonus round → bonus screen observed in `bonus_screen_01`; the full calling path is `static`).
 
 ## Known fields
 
@@ -58,7 +58,7 @@ Offsets are raw `this`-relative, confirmed by cross-referencing the ctor (`0x005
 | `+0xe0` | byte | **purchase-made flag** (set to 1 after a buy) | 0 |
 | `+0xe1` | byte | flag checked by Update for the buy-button blink (adjacent to `+0xe0`; semantics unclear) | 0 |
 
-`static`.
+`traced` (`bonus_screen`): `+0x28` (t), `+0xd0` (price), `+0xd4` (anim) and `+0xe0` (purchased) matched every tick of `bonus_screen_01`. Other offsets `static`.
 
 ## Construction (ctor, inlined in `0x0052dad0`)
 
@@ -75,7 +75,7 @@ Builds the BonusScreen and the overlay. Key steps for the sim:
 
 `AddedToManager` (`0x00516fd0`) adds widgets in order: +0xac (Continue), +0xa8 (Menu), +0xb0 (Buy), +0xa4 (overlay). The overlay is last, so it draws on top of the buttons.
 
-`static`.
+`static` (construction details); music `traced` (`bonus_screen`: track 2, order 54 confirmed every tick).
 
 ## The offer (`0x00516f70`, from the ctor)
 
@@ -95,7 +95,7 @@ What's offered (`0x005172e0`, and the confirm texts in the ButtonDepress handler
 
 The order is fixed: the pets come one per purchase, Brinkley first. `profile+0xb4` is the pet screen's "most pets you may choose" (`pet-screen.md`, 3 for a fresh profile; the pet screen caps it at 4 outside the Virtual Tank).
 
-`static`.
+`traced` (`bonus_screen`): n = 0, price 20 000 confirmed in `bonus_screen_01`. Other rows `static`.
 
 ## Buying (`0x005172e0`, called from dialog `0x23` handler)
 
@@ -160,9 +160,9 @@ Called once per tick. **No RNG calls** — the only call is to `Widget::Update` 
    - If `+0x28 == 180`: a resize/reshow operation on the buy widget (the exact call goes through vtable slot 68 of the widget).
 4. **Exit hide** (unconditional): if `+0x28 == 30`: hide all three buttons (`+0xa8`, `+0xac`, `+0xb0`) via `SetVisible(false)` (vtable slot 37). This is the close-out animation after a purchase starts (the buy action sets `+0xd4 = 1`, and the ctor runs the offer setup; the counter == 30 check likely fires during the purchase's count-up sequence when the screen is being removed).
 
-**Consequence for determinism:** no RNG streams are consumed during the BonusScreen's lifetime. The app and global streams pass through untouched.
+**Consequence for determinism:** the **app stream** passes through untouched. The **global stream** is consumed at a variable rate (~2–6 draws per tick), likely by the overlay's visual effects (shell count-up animation, particle effects). The BonusScreen::Update itself makes no RNG calls (confirmed), so the global draws come from elsewhere in the widget tree (the overlay or a background system).
 
-`static`.
+`traced` (`bonus_screen`): app MTI unchanged across 3908 ticks; global MTI changes confirmed in `bonus_screen_01`. The Update function's logic (mouse-down skip, buy-button blink, exit hide at tick 30) is `static`.
 
 ## Exit flow
 
@@ -172,21 +172,23 @@ Confirmed from disassembly of `ButtonDepress` at `0x0051e060`:
 - **Menu** (button 1): removes the BonusScreen → save + `App::ShowGameSelector` (main menu).
 - The Continue button is labeled **"Click Here To Continue"** in Adventure. In Challenge mode with a board present, it reads **"Click for Story Time"** (leads to a `StoryScreen`). The Menu button is hidden at profile 5-2 and in Challenge mode.
 
-`static`.
+`static` (the ButtonDepress handler). The transition from the bonus screen is `confirmed` (the bonus screen appeared after the bonus round in `bonus_screen_01`).
 
 ## Music
 
 `App::ShowBonusScreen` stops all music (`0x0054b020`) then plays **(2, 0x36)** = **(2, 54)**, remapped to **track 4 (`Insaniq2.mo3`), order 49** (`assets/music.md`). This is the same track as the hatch screen. The buy action (`0x005172e0`) also restops and restarts the same track.
 
-`static`.
+`traced` (`bonus_screen`): track 2 order 54 confirmed every tick of `bonus_screen_01`.
 
 ## RNG
 
-**No RNG** in the offer setup (`0x00516f70`), the buy path (`0x005172e0`), the ButtonDepress handler (`0x0051e060`), **or the Update function** (`0x00517090`). The Update's only call is to the Widget::Update base, which does not consume RNG. Unlike the hatch screen, there is no BubbleMgr and no per-tick RNG draws.
+**No RNG** in the offer setup (`0x00516f70`), the buy path (`0x005172e0`), the ButtonDepress handler (`0x0051e060`), **or the Update function** (`0x00517090`). The Update's only call is to the Widget::Update base, which does not consume RNG.
 
-The app and global RNG streams pass through the BonusScreen untouched. For replay, the sim can skip the screen entirely and re-sync at the next level start.
+**App stream:** passes through untouched (app MTI constant across 3908 ticks in `bonus_screen_01`). The sim's bonus screen correctly takes no app draws.
 
-`static`.
+**Global stream:** consumed at ~2–6 draws per tick (variable; occasionally 0 or up to 13). The source is **not** the BonusScreen::Update (confirmed: 117 bytes, only calls Widget::Update base). The draws likely come from the `BonusScreenOverlay`'s visual effects (the shell count-up animation or particle system). For replay, the sim re-syncs the global stream at the next level start, so these draws don't affect level determinism.
+
+`traced` (`bonus_screen`): app MTI unchanged, global MTI changes confirmed in `bonus_screen_01`. The overlay's draw path is `static`.
 
 ## Shells
 
