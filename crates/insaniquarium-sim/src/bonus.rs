@@ -214,6 +214,70 @@ mod tests {
         assert_eq!(s.price, 0);
     }
 
+    /// Walk through all 6 bonus screen visits, buying each time. Each
+    /// visit gets a fresh `BonusScreen` (as the original does after the
+    /// Continue → next tank → bonus round loop). Validates the full
+    /// interaction between `BonusScreen::new`, `buy`, and `Profile`.
+    #[test]
+    fn full_purchase_progression() {
+        let mut p = Profile {
+            shells: 300_000,
+            ..Profile::default()
+        };
+        let expected: &[(Offer, i32)] = &[
+            (Offer::Pet(20), 20_000),
+            (Offer::Pet(21), 25_000),
+            (Offer::Pet(22), 30_000),
+            (Offer::Pet(23), 35_000),
+            (Offer::Upgrade(4), 40_000),
+            (Offer::Upgrade(7), 45_000),
+        ];
+        let mut remaining = 300_000;
+        for (n, &(ref offer, price)) in expected.iter().enumerate() {
+            let mut s = BonusScreen::new(&p);
+            assert_eq!(s.offer, *offer, "visit {n}");
+            assert_eq!(s.price, price, "visit {n}");
+            assert!(s.buy(&mut p), "buy succeeds at visit {n}");
+            remaining -= price;
+            assert_eq!(p.shells, remaining, "shells after visit {n}");
+            assert_eq!(p.bonus_purchases, n as i32 + 1, "purchases after {n}");
+        }
+        // All 4 bonus pets owned.
+        for id in 20..24 {
+            assert!(p.pets[id], "pet {id} owned");
+        }
+        // Pet slots raised to 7.
+        assert_eq!(p.pet_slots, 7);
+        // 7th visit: nothing for sale.
+        let mut s = BonusScreen::new(&p);
+        assert_eq!(s.offer, Offer::None);
+        assert!(!s.buy(&mut p));
+        // Total spent: 20k + 25k + 30k + 35k + 40k + 45k = 195k.
+        assert_eq!(p.shells, 300_000 - 195_000);
+    }
+
+    /// The upgrade uses `max`, so it must not lower pet_slots that are
+    /// already above the target (e.g. set by a debug tool or prior upgrade).
+    #[test]
+    fn upgrade_does_not_lower_pet_slots() {
+        let mut p = Profile {
+            shells: 100_000,
+            bonus_purchases: 4,
+            pet_slots: 6,
+            ..Profile::default()
+        };
+        // Purchase 4 upgrades pet_slots to at least 4, but we're at 6.
+        let mut s = BonusScreen::new(&p);
+        assert_eq!(s.offer, Offer::Upgrade(4));
+        assert!(s.buy(&mut p));
+        assert_eq!(p.pet_slots, 6, "stays at 6, not lowered to 4");
+        // Purchase 5 upgrades to at least 7: higher than 6, so it raises.
+        let mut s2 = BonusScreen::new(&p);
+        assert_eq!(s2.offer, Offer::Upgrade(7));
+        assert!(s2.buy(&mut p));
+        assert_eq!(p.pet_slots, 7, "raised from 6 to 7");
+    }
+
     #[test]
     fn mouse_skip_animation() {
         let mut p = Profile {
