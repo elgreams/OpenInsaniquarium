@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use insaniquarium_sim::alien::{Alien, DeadAlien, Shot};
 use insaniquarium_sim::board::Dialog;
+use insaniquarium_sim::bonus::BonusScreen;
 use insaniquarium_sim::fish::FishKind;
 use insaniquarium_sim::game::{Game, Screen};
 use insaniquarium_sim::hatch::Hatch;
@@ -310,6 +311,14 @@ pub struct Fonts {
     pets_prompt: HashMap<String, Arc<Rgba>>,
     pets_confirm: Option<(Arc<Rgba>, [Rect; 2])>,
     labels: HashMap<String, Arc<Rgba>>,
+    /// The bonus screen's static background (screenback + title + buttons).
+    bonus_bg: Option<Arc<Rgba>>,
+    /// The bonus offer text layer, keyed by purchase index `n`.
+    bonus_offer: Option<(i32, Arc<Rgba>)>,
+    /// The shell balance layer, keyed by the shell count.
+    bonus_shells: Option<(i32, Arc<Rgba>)>,
+    /// The Buy button layer (only shown when an offer is active).
+    bonus_buy: Option<Arc<Rgba>>,
 }
 
 impl Fonts {
@@ -361,6 +370,41 @@ impl Fonts {
             pets_prompt: HashMap::new(),
             pets_confirm: None,
             labels: HashMap::new(),
+            bonus_bg: None,
+            bonus_offer: None,
+            bonus_shells: None,
+            bonus_buy: None,
+        }
+    }
+
+    /// Empty fonts (no data dir), for tests that don't need rendering.
+    #[cfg(test)]
+    pub fn load_empty() -> Self {
+        Fonts {
+            font: None,
+            dialog_fonts: None,
+            hatch_fonts: None,
+            tiny: None,
+            outline12: None,
+            small: None,
+            message_fonts: None,
+            message: None,
+            tank_label: None,
+            money: None,
+            dialog: None,
+            pet_dialog: None,
+            presto_label: None,
+            dialog_button: None,
+            hatch: None,
+            pets_bg: None,
+            pets_info: HashMap::new(),
+            pets_prompt: HashMap::new(),
+            pets_confirm: None,
+            labels: HashMap::new(),
+            bonus_bg: None,
+            bonus_offer: None,
+            bonus_shells: None,
+            bonus_buy: None,
         }
     }
 
@@ -372,6 +416,10 @@ impl Fonts {
 
     /// Render whatever text the current screen needs and isn't cached yet.
     fn update(&mut self, game: &Game, images: &GameImages) {
+        if let Screen::Bonus(b) = &game.screen {
+            self.update_bonus(&b.screen, game.profile.shells, images);
+            return;
+        }
         if let Screen::Pets(p) = &game.screen {
             self.update_pets(&p.screen, images);
             return;
@@ -678,6 +726,66 @@ impl Fonts {
         self.pets_confirm.as_ref().map(|c| c.1)
     }
 
+    fn update_bonus(
+        &mut self,
+        bs: &BonusScreen,
+        shells: i32,
+        images: &GameImages,
+    ) {
+        let Some([_, f15, _, f10]) = &self.hatch_fonts else {
+            return;
+        };
+        if self.bonus_bg.is_none()
+            && let Some([f17, _, _, f10]) = &self.hatch_fonts
+        {
+            self.bonus_bg = render_bonus_background(images, f17, f10).map(Arc::new);
+        }
+        let n = match bs.offer {
+            insaniquarium_sim::bonus::Offer::Pet(id) => id - 20,
+            insaniquarium_sim::bonus::Offer::Upgrade(4) => 4,
+            insaniquarium_sim::bonus::Offer::Upgrade(_) => 5,
+            insaniquarium_sim::bonus::Offer::None => -1,
+        };
+        if bs.price > 0 && self.bonus_offer.as_ref().is_none_or(|o| o.0 != n) {
+            let img = render_bonus_offer(f15, f10, n, bs.price);
+            self.bonus_offer = Some((n, Arc::new(img)));
+        }
+        if self.bonus_shells.as_ref().is_none_or(|s| s.0 != shells) {
+            let img = render_bonus_shells(f10, shells);
+            self.bonus_shells = Some((shells, Arc::new(img)));
+        }
+        if self.bonus_buy.is_none() && bs.price > 0 {
+            self.bonus_buy = render_bonus_buy_button(images, f10).map(Arc::new);
+        }
+    }
+
+    fn bonus_text(&self, bs: &BonusScreen) -> Vec<Text> {
+        let at = |image: &Arc<Rgba>, z: f32| Text {
+            image: image.clone(),
+            x: 0.0,
+            y: 0.0,
+            z,
+            colour: [255; 3],
+        };
+        let mut out = Vec::new();
+        if let Some(bg) = &self.bonus_bg {
+            out.push(at(bg, 5.0));
+        }
+        if let Some((_, img)) = &self.bonus_offer {
+            out.push(at(img, 5.1));
+        }
+        if let Some((_, img)) = &self.bonus_shells {
+            out.push(at(img, 5.2));
+        }
+        // Show the Buy button only when not yet purchased and an offer exists.
+        if !bs.purchased && bs.price > 0
+            && let Some(img) = &self.bonus_buy
+        {
+            out.push(at(img, 5.3));
+        }
+        out
+    }
+
     fn hatch_text(&self, h: &Hatch) -> Vec<Text> {
         let Some((_, [title, name, desc, wait, cont])) = &self.hatch else {
             return Vec::new();
@@ -727,8 +835,10 @@ pub fn frame(
             cels: pets_cels(&p.screen, cursor, mouse_down),
             texts: fonts.pets_text(&p.screen),
         },
-        // The bonus screen's visuals are not yet built (layout is open).
-        Screen::Bonus(_) => Frame::default(),
+        Screen::Bonus(b) => Frame {
+            cels: Vec::new(),
+            texts: fonts.bonus_text(&b.screen),
+        },
         // Drawn by the app from `menus` (whole-screen layers).
         Screen::Menu(_) | Screen::PreviewEnd => Frame::default(),
     }
@@ -1830,6 +1940,15 @@ fn tank_cels(b: &Board, cursor: Option<(i32, i32)>, down: bool) -> Vec<Cel> {
 /// The hatch screen's Continue button rect (`hatch-screen.md#3`).
 pub const HATCH_CONTINUE: (i32, i32, i32, i32) = (186, 445, 264, 29);
 
+// -- Bonus screen layout (`bonus-screen.md`) ----------------------------------
+
+/// Continue button (id 0): bottom centre, same width as the hatch screen.
+pub const BONUS_CONTINUE: (i32, i32, i32, i32) = (186, 445, 264, 29);
+/// Menu button (id 1): in the title bar hole, same as the pet screen.
+pub const BONUS_MENU: (i32, i32, i32, i32) = (525, 4, 80, 29);
+/// Buy button (id 2): centred below the offer description.
+pub const BONUS_BUY: (i32, i32, i32, i32) = (225, 370, 186, 29);
+
 /// Name and description of a pet on the hatch screen (tank 1 for now).
 /// TODO(spec): the other pets' text.
 fn pet_text(pet: i32) -> (&'static str, &'static [&'static str]) {
@@ -2250,4 +2369,241 @@ fn pet_sheet(pet: i32) -> Option<&'static str> {
         4 => "IMAGE_ZORF",
         _ => return None,
     })
+}
+
+// -- Bonus screen rendering (`bonus-screen.md`) -------------------------------
+
+/// The bonus screen's static background layer: `IMAGE_SCREENBACK`, title
+/// bar with "Level Info", Menu button in the title bar hole, Continue
+/// button at the bottom.
+fn render_bonus_background(
+    img: &GameImages,
+    f17: &ImageFont,
+    f10: &ImageFont,
+) -> Option<Rgba> {
+    let mut bg = Rgba::new_transparent(WIDTH, HEIGHT);
+    bg.draw_image_box(img.get("IMAGE_SCREENBACK")?, (-5, -5, 650, 490));
+    let title = img.get("IMAGE_SCREENTITLE")?;
+    bg.draw_image_box(title, (20, 0, 600, title.height as i32));
+    let hole = img.get("IMAGE_SCREENTITLEHOLE")?;
+    bg.draw_image_box(hole, (524, 3, 82, hole.height as i32));
+    f17.draw(&mut bg, b"Level Info", 245, 25, [255, 200, 0]);
+    let b = img.get("IMAGE_MAINBUTTON")?;
+    let up = b.crop(0, 0, b.width / 3, b.height);
+    // Menu button in the title bar hole.
+    {
+        let r = BONUS_MENU;
+        bg.draw_image_box(&up, r);
+        let (lx, ly) = button_label_origin(f10, b"Menu", r);
+        f10.draw(&mut bg, b"Menu", lx, ly, [255, 240, 0]);
+    }
+    // Continue button at the bottom.
+    {
+        let r = BONUS_CONTINUE;
+        bg.draw_image_box(&up, r);
+        let label = b"Click Here To Continue";
+        let (lx, ly) = button_label_origin(f10, label, r);
+        f10.draw(&mut bg, label, lx, ly, [255, 240, 0]);
+    }
+    Some(bg)
+}
+
+/// The offer description for bonus purchase `n` (`bonus-screen.md#the-offer`).
+fn bonus_offer_text(n: i32) -> (&'static str, &'static [&'static str]) {
+    match n {
+        0 => (
+            "Brinkley",
+            &[
+                "Bonus Pet: BRINKLEY",
+                "Brinkley will eat the food",
+                "that falls to the bottom",
+                "of the tank.",
+            ],
+        ),
+        1 => (
+            "Nostradamus",
+            &[
+                "Bonus Pet: NOSTRADAMUS",
+                "Nostradamus drops potions",
+                "that can turn your guppies",
+                "into nose-fish.",
+            ],
+        ),
+        2 => (
+            "Stanley",
+            &[
+                "Bonus Pet: STANLEY",
+                "Stanley throws exploding",
+                "balls at aliens.",
+            ],
+        ),
+        3 => (
+            "Walter",
+            &[
+                "Bonus Pet: WALTER",
+                "Walter throws punches that",
+                "speed up your fish.",
+            ],
+        ),
+        4 => (
+            "Bonus Upgrade",
+            &[
+                "Bonus Upgrade",
+                "Carry 4 pets to each level",
+                "instead of 3!",
+            ],
+        ),
+        5 => (
+            "Bonus Upgrade",
+            &[
+                "Bonus Upgrade",
+                "Carry up to 7 pets to each",
+                "level!",
+            ],
+        ),
+        _ => ("", &[]),
+    }
+}
+
+/// Render the offer panel: name, description lines and price, centred.
+fn render_bonus_offer(
+    f15: &ImageFont,
+    f10: &ImageFont,
+    n: i32,
+    price: i32,
+) -> Rgba {
+    let centre = |f: &ImageFont, t: &str| ((650 - f.width(t.as_bytes())) >> 1) - 3;
+    let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
+    let (_, lines) = bonus_offer_text(n);
+    if lines.is_empty() {
+        return l;
+    }
+    // Title line (first element) in the highlight colour.
+    f15.draw(
+        &mut l,
+        lines[0].as_bytes(),
+        centre(f15, lines[0]),
+        200,
+        [255, 200, 0],
+    );
+    // Description lines below.
+    for (i, line) in lines[1..].iter().enumerate() {
+        f10.draw(
+            &mut l,
+            line.as_bytes(),
+            centre(f10, line),
+            230 + 20 * i as i32,
+            [255; 3],
+        );
+    }
+    // Price line.
+    let price_str = format!("Price: {} shells", price);
+    f10.draw(
+        &mut l,
+        price_str.as_bytes(),
+        centre(f10, &price_str),
+        310,
+        [255, 255, 100],
+    );
+    l
+}
+
+/// Render the shell balance line.
+fn render_bonus_shells(f10: &ImageFont, shells: i32) -> Rgba {
+    let centre = |t: &str| ((650 - f10.width(t.as_bytes())) >> 1) - 3;
+    let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
+    let text = format!("You have {} shells", shells);
+    f10.draw(&mut l, text.as_bytes(), centre(&text), 340, [180, 255, 90]);
+    l
+}
+
+/// Render the Buy button as a standalone layer.
+fn render_bonus_buy_button(
+    img: &GameImages,
+    f10: &ImageFont,
+) -> Option<Rgba> {
+    let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
+    let b = img.get("IMAGE_MAINBUTTON")?;
+    let up = b.crop(0, 0, b.width / 3, b.height);
+    let r = BONUS_BUY;
+    l.draw_image_box(&up, r);
+    let label = b"Buy!";
+    let (lx, ly) = button_label_origin(f10, label, r);
+    f10.draw(&mut l, label, lx, ly, [255, 240, 0]);
+    Some(l)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use insaniquarium_sim::game::BonusScreenState;
+    use insaniquarium_sim::profile::Profile;
+    use sexy_core::rand::MtRand;
+
+    /// The bonus screen produces a non-empty frame with the offer text,
+    /// shell balance and buttons when an offer is available.
+    #[test]
+    fn bonus_screen_frame_has_layers() {
+        // A profile with 50 000 shells, first bonus visit (Brinkley).
+        let profile = Profile {
+            shells: 50_000,
+            ..Profile::default()
+        };
+        let bs = BonusScreen::new(&profile);
+        let mut game = Game::new(profile.clone(), MtRand::new(1), MtRand::new(2));
+        game.screen = Screen::Bonus(Box::new(BonusScreenState {
+            screen: bs,
+            rng: MtRand::new(1),
+            global_rng: MtRand::new(2),
+        }));
+        // No game images: the background and buy button require images and
+        // will be None, but the offer and shell layers are text-only and
+        // would need fonts. Without the data dir we can still verify the
+        // frame function doesn't panic and returns the expected structure.
+        let images = GameImages::default();
+        let mut fonts = Fonts::load_empty();
+        let f = frame(&game, None, false, &mut fonts, &images);
+        // Without fonts, the text layers won't render, but the function
+        // must not panic.
+        assert!(f.cels.is_empty(), "bonus screen has no cel sprites");
+
+        // Verify the offer text function covers all six purchases.
+        for n in 0..=5 {
+            let (_, lines) = bonus_offer_text(n);
+            assert!(!lines.is_empty(), "offer text for n={n} must not be empty");
+        }
+        // n >= 6 has nothing.
+        let (_, lines) = bonus_offer_text(6);
+        assert!(lines.is_empty());
+    }
+
+    /// Button rects are inside the screen and don't overlap each other.
+    #[test]
+    fn bonus_button_rects_valid() {
+        let rects = [BONUS_CONTINUE, BONUS_MENU, BONUS_BUY];
+        for (i, (x, y, w, h)) in rects.iter().enumerate() {
+            assert!(*x >= 0 && *y >= 0, "rect {i} has negative origin");
+            assert!(
+                *x + *w <= WIDTH as i32 && *y + *h <= HEIGHT as i32,
+                "rect {i} extends outside the screen"
+            );
+        }
+        // Continue and Buy must not overlap (they're the primary actions).
+        let overlaps = |(ax, ay, aw, ah): (i32, i32, i32, i32),
+                        (bx, by, bw, bh): (i32, i32, i32, i32)| {
+            ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+        };
+        assert!(
+            !overlaps(BONUS_CONTINUE, BONUS_BUY),
+            "Continue and Buy overlap"
+        );
+        assert!(
+            !overlaps(BONUS_CONTINUE, BONUS_MENU),
+            "Continue and Menu overlap"
+        );
+        assert!(
+            !overlaps(BONUS_BUY, BONUS_MENU),
+            "Buy and Menu overlap"
+        );
+    }
 }

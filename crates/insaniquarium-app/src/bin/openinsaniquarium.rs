@@ -584,12 +584,28 @@ fn mouse(
         sim.pet_inputs.extend(inputs);
         return;
     }
-    if matches!(sim.game.screen, Screen::Bonus(_)) {
-        // Bonus screen (`bonus-screen.md`): Continue on any release for now
-        // (full button layout is visual-only and not yet built).
-        if released {
-            sim.bonus_inputs.push(BonusInput::Continue);
+    if let Screen::Bonus(b) = &sim.game.screen {
+        // Copy the fields we need before mutably borrowing sim.
+        let purchased = b.screen.purchased;
+        let has_offer = b.screen.price > 0;
+        let inside = |(bx, by, bw, bh): (i32, i32, i32, i32)| {
+            (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y)
+        };
+        // Bonus screen (`bonus-screen.md`): buttons act on release.
+        let mut inputs = Vec::new();
+        if buttons.pressed(MouseButton::Left) {
+            inputs.push(BonusInput::Held);
         }
+        if released {
+            if inside(scene::BONUS_CONTINUE) {
+                inputs.push(BonusInput::Continue);
+            } else if inside(scene::BONUS_MENU) {
+                inputs.push(BonusInput::Menu);
+            } else if inside(scene::BONUS_BUY) && !purchased && has_offer {
+                inputs.push(BonusInput::Buy);
+            }
+        }
+        sim.bonus_inputs.extend(inputs);
         return;
     }
     let Some(board) = sim.board() else {
