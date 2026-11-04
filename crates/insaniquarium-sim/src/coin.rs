@@ -13,6 +13,8 @@ pub mod kind {
     pub const DIAMOND: i32 = 4;
     /// Niko's pearl (pet-niko.md#the-pearl).
     pub const PEARL: i32 = 15;
+    /// Beetlemuncher's coin ($500, beetlemuncher.md#coin-drop).
+    pub const BEETLE: i32 = 6;
     /// Shrapnel's bomb (pet-shrapnel.md#the-bomb-coin-kind-0x11).
     pub const BOMB: i32 = 0x11;
 }

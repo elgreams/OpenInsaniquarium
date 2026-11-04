@@ -9,6 +9,7 @@ use sexy_core::rand::MtRand;
 
 use crate::coin::Coin;
 use crate::food::Food;
+use crate::larva::Larva;
 use crate::message::{self, HINTS, Message};
 use crate::sound::{Played, Sound};
 
@@ -78,6 +79,8 @@ pub enum FishKind {
     /// `Sexy::FishTypePet` id 23, Walter: click him to punch; the glove
     /// knocks fish aside (`pet-walter.md`).
     Walter,
+    /// `Sexy::Gekko` (type 7): eats Larvæ, drops kind 6 coins ($500).
+    Beetlemuncher,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -237,6 +240,10 @@ pub struct World<'a> {
     pub guppies: &'a [Fish],
     /// Guppies eaten this tick (indices into `guppies`).
     pub eaten: &'a mut Vec<usize>,
+    /// The Larva list, for Beetlemunchers' prey (read-only while they update).
+    pub larvae: &'a [Larva],
+    /// Larvæ eaten this tick (indices into `larvae`).
+    pub larvae_eaten: &'a mut Vec<usize>,
     /// The star-potion hints show (tank 2 levels 1–2, game not beaten).
     pub star_hints: bool,
     /// Noses made this tick by guppies drinking a potion (the board adds
@@ -376,6 +383,26 @@ impl Fish {
         self.kind == FishKind::Carnivore
     }
 
+    pub fn is_beetlemuncher(&self) -> bool {
+        self.kind == FishKind::Beetlemuncher
+    }
+
+    /// `Gekko::Gekko` (`0x004ef9a0`): `Fish::Init` (6 draws), then
+    /// `Gekko::Init` (`0x004d72b0`): type 7, stage 7, bounds 105..360,
+    /// no clicks, and one more draw for coin interval
+    /// (beetlemuncher.md#construction).
+    pub fn new_beetlemuncher(x: i32, y: i32, rng: &mut MtRand) -> Self {
+        let mut f = Fish::new(x, y, rng); // 6 draws R1–R6
+        f.kind = FishKind::Beetlemuncher;
+        f.stage = 7;
+        f.ceil_y = 105;
+        f.floor_y = 360;
+        f.announces = false;
+        // Gekko::Init R7: overwrites Fish::Init's interval.
+        f.coin_interval = rng.next_range(250) as i32 + 200;
+        f
+    }
+
     /// `Fish::Update` (`0x004f6970`).
     ///
     /// TODO(spec): the cursor-follow branch, coin drop and alien-present
@@ -403,7 +430,7 @@ impl Fish {
         };
         let chasing = if sheltered {
             true
-        } else if self.is_carnivore() {
+        } else if self.is_carnivore() || self.is_beetlemuncher() {
             self.update_hunger_carnivore(env, w)
         } else {
             self.update_hunger(env, w)
@@ -432,6 +459,8 @@ impl Fish {
         if !env.has_aliens {
             if self.is_carnivore() {
                 self.drop_diamond(w);
+            } else if self.is_beetlemuncher() {
+                self.drop_beetle_coin(w);
             } else {
                 self.update_coin(w);
             }
@@ -658,7 +687,11 @@ impl Fish {
             return false;
         }
         if self.hunger < 500 {
-            return self.chase_prey(w);
+            return if self.is_beetlemuncher() {
+                self.chase_larva(w)
+            } else {
+                self.chase_prey(w)
+            };
         }
         false
     }
@@ -829,6 +862,167 @@ impl Fish {
         );
         c.vy = -1.0;
         w.coins.push(c);
+    }
+
+    /// Beetle coin drop (slot 81 @ `0x004fbe80`): every `coin_interval`
+    /// ticks, drop a kind 6 coin ($500). See beetlemuncher.md#coin-drop.
+    fn drop_beetle_coin(&mut self, w: &mut World<'_>) {
+        self.coin_timer += 1;
+        if self.coin_timer < self.coin_interval {
+            return;
+        }
+        self.coin_timer = 0;
+        let mut c = Coin::new(
+            self.widget_x + 5,
+            self.widget_y + 10,
+            crate::coin::kind::BEETLE,
+        );
+        c.vy = -1.0;
+        w.coins.push(c);
+    }
+
+    /// Gekko prey chase (slot 84 @ `0x004d73a0`): find the nearest Larva,
+    /// steer every 3rd tick, then the bite check.
+    /// See beetlemuncher.md#prey-chase.
+    fn chase_larva(&mut self, w: &mut World<'_>) -> bool {
+        let prey = self.find_larva(w.larvae);
+        let fx = (self.x + 40.0) as i32;
+        let fy = (self.y + 45.0) as i32;
+        if self.mode_timer >= 3 {
+            let Some(pi) = prey else { return false };
+            self.mode_timer = 0;
+            let l = &w.larvae[pi];
+            self.steer_to_larva(fx, fy, l.widget_x + 40, l.widget_y + 40);
+            if self.anim_frame < 5 {
+                self.anim_frame += 1;
+            }
+        }
+        let Some(_) = prey else { return false };
+        self.bite_larva(w);
+        true
+    }
+
+    /// Find prey (slot 85 @ `0x004ea3f0`): the nearest alive Larva.
+    fn find_larva(&self, larvae: &[Larva]) -> Option<usize> {
+        let mut best = 100_000_000;
+        let mut found = None;
+        for (i, l) in larvae.iter().enumerate() {
+            if l.dead {
+                continue;
+            }
+            let dx = (f64::from(l.widget_x + 40) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(l.widget_y + 40) - (self.y + 45.0)) as i32;
+            let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+            if d < best {
+                best = d;
+                found = Some(i);
+            }
+        }
+        found
+    }
+
+    /// Gekko steering (beetlemuncher.md#prey-chase): different thresholds
+    /// and constants from the Carnivore's.
+    fn steer_to_larva(&mut self, fx: i32, fy: i32, tx: i32, ty: i32) {
+        let hungry = self.hunger <= 300;
+        let fine = if hungry { 0.05 } else { 0.1 };
+        let cap = 4.0;
+        let (dec, inc) = if fx > tx + 40 {
+            (Some(1.3), None)
+        } else if fx < tx - 32 {
+            (None, Some(1.3))
+        } else if fx > tx + 38 {
+            (Some(0.2), None)
+        } else if fx < tx - 30 {
+            (None, Some(0.2))
+        } else if fx > tx {
+            (Some(fine), None)
+        } else if fx < tx {
+            (None, Some(fine))
+        } else {
+            (None, None)
+        };
+        if let Some(d) = dec
+            && -cap < self.vx
+        {
+            self.vx -= d;
+        }
+        if let Some(i) = inc
+            && cap > self.vx
+        {
+            self.vx += i;
+        }
+        let (fd, fu, nd, nu) = if hungry {
+            (1.3, 1.3, 0.5, 0.5)
+        } else {
+            (0.5, 1.3, 0.5, 0.5)
+        };
+        if fy > ty + 6 {
+            if -3.0 < self.vy {
+                self.vy -= fd;
+            }
+        } else if fy < ty - 6 {
+            if 3.0 > self.vy {
+                self.vy += fu;
+            }
+        } else if fy > ty {
+            if -3.0 < self.vy {
+                self.vy -= nd;
+            }
+        } else if fy < ty && 3.0 > self.vy {
+            self.vy += nu;
+        }
+    }
+
+    /// Bite check (slot 86 @ `0x004ea590`): eat the first alive Larva
+    /// whose box the Gekko's mouth is in. See beetlemuncher.md#bite-check.
+    fn bite_larva(&mut self, w: &mut World<'_>) {
+        let cx = self.x + 40.0;
+        let cy = self.y + 45.0;
+        for (i, l) in w.larvae.iter().enumerate() {
+            if l.dead {
+                continue;
+            }
+            let (lx, ly) = (f64::from(l.widget_x), f64::from(l.widget_y));
+            // TODO(spec): exact bite box from `0x004d7740`.
+            if lx + 10.0 < cx && cx < lx + 70.0 && ly + 22.0 < cy && cy < ly + 58.0 {
+                w.larvae_eaten.push(i);
+                self.eat_larva(w);
+                if self.eat_timer == 0 {
+                    self.eat_timer = 8;
+                }
+                return;
+            }
+            // Mouth open when a Larva is near.
+            if self.eat_timer == 0
+                && lx - 7.0 < cx
+                && cx < lx + 87.0
+                && ly + 10.0 < cy
+                && cy < ly + 70.0
+            {
+                self.eat_timer = 20;
+            }
+        }
+    }
+
+    /// Eat (slot 77 @ `0x004e1950`): hunger +700 cap 1000, chomp, no gore.
+    /// See beetlemuncher.md#eat.
+    fn eat_larva(&mut self, w: &mut World<'_>) {
+        let was_hungry = self.looks_hungry();
+        self.timer_f8 = 0;
+        w.fed = true;
+        if w.sample_ready(0x113, 3) {
+            let chomp = if w.rng.next_range(3) == 0 {
+                Sound::Chomp2
+            } else {
+                Sound::Chomp
+            };
+            w.sounds.push(chomp.into());
+        }
+        self.hunger = (self.hunger + 700).min(1000);
+        if was_hungry && !self.looks_hungry() {
+            self.start_fade(false);
+        }
     }
 
     /// `0x004d6920`: start the hungry (true) or fed (false) colour fade.

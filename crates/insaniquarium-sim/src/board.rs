@@ -194,6 +194,10 @@ pub struct Board {
     pub next_missile_id: u32,
     /// `board+0xc4`: Guppycrunchers (`Sexy::Grubber`, guppycruncher.md).
     pub guppycrunchers: Vec<crate::guppycruncher::Guppycruncher>,
+    /// `board+0xc8`: Larvæ/Beetles (`Sexy::Beetle`, type `0x1d`).
+    pub larvae: Vec<crate::larva::Larva>,
+    /// `board+0xcc`: Beetlemunchers (`Sexy::Gekko`, beetlemuncher.md).
+    pub beetlemunchers: Vec<Fish>,
     /// `board+0xd0`: Starcatchers (`Sexy::Penta`, starcatcher.md).
     pub starcatchers: Vec<crate::starcatcher::Starcatcher>,
     /// `board+0xdc`: missiles (Stanley's balls for now).
@@ -314,6 +318,8 @@ impl Board {
             potion_hint_shown: false,
             missiles: Vec::new(),
             guppycrunchers: Vec::new(),
+            larvae: Vec::new(),
+            beetlemunchers: Vec::new(),
             starcatchers: Vec::new(),
             next_missile_id: 1,
             light_x: [0.0; 3],
@@ -1057,8 +1063,9 @@ impl Board {
                 // TODO(spec): gore draws (r%3+2 sprites, each with RNG).
                 // TODO(spec): eat sound.
             }
-            if let Some((_lx, _ly)) = out.drop_larva {
-                // TODO(spec): AddBeetle at (lx, ly). Beetle ctor draws TBD.
+            if let Some((lx, ly)) = out.drop_larva {
+                // TODO(spec): Beetle ctor draws and full update.
+                self.larvae.push(crate::larva::Larva::new(lx, ly));
             }
             if out.died {
                 let mut g = self.guppycrunchers.remove(i);
@@ -2278,6 +2285,8 @@ impl Board {
             dead_fish: &mut new_dead,
             guppies: &[],
             eaten: &mut Vec::new(),
+            larvae: &[],
+            larvae_eaten: &mut Vec::new(),
             potions: &mut noses,
             star_hints: self.tank == 2 && self.level < 3,
             shots: &mut self.shots,
@@ -2505,6 +2514,8 @@ impl Board {
             dead_fish: &mut new_dead,
             guppies: &[],
             eaten: &mut Vec::new(),
+            larvae: &[],
+            larvae_eaten: &mut Vec::new(),
             potions: &mut noses,
             star_hints: self.tank == 2 && self.level < 3,
             shots: &mut self.shots,
@@ -2536,12 +2547,61 @@ impl Board {
                 carnivore_died += 1;
             }
         }
-        self.fed |= world.fed;
+        let fed_carnivore = world.fed;
+        // End the borrow on `self.guppies` before mutating them.
+        #[allow(clippy::drop_non_drop)]
+        drop(world);
+        self.fed |= fed_carnivore;
         for i in eaten {
             // Fish slot 87 (`true`): removed, no corpse; `board+0x488 += 1`.
             self.guppies[i].dead = true;
             self.guppies[i].eaten = true;
         }
+        // Beetlemunchers (`+0xcc`) after carnivores. They read the Larva
+        // list for prey (beetlemuncher.md#per-tick-update).
+        {
+            let mut larvae_eaten = Vec::new();
+            let mut beetle_world = World {
+                foods: &mut self.foods,
+                coins: &mut self.coins,
+                rng: &mut self.rng,
+                global: &mut self.global_rng,
+                clock: self.clock,
+                sample_last: &mut self.sample_last,
+                sounds: &mut self.sounds,
+                stage_ups: &mut stage_ups,
+                message: &mut self.message,
+                hints: &mut self.hints,
+                tutorial: self.tutorial,
+                dead_fish: &mut new_dead,
+                guppies: &[],
+                eaten: &mut Vec::new(),
+                larvae: &self.larvae,
+                larvae_eaten: &mut larvae_eaten,
+                potions: &mut noses,
+                star_hints: false,
+                shots: &mut self.shots,
+                artifacts: &mut self.artifacts,
+                song: self.song,
+                shelter: self.shelter,
+                lure: None,
+                fed: false,
+            };
+            for f in &mut self.beetlemunchers {
+                f.update(env, &mut beetle_world);
+            }
+            self.fed |= beetle_world.fed;
+            // End the borrow on `self.larvae` before mutating them.
+            #[allow(clippy::drop_non_drop)]
+            drop(beetle_world);
+            // Mark eaten Larvæ.
+            for i in larvae_eaten {
+                self.larvae[i].dead = true;
+            }
+            self.larvae.retain(|l| !l.dead);
+        }
+        // Dead beetlemunchers leave a kind-7 corpse (beetlemuncher.md#death).
+        self.beetlemunchers.retain(|f| !f.dead);
         for s in stage_ups {
             self.on_stage_up(s);
         }
@@ -2605,6 +2665,7 @@ impl Board {
                 .guppies
                 .iter()
                 .chain(&self.carnivores)
+                .chain(&self.beetlemunchers)
                 .chain(&stand_ins)
                 .collect();
             let prey_mask: Vec<bool> = prey.iter().map(|f| sheltered(f)).collect();

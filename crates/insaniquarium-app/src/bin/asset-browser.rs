@@ -103,7 +103,7 @@ fn main() {
             let aliased = match upper.as_str() {
                 "GUPPYCRUNCHER" | "GRUBBER" => "IMAGE_GRUBBER",
                 "STARCATCHER" | "PENTA" => "IMAGE_PENTA",
-                "BEETLEMUNCHER" | "GEKKO" => "IMAGE_GEKKO",
+                "BEETLEMUNCHER" | "BEETLE" | "GEKKO" => "IMAGE_GEKKO",
                 "CARNIVORE" | "OSCAR" => "IMAGE_OSCAR",
                 _ => "",
             };

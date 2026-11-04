@@ -10,6 +10,7 @@ pub mod food;
 pub mod game;
 pub mod guppycruncher;
 pub mod hatch;
+pub mod larva;
 pub mod itchy;
 pub mod message;
 pub mod missile;
