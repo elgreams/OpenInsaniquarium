@@ -1158,7 +1158,7 @@ pub fn torn_snapshots(t: &Trace) -> Vec<u32> {
             let (a, b) = (&w[0], &w[1]);
             let fa = fish_x(a);
             clock(b).zip(clock(a)).is_some_and(|(cb, ca)| cb - ca == 1)
-                && !fa.is_empty()
+                && fa.len() >= 2
                 && fa == fish_x(b)
                 && pet_x(a).is_some()
                 && pet_x(a) != pet_x(b)

@@ -30,7 +30,7 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 
 ## Steps
 
-Same workflow as tank 2: spec from the binary → build → record the original → replay and fix until exact.
+`static` — same workflow as tank 2: spec from the binary → build → record the original → replay and fix until exact.
 
 ### 1. Ghidra read: tank 3 SetupShop and the new fish classes
 
@@ -49,15 +49,15 @@ Write specs: `objects/guppycruncher.md`, `objects/beetlemuncher.md`, `objects/la
 
 ### 2. 3-1: Guppycruncher economy
 
-The first tank 3 level. Shop has guppy, food quality, food quantity, Guppycruncher, and egg piece. The wave kind is from the tank-2 pool (4 or 5, per the progression pattern; verify in step 1). The Guppycruncher + Larva are the new objects to build.
+`traced` (`tank_3_1`).
 
-**Record:** a full 3-1 (set profile to 3-1, own all 24 pets, pick 3 pets, push money/countdown). Capture must exercise: buying a Guppycruncher (spawn draws, GROW, PlaySplash, reveal 11), the Guppycruncher eating a small guppy (chomp, Larva dropped), a Larva crawling and being collected or expiring, the alien wave (the kind from step 1), and the egg completion.
+The first tank 3 level. Shop has guppy, food quality, food quantity, Guppycruncher, and egg piece. Wave kind 3 (Balrog). No Guppycruncher bought on this recording (no new objects exercised; that's step 3). The recording exercises the tank-3 shop setup, wave table (kind 3, countdown 3000), stage-up reveals (food quality on stage 2), and a Balrog wave.
 
-**Build:** Grubber, Larva, the tank-3 shop layout, stage-up reveals, backdrop 3, tank-3 music.
-
-**Test:** `tank_3_1` replays `tank3-1_full_01` exactly.
+**Test:** `tank_3_1` replays `tank3-1_full_01` exactly (Stinky, Niko, Itchy; money pushed to 1500, countdown to 400).
 
 ### 3. Beetlemuncher (Gekko) and the full economy chain
+
+`static` (a plan).
 
 3-2 introduces the Beetlemuncher. Buying a Guppycruncher now reveals slot 8 (Beetlemuncher). The economy chain is: guppy → food → growth → Guppycruncher eats small guppy → drops Larva → Beetlemuncher eats Larva → drops coin.
 
@@ -68,6 +68,8 @@ The first tank 3 level. Shop has guppy, food quality, food quantity, Guppycrunch
 **Test:** `tank_3_2` (or `tank_3_2_beetlemuncher`) replays exactly.
 
 ### 4. Alien kind 6 and kind-1 missiles
+
+`static` (a plan).
 
 Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles are **redirectable**: a click changes their heading instead of destroying them, so they can be bounced away from fish. They are removed when they leave the tank bounds. This is the main new combat mechanic on tank 3.
 
@@ -81,6 +83,8 @@ Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles a
 
 ### 5. Alien kind 7
 
+`static` (a plan).
+
 Kind 7 is very fast (divisor 0.5, cruise ~3.6 px/tick) with 260 HP. It has a state byte `+0x204` that causes Itchy, Gash and Stanley to skip it as a target. This likely means it has a "hiding" or "submerging" phase. The special-action timer `+0x1ac` is used by kinds 5/6/7 — for kind 7 it may control this state.
 
 **Depends on:** step 1 (the Ghidra read of kind-7 behaviour).
@@ -92,6 +96,8 @@ Kind 7 is very fast (divisor 0.5, cruise ~3.6 px/tick) with 260 HP. It has a sta
 **Test:** `alien_kind7` replays exactly.
 
 ### 6. 3-5 (random wave kind, possibly a pair)
+
+`static` (a plan).
 
 The final tank 3 level. 3-5 makes one app draw to pick the wave kind. Tank 1-5 re-rolls to kind 9 (pair 1+3); tank 3-5 may use a pair kind (10 = 7+3, 11 = 5+6, 12 = 3+8). The re-roll after each spawn may also draw.
 

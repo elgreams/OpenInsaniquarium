@@ -383,6 +383,18 @@ impl Board {
                 _ => (b.rng.next_u31() & 1) as i32 | 4,
             };
         }
+        // Tank 3 wave table (`0x00541200`, tank-3 branch at `0x5415BE`).
+        // 3-2 and 3-5 each make one app draw; the rest are direct.
+        if tank == 3 {
+            b.wave_countdown = 3000;
+            b.wave_kind = match level {
+                1 => 3,
+                2 => (b.rng.next_u31() & 1) as i32 | 4,
+                3 => 7,
+                4 => 6,
+                _ => (b.rng.next_u31() & 1) as i32 | 6,
+            };
+        }
         // Start bubble burst: (r & 3) + 3 bubbles, two draws each.
         let n = (b.rng.next_u31() & 3) + 3;
         for _ in 0..n {
@@ -2047,7 +2059,21 @@ impl Board {
                     self.shop.reveal(Slot::Starcatcher, true);
                 }
             }
-            // TODO(spec): tanks 3–4 reveal lists (`0x004f1840`).
+            // Tank 3 (`0x004f1840` at `0x4f1afe`): quality, quantity,
+            // guppycruncher. No level check; the egg/Beetlemuncher reveal
+            // comes from the purchase chain (shop-bar.md#per-slot-behaviour).
+            2 if self.tank == 3 => {
+                self.shop.reveal(Slot::FoodQuality, true);
+                self.shop.reveal(Slot::FoodQuantity, true);
+                self.shop.reveal(Slot::Guppycruncher, true);
+            }
+            // Tank 4 (`0x004f1840` at `0x4f1b48`): quality, quantity,
+            // carnivore.
+            2 if self.tank == 4 => {
+                self.shop.reveal(Slot::FoodQuality, true);
+                self.shop.reveal(Slot::FoodQuantity, true);
+                self.shop.reveal(Slot::Carnivore, true);
+            }
             _ => {}
         }
     }

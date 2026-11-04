@@ -123,6 +123,31 @@ impl Shop {
                 s.position[Slot::Starcatcher as usize] = None;
                 s.position[Slot::Weapon as usize] = None;
             }
+        } else if tank == 3 {
+            // `SetupShop` tank 3 (`0x00541200`, tank-3 branch).
+            let mut set = |slot: Slot, pos: usize, price: i32| {
+                s.position[slot as usize] = Some(pos);
+                s.price[slot as usize] = price;
+            };
+            set(Slot::Guppy, 0, 100);
+            set(Slot::FoodQuality, 1, 200);
+            set(Slot::FoodQuantity, 2, 300);
+            set(Slot::Guppycruncher, 3, 750);
+            set(Slot::Beetlemuncher, 4, 2000);
+            set(Slot::Weapon, 5, 2000);
+            let egg = match level {
+                1 => 1000,
+                2 => 5000,
+                3 => 7500,
+                4 => 10000,
+                _ => 15000,
+            };
+            set(Slot::EggPiece, 6, egg);
+            // 3-1: Beetlemuncher and weapon unmapped (set to -1).
+            if level == 1 {
+                s.position[Slot::Beetlemuncher as usize] = None;
+                s.position[Slot::Weapon as usize] = None;
+            }
         }
         s
     }

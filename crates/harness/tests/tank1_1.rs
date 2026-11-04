@@ -916,6 +916,17 @@ fn level_2_5_start() {
     assert_eq!(e["rng_mti"]["app"], actual.state["rng_mti"]["app"]);
 }
 
+/// Tank 3-1 (`tank3-1_full_01`): Stinky, Niko and Itchy on the first tank 3
+/// level; wave kind 3 (Balrog), money pushed to 1500, countdown to 400.
+/// Validates the tank-3 shop setup, wave table and stage-up reveals
+/// (tank3-plan.md, step 2).
+#[test]
+fn tank_3_1() {
+    if captured("tank3-1_full_01") {
+        replay_level_tank("tank3-1_full_01", 3, 1);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
