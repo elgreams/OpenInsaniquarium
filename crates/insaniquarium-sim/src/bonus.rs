@@ -30,7 +30,11 @@ impl Offer {
 /// Price in shells for bonus purchase `n` (`bonus-screen.md#the-offer`).
 /// `min((n + 4) * 5000, 50_000)`, or 0 when `n >= 6`.
 pub fn bonus_price(n: i32) -> i32 {
-    if n >= 6 { 0 } else { ((n + 4) * 5000).min(50_000) }
+    if n >= 6 {
+        0
+    } else {
+        ((n + 4) * 5000).min(50_000)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

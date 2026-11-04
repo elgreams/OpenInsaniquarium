@@ -1585,7 +1585,10 @@ fn bonus_screen() {
                 .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(name)))
         })
     };
-    assert!(has_screen("pets"), "capture shows the pet screen after exit");
+    assert!(
+        has_screen("pets"),
+        "capture shows the pet screen after exit"
+    );
     assert!(has_screen("board"), "capture shows the tank 2-1 board");
     eprintln!(
         "bonus screen: {} ticks match ({torn} torn reads skipped), buy verified, exit to tank 2",

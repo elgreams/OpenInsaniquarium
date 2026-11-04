@@ -726,12 +726,7 @@ impl Fonts {
         self.pets_confirm.as_ref().map(|c| c.1)
     }
 
-    fn update_bonus(
-        &mut self,
-        bs: &BonusScreen,
-        shells: i32,
-        images: &GameImages,
-    ) {
+    fn update_bonus(&mut self, bs: &BonusScreen, shells: i32, images: &GameImages) {
         let Some([_, f15, _, f10]) = &self.hatch_fonts else {
             return;
         };
@@ -778,7 +773,8 @@ impl Fonts {
             out.push(at(img, 5.2));
         }
         // Show the Buy button only when not yet purchased and an offer exists.
-        if !bs.purchased && bs.price > 0
+        if !bs.purchased
+            && bs.price > 0
             && let Some(img) = &self.bonus_buy
         {
             out.push(at(img, 5.3));
@@ -2376,11 +2372,7 @@ fn pet_sheet(pet: i32) -> Option<&'static str> {
 /// The bonus screen's static background layer: `IMAGE_SCREENBACK`, title
 /// bar with "Level Info", Menu button in the title bar hole, Continue
 /// button at the bottom.
-fn render_bonus_background(
-    img: &GameImages,
-    f17: &ImageFont,
-    f10: &ImageFont,
-) -> Option<Rgba> {
+fn render_bonus_background(img: &GameImages, f17: &ImageFont, f10: &ImageFont) -> Option<Rgba> {
     let mut bg = Rgba::new_transparent(WIDTH, HEIGHT);
     bg.draw_image_box(img.get("IMAGE_SCREENBACK")?, (-5, -5, 650, 490));
     let title = img.get("IMAGE_SCREENTITLE")?;
@@ -2455,23 +2447,14 @@ fn bonus_offer_text(n: i32) -> (&'static str, &'static [&'static str]) {
         ),
         5 => (
             "Bonus Upgrade",
-            &[
-                "Bonus Upgrade",
-                "Carry up to 7 pets to each",
-                "level!",
-            ],
+            &["Bonus Upgrade", "Carry up to 7 pets to each", "level!"],
         ),
         _ => ("", &[]),
     }
 }
 
 /// Render the offer panel: name, description lines and price, centred.
-fn render_bonus_offer(
-    f15: &ImageFont,
-    f10: &ImageFont,
-    n: i32,
-    price: i32,
-) -> Rgba {
+fn render_bonus_offer(f15: &ImageFont, f10: &ImageFont, n: i32, price: i32) -> Rgba {
     let centre = |f: &ImageFont, t: &str| ((650 - f.width(t.as_bytes())) >> 1) - 3;
     let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
     let (_, lines) = bonus_offer_text(n);
@@ -2518,10 +2501,7 @@ fn render_bonus_shells(f10: &ImageFont, shells: i32) -> Rgba {
 }
 
 /// Render the Buy button as a standalone layer.
-fn render_bonus_buy_button(
-    img: &GameImages,
-    f10: &ImageFont,
-) -> Option<Rgba> {
+fn render_bonus_buy_button(img: &GameImages, f10: &ImageFont) -> Option<Rgba> {
     let mut l = Rgba::new_transparent(WIDTH, HEIGHT);
     let b = img.get("IMAGE_MAINBUTTON")?;
     let up = b.crop(0, 0, b.width / 3, b.height);
@@ -2601,9 +2581,6 @@ mod tests {
             !overlaps(BONUS_CONTINUE, BONUS_MENU),
             "Continue and Menu overlap"
         );
-        assert!(
-            !overlaps(BONUS_BUY, BONUS_MENU),
-            "Buy and Menu overlap"
-        );
+        assert!(!overlaps(BONUS_BUY, BONUS_MENU), "Buy and Menu overlap");
     }
 }

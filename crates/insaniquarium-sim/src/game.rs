@@ -371,9 +371,7 @@ impl Game {
             let (t, l) = self.last_level;
             // A bonus round (level 6) is part of the tank's content: show
             // the bonus screen before checking the preview endpoint.
-            if (self.profile.tank, self.profile.level) > (t, l)
-                && !self.profile.is_bonus_round()
-            {
+            if (self.profile.tank, self.profile.level) > (t, l) && !self.profile.is_bonus_round() {
                 self.screen = Screen::PreviewEnd;
                 return HatchOut::default();
             }

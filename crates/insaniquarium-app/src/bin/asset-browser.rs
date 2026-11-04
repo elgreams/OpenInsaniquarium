@@ -58,13 +58,30 @@ fn main() {
         .position(|a| a == "--data")
         .and_then(|i| args.get(i + 1))
         .map(PathBuf::from);
-    let data = match DataDir::resolve(cli.as_deref()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("error: {e}");
+    let data = DataDir::resolve(cli.as_deref())
+        .or_else(|_| {
+            // Fall back: `original Game` relative to the repo root, then
+            // the default Steam library on Linux.
+            let candidates = [
+                PathBuf::from("original Game"),
+                std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_default()
+                    .join(".steam/debian-installation/steamapps/common/Insaniquarium Deluxe"),
+            ];
+            candidates
+                .into_iter()
+                .find_map(|p| DataDir::open(p).ok())
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no game data found")
+                })
+        })
+        .unwrap_or_else(|_| {
+            eprintln!(
+                "error: no game data directory given; pass --data <path> or set INSANIQUARIUM_DATA"
+            );
             std::process::exit(2);
-        }
-    };
+        });
     let src =
         std::fs::read_to_string(data.join("properties/resources.xml")).expect("read resources.xml");
     let manifest = Manifest::parse(&src).expect("parse resources.xml");
@@ -79,10 +96,30 @@ fn main() {
         .position(|a| a == "--shot")
         .map(|i| (args[i + 1].clone(), PathBuf::from(&args[i + 2])));
     let index = match &shot {
-        Some((id, _)) => ids.iter().position(|x| x == id).unwrap_or_else(|| {
-            eprintln!("error: no resource {id}");
-            std::process::exit(2);
-        }),
+        Some((id, _)) => {
+            let upper = id.to_ascii_uppercase();
+            // Common-name → resource-ID aliases (the original's class names
+            // don't always match what players call the fish).
+            let aliased = match upper.as_str() {
+                "GUPPYCRUNCHER" | "GRUBBER" => "IMAGE_GRUBBER",
+                "STARCATCHER" | "PENTA" => "IMAGE_PENTA",
+                "BEETLEMUNCHER" | "GEKKO" => "IMAGE_GEKKO",
+                "CARNIVORE" | "OSCAR" => "IMAGE_OSCAR",
+                _ => "",
+            };
+            ids.iter()
+                .position(|x| x == id)
+                .or_else(|| ids.iter().position(|x| x == aliased))
+                .or_else(|| ids.iter().position(|x| x == &format!("IMAGE_{upper}")))
+                .or_else(|| {
+                    ids.iter()
+                        .position(|x| x.to_ascii_uppercase().contains(&upper))
+                })
+                .unwrap_or_else(|| {
+                    eprintln!("error: no resource {id}");
+                    std::process::exit(2);
+                })
+        }
         None => 0,
     };
 

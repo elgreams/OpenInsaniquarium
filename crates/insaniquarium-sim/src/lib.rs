@@ -8,6 +8,7 @@ pub mod coin;
 pub mod fish;
 pub mod food;
 pub mod game;
+pub mod guppycruncher;
 pub mod hatch;
 pub mod itchy;
 pub mod message;

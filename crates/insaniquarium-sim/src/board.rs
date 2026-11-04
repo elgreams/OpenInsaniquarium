@@ -192,6 +192,8 @@ pub struct Board {
     pub aliens: Vec<Alien>,
     /// The next missile id (for a fish's `+0x98` link).
     pub next_missile_id: u32,
+    /// `board+0xc4`: Guppycrunchers (`Sexy::Grubber`, guppycruncher.md).
+    pub guppycrunchers: Vec<crate::guppycruncher::Guppycruncher>,
     /// `board+0xd0`: Starcatchers (`Sexy::Penta`, starcatcher.md).
     pub starcatchers: Vec<crate::starcatcher::Starcatcher>,
     /// `board+0xdc`: missiles (Stanley's balls for now).
@@ -311,6 +313,7 @@ impl Board {
             potion_armed: false,
             potion_hint_shown: false,
             missiles: Vec::new(),
+            guppycrunchers: Vec::new(),
             starcatchers: Vec::new(),
             next_missile_id: 1,
             light_x: [0.0; 3],
@@ -1040,6 +1043,33 @@ impl Board {
             self.show_message("Hint: Starcatchers need stars to stay alive!", false, 0x23);
         }
         self.show_message("Warning! Your starcatcher has died!", false, 0x22);
+    }
+
+    /// The Guppycrunchers (`+0xc4`, after Starcatchers in z-order;
+    /// guppycruncher.md#per-tick-update).
+    fn update_guppycrunchers(&mut self) {
+        let mut i = 0;
+        while i < self.guppycrunchers.len() {
+            let has_aliens = !self.aliens.is_empty();
+            let out = self.guppycrunchers[i].update(has_aliens, &self.guppies, &mut self.rng);
+            if let Some(gi) = out.ate {
+                self.guppies.remove(gi);
+                // TODO(spec): gore draws (r%3+2 sprites, each with RNG).
+                // TODO(spec): eat sound.
+            }
+            if let Some((_lx, _ly)) = out.drop_larva {
+                // TODO(spec): AddBeetle at (lx, ly). Beetle ctor draws TBD.
+            }
+            if out.died {
+                let mut g = self.guppycrunchers.remove(i);
+                (g.x, g.y, g.vx) = out.died_at;
+                self.play(0x117, Sound::Die);
+                let d = crate::fish::DeadFish::guppycruncher(&g);
+                self.dead_fish.push(d);
+                continue;
+            }
+            i += 1;
+        }
     }
 
     /// A star potion exploding (at the bottom, or in a small/medium
@@ -1847,6 +1877,7 @@ impl Board {
             Slot::Weapon => self.buy_weapon(price),
             Slot::StarPotion => self.buy_star_potion(price),
             Slot::Starcatcher => self.buy_starcatcher(price),
+            Slot::Guppycruncher => self.buy_guppycruncher(price),
             // TODO(spec): other slots.
             _ => return ClickResult::Ignored,
         };
@@ -1930,6 +1961,27 @@ impl Board {
         self.play(0x122, Sound::Grow);
         let r = self.rng.next_range(3);
         self.sounds.push(Sound::splash(r).into());
+        true
+    }
+
+    /// Slot 7 (`0x00549380` case 7): spend, `BuyGuppycruncher` (x, 4 ctor
+    /// draws, shadow), SOUND_GROW, splash draw; reveal 11 (level 1) or
+    /// reveal 8 (level ≠ 1). guppycruncher.md#spawn.
+    fn buy_guppycruncher(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        let mut g = crate::guppycruncher::Guppycruncher::bought(&mut self.rng);
+        g.shadow_y = self.rng.next_range(5) as i32 + 410;
+        self.guppycrunchers.push(g);
+        self.play(0x122, Sound::Grow);
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r).into());
+        if self.level == 1 {
+            self.shop.reveal(Slot::EggPiece, true);
+        } else {
+            self.shop.reveal(Slot::Beetlemuncher, true);
+        }
         true
     }
 
@@ -2407,6 +2459,7 @@ impl Board {
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
         self.update_starcatchers();
+        self.update_guppycrunchers();
         let mut potion_money = 0;
         let mut i = 0;
         while i < self.foods.len() {
