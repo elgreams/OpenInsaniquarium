@@ -1,5 +1,6 @@
-//! Aliens (`Sexy::Alien`, type 0x16), Sylvester (kind 1) only.
-//! Spec: `docs/re/objects/alien-sylvester.md`.
+//! Aliens (`Sexy::Alien`, type 0x16).
+//! Spec: `docs/re/objects/alien-sylvester.md`, `docs/re/objects/alien-kind5.md`,
+//! `docs/re/objects/alien-kind6.md`.
 
 use sexy_core::rand::MtRand;
 
@@ -88,6 +89,7 @@ impl Alien {
             3 => (1.2, 130.0),
             4 => (1.6, 100.0),
             5 => (1.2, 150.0),
+            6 => (3.5, 220.0),
             _ => (2.0, 50.0),
         };
         let right = rng.next_u31() & 1 != 0;
@@ -187,8 +189,9 @@ impl Alien {
         // order; we use list order (ties are rare: equal squared distance).
         if self.kind == 4 {
             self.gus_chase(guppies, hidden, prefer, foods, rng, out);
-        } else if self.kind == 5 {
-            // The Destructor never chases or eats (alien-kind5.md#3).
+        } else if matches!(self.kind, 5 | 6) {
+            // The Destructor (5) and kind 6 never chase or eat
+            // (alien-kind5.md#3, alien-kind6.md#3).
             self.wander(rng);
         } else {
             let target = if guppies.is_empty() {
@@ -230,18 +233,30 @@ impl Alien {
         if self.eat_delay > 0 {
             self.eat_delay -= 1;
         }
-        // Firing (alien-kind5.md#32): while prey exists the timer runs;
-        // past the interval a volley (the board picks the targets), then a
-        // new interval `rand(50) + 150`.
-        if self.kind == 5 && !guppies.is_empty() {
+        // Firing (alien-kind5.md#32, alien-kind6.md#32): while prey exists
+        // the timer runs; past the interval a volley (the board picks the
+        // targets), then a new interval `rand(50) + 150`.
+        if matches!(self.kind, 5 | 6) && !guppies.is_empty() {
             self.fire_timer += 1;
             if self.fire_timer > self.fire_interval {
                 let (ix, iy) = (self.widget_x, self.widget_y);
-                out.volley = Some(if self.vx >= 0.0 {
-                    [(ix + 90, iy - 35), (ix + 105, iy - 30), (ix + 120, iy - 25)]
+                if self.kind == 5 {
+                    out.volley = Some(if self.vx >= 0.0 {
+                        [(ix + 90, iy - 35), (ix + 105, iy - 30), (ix + 120, iy - 25)]
+                    } else {
+                        [(ix - 10, iy - 35), (ix - 25, iy - 30), (ix - 40, iy - 25)]
+                    });
                 } else {
-                    [(ix - 10, iy - 35), (ix - 25, iy - 30), (ix - 40, iy - 25)]
-                });
+                    // Kind 6: up to 2 missiles from a single facing-dependent
+                    // position (alien-kind6.md#32). The third slot is unused;
+                    // fire_volley_k1 reads only the first entry.
+                    let p = if self.vx >= 0.0 {
+                        (ix + 70, iy - 24)
+                    } else {
+                        (ix + 10, iy - 24)
+                    };
+                    out.volley = Some([p, p, p]);
+                }
             }
         }
         self.widget_x = self.x as i32;
@@ -433,7 +448,7 @@ impl Alien {
 
     /// §3.3 wander.
     fn wander(&mut self, rng: &mut MtRand) {
-        let floor = self.kind == 5;
+        let floor = matches!(self.kind, 5 | 6);
         match self.mode {
             0 if floor => self.tvx = -1.0,
             2 if floor => self.tvx = -1.0,
@@ -509,7 +524,7 @@ impl Alien {
             self.cel = 9 - self.turn;
         } else if self.turn < 0 {
             self.cel = self.turn + 10;
-        } else if self.kind == 5 || (-1.6..=1.6).contains(&self.vx) {
+        } else if matches!(self.kind, 5 | 6) || (-1.6..=1.6).contains(&self.vx) {
             self.anim += 1;
             if self.anim > 19 {
                 self.anim = 0;

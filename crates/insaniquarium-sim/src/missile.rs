@@ -1,5 +1,7 @@
-//! `Sexy::Missle` (type 0x1e?), board list `+0xdc`. Only Stanley's ball
-//! (kind 2) for now. Spec: `docs/re/objects/pet-stanley.md#the-ball-missle-kind-2`.
+//! `Sexy::Missle` (type 0x1e?), board list `+0xdc`. Stanley's ball
+//! (kind 2), the Destructor's missiles (kind 0), and kind 6's missiles (kind 1).
+//! Spec: `docs/re/objects/pet-stanley.md`, `docs/re/objects/alien-kind5.md`,
+//! `docs/re/objects/alien-kind6.md`.
 
 /// What a missile's update asks the board to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +34,8 @@ pub struct Missile {
     pub spin: i32,
     /// `+0x188`: speed divisor.
     pub divisor: f64,
-    /// `+0x190`: bounced off its alien.
+    /// `+0x190`: bounced off its alien (kind 2), or redirected by a click
+    /// (kind 1, `alien-kind6.md#64`).
     pub bounced: bool,
     /// `+0x194`: cel.
     pub cel: i32,
@@ -93,6 +96,14 @@ impl Missile {
         m
     }
 
+    /// `Missle::Missle` (`0x004eae40`), kind 1: alien kind 6's missile
+    /// (`alien-kind6.md#51`). Same as kind 0 except `kind = 1`.
+    pub fn new_missile_k1(x: i32, y: i32, id: u32, global: &mut sexy_core::rand::MtRand) -> Self {
+        let mut m = Missile::new_missile(x, y, id, global);
+        m.kind = 1;
+        m
+    }
+
     /// `Missle::Update` (`0x004ffb30`), kind 0, up to the smoke (the board
     /// draws it on `Keep`). `target` is its fish's widget position.
     pub fn update_missile(&mut self, target: Option<(i32, i32)>) -> MissileStep {
@@ -123,6 +134,75 @@ impl Missile {
         self.widget_y = self.y as i32;
         self.cel = self.heading_cel();
         MissileStep::Keep
+    }
+
+    /// `Missle::Update` (`0x004ffb30`), kind 1 (`alien-kind6.md#52`): same
+    /// as kind 0 while not redirected; once redirected, no steering, no
+    /// clamping, out-of-bounds removal. `sheltered` = the target guppy is
+    /// under Wadsworth's shelter (kind 1 checks it; kind 0 doesn't).
+    pub fn update_missile_k1(
+        &mut self,
+        target: Option<(i32, i32)>,
+        sheltered: bool,
+    ) -> MissileStep {
+        // Shot down by Stanley.
+        if self.shot_progress > 0 {
+            self.shot_progress += 1;
+            if self.shot_progress >= self.shot_duration {
+                return MissileStep::Explode;
+            }
+        }
+        if !self.bounced {
+            // Not yet redirected: steer and hit like kind 0.
+            let Some((tx, ty)) = target else {
+                return MissileStep::Explode;
+            };
+            self.steer_missile(f64::from(tx), f64::from(ty));
+            // Hit test with Wadsworth shelter check (alien-kind6.md#62).
+            if !sheltered {
+                let (p, q) = (self.x + 40.0, self.y + 40.0);
+                let (tx, ty) = (f64::from(tx), f64::from(ty));
+                if tx + 10.0 < p && p < tx + 70.0 && ty + 10.0 < q && q < ty + 70.0 {
+                    return MissileStep::HitFish;
+                }
+            }
+            // Clamp while not redirected (same as kind 0).
+            self.x = self.x.clamp(10.0, 550.0);
+            self.y = self.y.clamp(95.0, 370.0);
+        } else {
+            // Redirected: no steering, no clamping. Out-of-bounds removal.
+            if self.x > 580.0 || self.x < -20.0 || self.y > 380.0 || self.y < 45.0 {
+                return MissileStep::Remove;
+            }
+        }
+        self.x += self.vx / self.divisor;
+        self.y += self.vy / self.divisor;
+        if self.launch > 0 {
+            self.launch -= 1;
+        }
+        self.widget_x = self.x as i32;
+        self.widget_y = self.y as i32;
+        self.cel = self.heading_cel();
+        MissileStep::Keep
+    }
+
+    /// Kind-1 click redirect (`0x004d82a0`, kind-1 branch,
+    /// `alien-kind6.md#64`): reverse the velocity and set the redirected
+    /// flag. Returns true if the missile was redirected (it was clickable
+    /// and not already redirected).
+    pub fn click_redirect(&mut self, cx: i32, cy: i32) -> bool {
+        if self.kind != 1 || self.bounced || self.launch >= 1 {
+            return false;
+        }
+        let (p, q) = (self.x + 40.0, self.y + 40.0);
+        let (cx, cy) = (f64::from(cx), f64::from(cy));
+        if !(p - 30.0 < cx && cx < p + 30.0 && q - 30.0 < cy && cy < q + 30.0) {
+            return false;
+        }
+        self.bounced = true;
+        self.vx = -self.vx;
+        self.vy = -self.vy;
+        true
     }
 
     /// `0x004ff4e0`, kind 0, an 80 × 80 target: aim the centre (x + 40) at
@@ -393,5 +473,189 @@ impl Glove {
         };
         let px = self.widget_x + 80 + if self.right { reach } else { -reach };
         Some((px, self.widget_y + 40))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_rng() -> sexy_core::rand::MtRand {
+        sexy_core::rand::MtRand::new(42)
+    }
+
+    // ---- kind-1 missile constructor ----
+
+    #[test]
+    fn missile_k1_constructor_sets_kind_1() {
+        let mut rng = make_rng();
+        let m = Missile::new_missile_k1(100, 200, 7, &mut rng);
+        assert_eq!(m.kind, 1);
+        assert_eq!(m.x, 100.0);
+        assert_eq!(m.y, 200.0);
+        assert_eq!(m.id, 7);
+        assert!(!m.bounced, "not redirected initially");
+        assert_eq!(m.launch, 15);
+        assert_eq!(m.divisor, 0.8);
+    }
+
+    // ---- kind-1 missile steering (before redirect) ----
+
+    #[test]
+    fn missile_k1_steers_toward_target() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(50, 150, 1, &mut rng);
+        m.launch = 0; // past launch phase
+        // Target at (300, 200): the missile should accelerate rightward/downward.
+        for _ in 0..10 {
+            let step = m.update_missile_k1(Some((300, 200)), false);
+            assert_eq!(step, MissileStep::Keep);
+        }
+        assert!(m.vx > 0.0, "should steer right toward target: vx={}", m.vx);
+        assert!(m.vy > 0.0, "should steer down toward target: vy={}", m.vy);
+    }
+
+    // ---- kind-1 missile hit ----
+
+    #[test]
+    fn missile_k1_hits_fish_when_close() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(100, 100, 1, &mut rng);
+        m.launch = 0;
+        // Place missile centre (140, 140) right on top of the target (100, 100).
+        // Hit box: tx+10 < p < tx+70, ty+10 < q < ty+70, with p=x+40, q=y+40.
+        // p=140, tx=100 → 110 < 140 < 170 ✓; q=140, ty=100 → 110 < 140 < 170 ✓.
+        let step = m.update_missile_k1(Some((100, 100)), false);
+        assert_eq!(step, MissileStep::HitFish);
+    }
+
+    #[test]
+    fn missile_k1_shelter_blocks_hit() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(100, 100, 1, &mut rng);
+        m.launch = 0;
+        // Same position as above but with shelter: should NOT hit.
+        let step = m.update_missile_k1(Some((100, 100)), true);
+        assert_eq!(step, MissileStep::Keep);
+    }
+
+    // ---- kind-1 missile redirect on click ----
+
+    #[test]
+    fn missile_k1_click_redirect_reverses_velocity() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(200, 200, 1, &mut rng);
+        m.launch = 0;
+        m.vx = 1.4;
+        m.vy = -0.8;
+        // Click on the missile's centre (200+40, 200+40) = (240, 240).
+        assert!(m.click_redirect(240, 240));
+        assert!(m.bounced, "should be redirected");
+        assert!((m.vx - (-1.4)).abs() < 1e-9, "vx reversed");
+        assert!((m.vy - 0.8).abs() < 1e-9, "vy reversed");
+    }
+
+    #[test]
+    fn missile_k1_redirect_ignored_during_launch() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(200, 200, 1, &mut rng);
+        // launch = 15, so it's too young to click.
+        assert!(!m.click_redirect(240, 240));
+        assert!(!m.bounced);
+    }
+
+    #[test]
+    fn missile_k1_redirect_only_once() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(200, 200, 1, &mut rng);
+        m.launch = 0;
+        m.vx = 1.0;
+        m.vy = 1.0;
+        assert!(m.click_redirect(240, 240));
+        // Second click does nothing.
+        assert!(!m.click_redirect(240, 240));
+    }
+
+    #[test]
+    fn missile_k0_not_affected_by_redirect() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile(200, 200, 1, &mut rng);
+        m.launch = 0;
+        m.vx = 1.0;
+        m.vy = 1.0;
+        // click_redirect returns false for kind 0.
+        assert!(!m.click_redirect(240, 240));
+        assert!(!m.bounced);
+    }
+
+    // ---- kind-1 missile out-of-bounds after redirect ----
+
+    #[test]
+    fn missile_k1_removed_out_of_bounds_after_redirect() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(200, 200, 1, &mut rng);
+        m.launch = 0;
+        m.bounced = true;
+        m.vx = -2.0;
+        m.vy = -2.0;
+        // Run until it exits the bounds.
+        let mut removed = false;
+        for _ in 0..500 {
+            match m.update_missile_k1(None, false) {
+                MissileStep::Remove => {
+                    removed = true;
+                    break;
+                }
+                MissileStep::Explode => {
+                    // Without a target and not redirected, it would Explode.
+                    // But we set bounced=true, so it should fly free.
+                    panic!("should not explode when redirected");
+                }
+                _ => {}
+            }
+        }
+        assert!(removed, "missile should leave the tank and be removed");
+    }
+
+    #[test]
+    fn missile_k1_not_removed_before_redirect() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(10, 95, 1, &mut rng);
+        m.launch = 0;
+        m.vx = -2.0;
+        m.vy = -2.0;
+        // Before redirect the missile is clamped (not removed), even though
+        // it moves past the clamp bounds on this tick (clamp before move).
+        let step = m.update_missile_k1(Some((400, 300)), false);
+        assert_eq!(step, MissileStep::Keep, "not removed while unredir'd");
+    }
+
+    // ---- kind-1 missile path: steer, redirect, exit ----
+
+    #[test]
+    fn missile_k1_full_path_steer_redirect_exit() {
+        let mut rng = make_rng();
+        let mut m = Missile::new_missile_k1(50, 150, 1, &mut rng);
+        m.launch = 0;
+        // Steer toward a target at (400, 200) for 20 ticks.
+        for _ in 0..20 {
+            let step = m.update_missile_k1(Some((400, 200)), false);
+            assert_eq!(step, MissileStep::Keep);
+        }
+        assert!(m.vx > 0.0, "moving right toward target");
+        // Click-redirect: velocity reverses.
+        let cx = m.widget_x + 40;
+        let cy = m.widget_y + 40;
+        assert!(m.click_redirect(cx, cy));
+        assert!(m.vx < 0.0, "reversed to the left");
+        // Now fly until out of bounds.
+        let mut removed = false;
+        for _ in 0..500 {
+            if let MissileStep::Remove = m.update_missile_k1(None, false) {
+                removed = true;
+                break;
+            }
+        }
+        assert!(removed, "missile exits tank after redirect");
     }
 }

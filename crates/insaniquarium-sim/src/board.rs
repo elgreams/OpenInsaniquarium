@@ -753,12 +753,12 @@ impl Board {
         // shot if it lands inside an alien (`alien-sylvester.md#41`). With
         // only missiles left (the Destructor dead), clicks stay shots
         // (alien-kind5.md#41).
-        if !self.aliens.is_empty() || self.missiles.iter().any(|m| m.kind == 0) {
+        if !self.aliens.is_empty() || self.missiles.iter().any(|m| m.kind <= 1) {
             if let Some(i) = self.coins.iter().rposition(|c| !c.collected && c.hit(x, y)) {
                 // A click inside an alien's or a missile's widget is also a
                 // shot (`0x00539d40`, alien-kind5.md#41).
                 let in_missile = self.missiles.iter().any(|m| {
-                    m.kind == 0
+                    m.kind <= 1
                         && (m.widget_x..m.widget_x + 80).contains(&x)
                         && (m.widget_y..m.widget_y + 80).contains(&y)
                 });
@@ -911,11 +911,27 @@ impl Board {
                     }
                 }
             }
-            // The missile walk (`0x004d82a0`): the first kind-0 missile in
-            // the box explodes, plus a hit spark (alien-kind5.md#64).
-            if let Some(m) = self.missiles.iter().position(|m| m.clicked(x, y)) {
-                self.explode_missile(m);
-                self.add_effect_shot(x - 40, y - 40, 2);
+            // The missile walk (`0x004d82a0`): kind 0 → explode, kind 1 →
+            // redirect (alien-kind5.md#64, alien-kind6.md#64).
+            let mut handled = false;
+            for mi in 0..self.missiles.len() {
+                if handled {
+                    break;
+                }
+                if self.missiles[mi].click_redirect(x, y) {
+                    // Kind 1: redirect; clear the target fish's link.
+                    let id = self.missiles[mi].id;
+                    for f in self.guppies.iter_mut().chain(self.carnivores.iter_mut()) {
+                        if f.missile == Some(id) {
+                            f.missile = None;
+                        }
+                    }
+                    handled = true;
+                } else if self.missiles[mi].clicked(x, y) {
+                    self.explode_missile(mi);
+                    self.add_effect_shot(x - 40, y - 40, 2);
+                    handled = true;
+                }
             }
         }
         // Click flash `Shot` (no RNG), then the shot sound (2 draws).
@@ -1100,6 +1116,12 @@ impl Board {
         while i < self.missiles.len() {
             if self.missiles[i].kind == 0 {
                 if self.update_missile_kind0(i) {
+                    i += 1;
+                }
+                continue;
+            }
+            if self.missiles[i].kind == 1 {
+                if self.update_missile_kind1(i) {
                     i += 1;
                 }
                 continue;
@@ -1292,8 +1314,79 @@ impl Board {
         }
     }
 
-    /// Missile removal (slot 76, alien-kind5.md#63): unlink its fish, the
-    /// end-of-wave check, EXPLODE, 2..4 sparks round it.
+    /// One kind-1 missile's update (`alien-kind6.md#52`). Same as kind 0
+    /// but with Wadsworth shelter check and redirect handling. Returns
+    /// false if the missile was removed.
+    fn update_missile_kind1(&mut self, i: usize) -> bool {
+        let id = self.missiles[i].id;
+        let target = self.missile_target(id);
+        let pos = target.map(|(c, j)| {
+            let f = if c {
+                &self.carnivores[j]
+            } else {
+                &self.guppies[j]
+            };
+            (f.widget_x, f.widget_y)
+        });
+        // Wadsworth shelter check: a stage 0/1 guppy under shelter blocks
+        // the hit (`alien-kind6.md#62`).
+        let sheltered = self.shelter.is_some()
+            && target
+                .filter(|(c, _)| !c)
+                .is_some_and(|(_, j)| self.guppies[j].stage < 2);
+        match self.missiles[i].update_missile_k1(pos, sheltered) {
+            crate::missile::MissileStep::HitFish => {
+                let (c, j) = target.expect("target");
+                let f = if c {
+                    &mut self.carnivores[j]
+                } else {
+                    &mut self.guppies[j]
+                };
+                f.missile = None;
+                f.dead = true;
+                let corpse = crate::fish::DeadFish::from_fish(f);
+                if self.sample_ready(0x117, 3) {
+                    self.sounds.push(Sound::Die.into());
+                }
+                let mut d = corpse;
+                d.update();
+                self.dead_fish.push(d);
+                if c {
+                    self.carnivores.remove(j);
+                    self.carnivore_died();
+                } else {
+                    self.guppies.remove(j);
+                }
+                self.explode_missile(i);
+                false
+            }
+            crate::missile::MissileStep::Explode => {
+                self.explode_missile(i);
+                false
+            }
+            crate::missile::MissileStep::Remove => {
+                // Out-of-bounds after redirect: just remove, same explosion.
+                self.explode_missile(i);
+                false
+            }
+            _ => {
+                // Smoke trail (same as kind 0).
+                if self.rng.next_range(3) == 0 {
+                    let a = self.rng.next_range(5) as i32;
+                    let b = self.rng.next_range(5) as i32;
+                    let m = &self.missiles[i];
+                    let x = m.widget_x - 20 * (m.vx as i32) + 17 + a;
+                    let y = m.widget_y - 16 * (m.vy as i32) + 17 + b;
+                    self.add_effect_shot(x, y, 8);
+                }
+                true
+            }
+        }
+    }
+
+    /// Missile removal (slot 76, alien-kind5.md#63, alien-kind6.md#63):
+    /// unlink its fish, the end-of-wave check, EXPLODE, 2..4 sparks.
+    /// Kind 1 also plays `0x11f` before EXPLODE.
     fn explode_missile(&mut self, i: usize) {
         let m = self.missiles.remove(i);
         for f in self.guppies.iter_mut().chain(self.carnivores.iter_mut()) {
@@ -1302,6 +1395,10 @@ impl Board {
             }
         }
         self.end_of_wave_check();
+        // Kind 1 plays `0x11f` before EXPLODE (alien-kind6.md#63).
+        if m.kind == 1 {
+            self.play(0x11f, Sound::Sfx);
+        }
         self.play(0x11d, Sound::Explode);
         let n = self.rng.next_range(3) + 2;
         for _ in 0..n {
@@ -1360,6 +1457,58 @@ impl Board {
             if n == 0 {
                 self.play(0x128, Sound::Missle);
             }
+        }
+        fired
+    }
+
+    /// Kind 6's volley (`alien-kind6.md#32`): up to 2 kind-1 missiles,
+    /// each at the farthest eligible fish; sound `0x143` once.
+    fn fire_volley_k1(&mut self, a: usize, point: (i32, i32)) -> bool {
+        let (acx, acy) = (self.aliens[a].widget_x + 80, self.aliens[a].widget_y + 80);
+        let (x, y) = point;
+        let mut fired = false;
+        for _ in 0..2 {
+            let sheltered = self.shelter.is_some();
+            let mut best = 0;
+            let mut pick: Option<(bool, usize)> = None;
+            let cands = self
+                .guppies
+                .iter()
+                .enumerate()
+                .map(|(j, f)| (false, j, f))
+                .chain(
+                    self.carnivores
+                        .iter()
+                        .enumerate()
+                        .map(|(j, f)| (true, j, f)),
+                );
+            for (c, j, f) in cands {
+                if f.missile.is_some() || (!c && sheltered && f.stage < 2) {
+                    continue;
+                }
+                let dx = acx - (f.widget_x + 40);
+                let dy = acy - (f.widget_y + 40);
+                let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+                let ties_last = self.artifacts.volley_ties_last;
+                if best < d || (ties_last && best == d && pick.is_some()) {
+                    best = d;
+                    pick = Some((c, j));
+                }
+            }
+            let Some((c, j)) = pick else { break };
+            let id = self.next_missile_id;
+            self.next_missile_id += 1;
+            let m = crate::missile::Missile::new_missile_k1(x, y, id, &mut self.global_rng);
+            self.missiles.push(m);
+            if c {
+                self.carnivores[j].missile = Some(id);
+            } else {
+                self.guppies[j].missile = Some(id);
+            }
+            if !fired {
+                self.play(0x143, Sound::Unleash);
+            }
+            fired = true;
         }
         fired
     }
@@ -2692,7 +2841,11 @@ impl Board {
                 &mut out,
             );
             if let Some(points) = out.volley {
-                let fired = self.fire_volley(i, points);
+                let fired = if self.aliens[i].kind == 6 {
+                    self.fire_volley_k1(i, points[0])
+                } else {
+                    self.fire_volley(i, points)
+                };
                 self.aliens[i].finish_volley(fired, &mut self.rng);
                 out.died = self.aliens[i].health <= 0.0;
             }
