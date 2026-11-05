@@ -9,5 +9,9 @@ license.workspace = true
 [dependencies]
 sexy-core.workspace = true
 
+[[test]]
+name = "missile_smoke"
+harness = false
+
 [lints]
 workspace = true
