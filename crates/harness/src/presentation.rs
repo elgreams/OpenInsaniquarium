@@ -33,15 +33,10 @@ fn vol(v: f64) -> i64 {
     (v * 1000.0).round() as i64
 }
 
-/// Cooldown slots the sim's sounds stamped this step, the same thing the
-/// original's sample table shows (`Sound::throttle_slot`).
+/// Sample ids whose `sample_last` slot was stamped this step — the same
+/// thing the capture detects by diffing the board's sample table.
 pub fn sim_sounds(board: &Board) -> Vec<i64> {
-    let mut v: Vec<i64> = board
-        .sounds
-        .iter()
-        .filter_map(|p| p.sound.throttle_slot())
-        .map(|s| s as i64)
-        .collect();
+    let mut v: Vec<i64> = board.sample_stamps.iter().map(|&s| s as i64).collect();
     v.sort_unstable();
     v.dedup();
     v

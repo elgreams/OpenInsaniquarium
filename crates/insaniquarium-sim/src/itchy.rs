@@ -929,8 +929,8 @@ impl Fish {
                 if ctx.balled.contains(&i) {
                     continue;
                 }
-                let dx = (px - f64::from(a.widget_x + 80)) as i32;
-                let dy = (py - f64::from(a.widget_y + 80)) as i32;
+                let dx = (px - (f64::from(a.widget_x) + 80.0)) as i32;
+                let dy = (py - (f64::from(a.widget_y) + 80.0)) as i32;
                 let d =
                     (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
                 if d < best {
@@ -1259,7 +1259,7 @@ impl Fish {
         let mut target: Option<(i32, i32)> = None;
         if aliens {
             for a in ctx.aliens {
-                let c = (a.widget_x + 80, a.widget_y + 80);
+                let c = (a.widget_x.wrapping_add(80), a.widget_y.wrapping_add(80));
                 let dd = d(c.0, c.1);
                 if dd < best {
                     best = dd;
@@ -1305,7 +1305,7 @@ impl Fish {
         };
         if aliens {
             for (i, a) in ctx.aliens.iter().enumerate() {
-                let (cx, cy) = (a.widget_x + 80, a.widget_y + 80);
+                let (cx, cy) = (a.widget_x.wrapping_add(80), a.widget_y.wrapping_add(80));
                 if close(cx, cy, 20.0) {
                     out.bite = Some(i);
                     return;
@@ -1487,8 +1487,8 @@ impl Fish {
         let mut best = 10_000;
         let mut target = None;
         for (i, a) in aliens.iter().enumerate() {
-            let dx = ((self.x + 40.0) - f64::from(a.widget_x + 80)) as i32;
-            let dy = ((self.y + 40.0) - f64::from(a.widget_y + 80)) as i32;
+            let dx = ((self.x + 40.0) - (f64::from(a.widget_x) + 80.0)) as i32;
+            let dy = ((self.y + 40.0) - (f64::from(a.widget_y) + 80.0)) as i32;
             let d = (dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32).sqrt() as i32;
             if d < best {
                 best = d;
@@ -1500,7 +1500,7 @@ impl Fish {
             return;
         }
         self.mode_timer = 0;
-        let (acx, acy) = (aliens[t].widget_x + 80, aliens[t].widget_y + 80);
+        let (acx, acy) = (aliens[t].widget_x.wrapping_add(80), aliens[t].widget_y.wrapping_add(80));
         if acy >= 261 && self.vy > -8.0 {
             self.vy -= 2.0;
         } else if acy < 300 && self.vy < 8.0 {
@@ -1584,7 +1584,7 @@ impl Fish {
         if self.mode_timer >= 5 {
             self.mode_timer = 0;
             let a = &aliens[target];
-            let (tx, ty) = (f64::from(a.widget_x + 80), f64::from(a.widget_y + 80));
+            let (tx, ty) = (f64::from(a.widget_x) + 80.0, f64::from(a.widget_y) + 80.0);
             let (cx, cy) = (self.x + 40.0, self.y + 40.0);
             if cx > tx {
                 if self.vx > -10.0 {
@@ -1606,8 +1606,8 @@ impl Fish {
         }
         let (cx, cy) = (self.x + 40.0, self.y + 40.0);
         aliens.iter().position(|a| {
-            (cx - f64::from(a.widget_x + 80)).abs() < 20.0
-                && (cy - f64::from(a.widget_y + 80)).abs() < 20.0
+            (cx - (f64::from(a.widget_x) + 80.0)).abs() < 20.0
+                && (cy - (f64::from(a.widget_y) + 80.0)).abs() < 20.0
         })
     }
 
@@ -1617,8 +1617,12 @@ impl Fish {
         let mut best = 10_000;
         let mut found = None;
         for (i, a) in aliens.iter().enumerate() {
-            let dx = (f64::from(a.widget_x + 80) - (self.x + 40.0)) as i32;
-            let dy = (f64::from(a.widget_y + 80) - (self.y + 40.0)) as i32;
+            // Kind 7 invulnerable (`+0x204`): Itchy, Gash and Stanley skip.
+            if a.invulnerable {
+                continue;
+            }
+            let dx = (f64::from(a.widget_x) + 80.0 - (self.x + 40.0)) as i32;
+            let dy = (f64::from(a.widget_y) + 80.0 - (self.y + 40.0)) as i32;
             let sq = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as f32;
             let d = sq.sqrt() as i32;
             if d < best {

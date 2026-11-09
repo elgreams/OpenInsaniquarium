@@ -22,6 +22,8 @@ pub enum Sound {
     Buzzer,
     Awooga,
     Roar,
+    Roar2,
+    Roar3,
     Zap,
     Zzam,
     Ricochet,
@@ -80,6 +82,8 @@ impl Sound {
             Sound::Points4 => 0x12f,
             Sound::Ricochet => 0x132,
             Sound::Roar => 0x133,
+            Sound::Roar2 => 0x134,
+            Sound::Roar3 => 0x135,
             Sound::Slurp => 0x138,
             Sound::Slurp2 => 0x139,
             Sound::Slurp3 => 0x13a,
@@ -126,6 +130,8 @@ impl Sound {
             | Sound::Splash2
             | Sound::Splash3
             | Sound::Roar
+            | Sound::Roar2
+            | Sound::Roar3
             | Sound::Hatch
             | Sound::TapGlass
             | Sound::Guffaw
@@ -154,6 +160,8 @@ impl Sound {
             Sound::Buzzer => "SOUND_BUZZER",
             Sound::Awooga => "SOUND_AWOOGA",
             Sound::Roar => "SOUND_ROAR",
+            Sound::Roar2 => "SOUND_ROAR2",
+            Sound::Roar3 => "SOUND_ROAR3",
             Sound::Zap => "SOUND_ZAP",
             Sound::Zzam => "SOUND_ZZAM",
             Sound::Ricochet => "SOUND_RICOCHET",

@@ -292,6 +292,9 @@ pub fn alien_from_raw(b: &[u8]) -> Alien {
         fire_timer: rd_i32(b, 0x1a4),
         fire_interval: rd_i32(b, 0x1a8),
         fire_anim: rd_i32(b, 0x1ac),
+        state_timer: rd_i32(b, 0x194),
+        state_period: rd_i32(b, 0x198),
+        invulnerable: b.get(0x204).is_some_and(|&v| v != 0),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -627,12 +630,20 @@ fn pet_json(p: &Pet) -> Value {
 }
 
 fn alien_json(a: &Alien) -> Value {
-    json!({
+    let mut v = json!({
         "kind": a.kind, "warp": a.warp, "x": a.x, "y": a.y, "vx": a.vx, "vy": a.vy,
         "tv": [a.tvx, a.tvy], "eat": a.eat_delay, "anim": [a.anim, a.turn, a.cel],
         "last_vx": a.last_vx, "mode": [a.mode, a.counter, a.reroll],
         "hp": a.health, "cool": a.cooldown, "fire": [a.fire_timer, a.fire_interval, a.fire_anim], "widget": [a.widget_x, a.widget_y],
-    })
+        "div": a.divisor,
+    });
+    // +0x194/+0x198/+0x204 are kind-7 state fields; other kinds store
+    // unrelated data at those offsets, so skip them to avoid false diffs.
+    if a.kind == 7 {
+        v["inv"] = json!(a.invulnerable);
+        v["st"] = json!([a.state_timer, a.state_period]);
+    }
+    v
 }
 
 fn dead_alien_json(d: &DeadAlien) -> Value {

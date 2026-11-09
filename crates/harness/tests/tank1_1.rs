@@ -927,6 +927,43 @@ fn tank_3_1() {
     }
 }
 
+/// Tank 3-2 (`tank3-2_full_01`): wave kind 4 (Gus, drawn by `r & 1 | 4`),
+/// money pushed, autoplay. Validates the 3-2 wave draw and Gus on tank 3.
+#[test]
+fn tank_3_2() {
+    if captured("tank3-2_full_01") {
+        replay_level_tank("tank3-2_full_01", 3, 2);
+    }
+}
+
+/// Tank 3-3 (`tank3-3_full_01`): wave kind 7, the new fast alien.
+/// Validates kind-7 spawn, chase and combat on tank 3.
+#[test]
+fn tank_3_3() {
+    if captured("tank3-3_full_01") {
+        replay_level_tank("tank3-3_full_01", 3, 3);
+    }
+}
+
+/// Tank 3-4 (`tank3-4_full_01`): wave kind 6, the floor walker with
+/// kind-1 missiles. Validates kind-6 spawn, missile firing, redirect
+/// on click, and combat.
+#[test]
+fn tank_3_4() {
+    if captured("tank3-4_full_01") {
+        replay_level_tank("tank3-4_full_01", 3, 4);
+    }
+}
+
+/// Tank 3-5 (`tank3-5_full_01`): wave kind drawn by `r & 1 | 6` (got 6);
+/// validates the 3-5 draw formula and the final tank-3 level.
+#[test]
+fn tank_3_5() {
+    if captured("tank3-5_full_01") {
+        replay_level_tank("tank3-5_full_01", 3, 5);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank

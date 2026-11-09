@@ -188,6 +188,11 @@ pub struct Board {
     /// Aliens present (`board+0xb8`/`+0xf4` non-empty); kept in sync with
     /// `aliens`.
     pub has_aliens: bool,
+    /// Kind 7 inv→normal transition roar deferred to next tick.  The
+    /// original's `PlaySample` runs in `Alien::Update`, one tick before
+    /// the board's main loop processes sounds, so the roar appears in
+    /// captures on the tick *after* the state flip.
+    pub kind7_roar_pending: bool,
     /// `board+0xb8`: aliens.
     pub aliens: Vec<Alien>,
     /// The next missile id (for a fish's `+0x98` link).
@@ -230,6 +235,12 @@ pub struct Board {
     /// `board+0x1a4`: per-sample last-played clock (sound throttling,
     /// which gates some RNG draws).
     pub sample_last: [i32; 64],
+    /// Sample ids whose `sample_last` slot was stamped this tick
+    /// (`sample_ready` returned true). `sim_sounds` uses this instead of
+    /// `Sound::throttle_slot` so that sounds going through the board's
+    /// `PlaySample` (e.g. the kind-7 transition roar) are reported even
+    /// when they have no throttle slot on the enum.
+    pub sample_stamps: Vec<usize>,
     /// Sounds started during the last `step` (presentation only; cleared
     /// at the start of each step).
     pub sounds: Vec<Played>,
@@ -292,6 +303,7 @@ impl Board {
             pets: Vec::new(),
             tutorial: false,
             has_aliens: false,
+            kind7_roar_pending: false,
             aliens: Vec::new(),
             shots: Vec::new(),
             dead_aliens: Vec::new(),
@@ -309,6 +321,7 @@ impl Board {
             tick: 0,
             clock: 0,
             sample_last: [i32::MIN / 2; 64],
+            sample_stamps: Vec::new(),
             sounds: Vec::new(),
             music: None,
             warps: Vec::new(),
@@ -887,7 +900,7 @@ impl Board {
         if !(31..=586).contains(&x) || !(61..=379).contains(&y) {
             return ClickResult::Ignored;
         }
-        let (acx, acy) = (self.aliens[0].widget_x + 80, self.aliens[0].widget_y + 80);
+        let (acx, acy) = (self.aliens[0].widget_x.wrapping_add(80), self.aliens[0].widget_y.wrapping_add(80));
         let near = x - 35 < acx && acx < x + 75 && y - 35 < acy && acy < y + 75;
         self.add_food_delay(x - 10, y - 10, if near { 20 } else { 0 })
     }
@@ -902,12 +915,22 @@ impl Board {
         if y > 40 {
             for i in 0..self.aliens.len() {
                 if let Some(killed) = self.aliens[i].hit(x, y, self.laser) {
-                    // `EffectShot(x − 40, y − 40, 2)` and the hit sound.
-                    self.add_effect_shot(x - 40, y - 40, 2);
-                    self.play(0x126, Sound::Hit);
-                    if killed {
-                        self.kill_alien(i);
-                        break;
+                    if self.aliens[i].kind == 7 && self.aliens[i].invulnerable {
+                        // Kind 7 invulnerable: no effect shot, no hit
+                        // sound; just the warning message.
+                        self.show_message(
+                            "Stop shooting! Alien regains health!",
+                            true,
+                            -1,
+                        );
+                    } else {
+                        // `EffectShot(x − 40, y − 40, 2)` and the hit sound.
+                        self.add_effect_shot(x - 40, y - 40, 2);
+                        self.play(0x126, Sound::Hit);
+                        if killed {
+                            self.kill_alien(i);
+                            break;
+                        }
                     }
                 }
             }
@@ -1412,7 +1435,7 @@ impl Board {
     /// The Destructor's volley (alien-kind5.md#32): up to three missiles,
     /// each at the farthest eligible fish without one; MISSLE once.
     fn fire_volley(&mut self, a: usize, points: [(i32, i32); 3]) -> bool {
-        let (acx, acy) = (self.aliens[a].widget_x + 80, self.aliens[a].widget_y + 80);
+        let (acx, acy) = (self.aliens[a].widget_x.wrapping_add(80), self.aliens[a].widget_y.wrapping_add(80));
         let mut fired = false;
         for (n, &(x, y)) in points.iter().enumerate() {
             // PickTarget (`0x004e8df0`): the farthest, list order on ties.
@@ -1434,8 +1457,8 @@ impl Board {
                 if f.missile.is_some() || (!c && sheltered && f.stage < 2) {
                     continue;
                 }
-                let dx = acx - (f.widget_x + 40);
-                let dy = acy - (f.widget_y + 40);
+                let dx = acx.wrapping_sub(f.widget_x.wrapping_add(40));
+                let dy = acy.wrapping_sub(f.widget_y.wrapping_add(40));
                 let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
                 let ties_last = self.artifacts.volley_ties_last;
                 if best < d || (ties_last && best == d && pick.is_some()) {
@@ -1464,7 +1487,7 @@ impl Board {
     /// Kind 6's volley (`alien-kind6.md#32`): up to 2 kind-1 missiles,
     /// each at the farthest eligible fish; sound `0x143` once.
     fn fire_volley_k1(&mut self, a: usize, point: (i32, i32)) -> bool {
-        let (acx, acy) = (self.aliens[a].widget_x + 80, self.aliens[a].widget_y + 80);
+        let (acx, acy) = (self.aliens[a].widget_x.wrapping_add(80), self.aliens[a].widget_y.wrapping_add(80));
         let (x, y) = point;
         let mut fired = false;
         for _ in 0..2 {
@@ -1486,8 +1509,8 @@ impl Board {
                 if f.missile.is_some() || (!c && sheltered && f.stage < 2) {
                     continue;
                 }
-                let dx = acx - (f.widget_x + 40);
-                let dy = acy - (f.widget_y + 40);
+                let dx = acx.wrapping_sub(f.widget_x.wrapping_add(40));
+                let dy = acy.wrapping_sub(f.widget_y.wrapping_add(40));
                 let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
                 let ties_last = self.artifacts.volley_ties_last;
                 if best < d || (ties_last && best == d && pick.is_some()) {
@@ -1725,6 +1748,8 @@ impl Board {
                     9..=12 => "MULTIPLE ALIEN SIGNATURES DETECTED",
                     4 => "ALIEN SIGNATURE TYPE-G DETECTED",
                     5 => "ALIEN SIGNATURE TYPE-D DETECTED",
+                    6 => "ALIEN SIGNATURE TYPE-U DETECTED",
+                    7 => "ALIEN SIGNATURE TYPE-P DETECTED",
                     _ => "ENEMY APPROACHING",
                 };
                 message::show_warning(&mut self.message, text);
@@ -1772,6 +1797,8 @@ impl Board {
                     let arrival = match kind {
                         4 => Sound::Guffaw,
                         5 => Sound::Interfer,
+                        6 => Sound::Roar2,
+                        7 => Sound::Roar3,
                         _ => Sound::Roar,
                     };
                     self.sounds.push(arrival.into());
@@ -1792,6 +1819,17 @@ impl Board {
                     } else if self.rng.next_u31().is_multiple_of(20) {
                         self.wave_kind = 9;
                     }
+                }
+                // Tank 3 re-rolls (`0x00548cb0`): 3-2 has a 1-in-10
+                // 4↔5 swap (1 draw); 3-5 re-draws between 6 and 7
+                // (1 draw, always applied).
+                if self.tank == 3 && self.level == 2 {
+                    if self.rng.next_u31().is_multiple_of(10) {
+                        self.wave_kind = if self.wave_kind != 5 { 5 } else { 4 };
+                    }
+                }
+                if self.tank == 3 && self.level == 5 {
+                    self.wave_kind = (!self.rng.next_u31() & 1) as i32 | 6;
                 }
                 self.waves += 1;
                 self.wave_countdown = 3000;
@@ -1827,6 +1865,7 @@ impl Board {
         let slot = &mut self.sample_last[id - 0x106];
         if self.clock.wrapping_sub(*slot) >= gap {
             *slot = self.clock;
+            self.sample_stamps.push(id);
             true
         } else {
             false
@@ -1929,6 +1968,7 @@ impl Board {
     pub fn apply_inputs(&mut self, inputs: &[Input]) {
         self.artifacts.made = 0;
         self.sounds.clear();
+        self.sample_stamps.clear();
         self.music = None;
         for i in inputs {
             // The PRESTO CHANGE-O dialog covers the screen: it takes every
@@ -2426,6 +2466,7 @@ impl Board {
             global: &mut self.global_rng,
             clock: self.clock,
             sample_last: &mut self.sample_last,
+            sample_stamps: &mut self.sample_stamps,
             sounds: &mut self.sounds,
             stage_ups: &mut stage_ups,
             message: &mut self.message,
@@ -2478,6 +2519,14 @@ impl Board {
         if self.paused {
             self.tick += 1;
             return;
+        }
+        // Kind 7 deferred roar: the original's PlaySample fires inside
+        // Alien::Update, so the sound lands one tick after the state flip.
+        // It goes through Board::PlaySample (stamping sample_last), unlike
+        // arrival roars which bypass the table.
+        if self.kind7_roar_pending {
+            self.play(0x135, Sound::Roar3);
+            self.kind7_roar_pending = false;
         }
         self.level_ticks += 1;
         // Level-tick-150 line (`Board::Update` @ `0x0054913b`, Adventure).
@@ -2655,6 +2704,7 @@ impl Board {
             global: &mut self.global_rng,
             clock: self.clock,
             sample_last: &mut self.sample_last,
+            sample_stamps: &mut self.sample_stamps,
             sounds: &mut self.sounds,
             stage_ups: &mut stage_ups,
             message: &mut self.message,
@@ -2717,6 +2767,7 @@ impl Board {
                 global: &mut self.global_rng,
                 clock: self.clock,
                 sample_last: &mut self.sample_last,
+                sample_stamps: &mut self.sample_stamps,
                 sounds: &mut self.sounds,
                 stage_ups: &mut stage_ups,
                 message: &mut self.message,
@@ -2840,6 +2891,12 @@ impl Board {
                 &mut self.rng,
                 &mut out,
             );
+            // Kind 7 inv→normal: clear the "Stop shooting!" message
+            // and play the transition roar.
+            if out.became_normal {
+                self.message.timer = 0;
+                self.kind7_roar_pending = true;
+            }
             if let Some(points) = out.volley {
                 let fired = if self.aliens[i].kind == 6 {
                     self.fire_volley_k1(i, points[0])

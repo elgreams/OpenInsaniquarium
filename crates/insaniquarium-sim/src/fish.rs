@@ -225,6 +225,8 @@ pub struct World<'a> {
     pub clock: i32,
     /// Per-sample last-played clock (`board+0x1a4`, indexed by id − 0x106).
     pub sample_last: &'a mut [i32; 64],
+    /// Sample ids stamped this tick (for `sim_sounds`).
+    pub sample_stamps: &'a mut Vec<usize>,
     /// Sounds started this tick (presentation only).
     pub sounds: &'a mut Vec<Played>,
     /// New stages reached this tick (`Fish::OnStageUp` triggers), in order.
@@ -273,6 +275,7 @@ impl World<'_> {
         let slot = &mut self.sample_last[id - 0x106];
         if self.clock.wrapping_sub(*slot) >= gap {
             *slot = self.clock;
+            self.sample_stamps.push(id);
             true
         } else {
             false
