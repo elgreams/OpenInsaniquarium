@@ -226,14 +226,14 @@ impl Alien {
         }
         // Kind 7 state toggle: +0x194 increments each tick; at >= +0x198
         // the state flips (normal ↔ invulnerable), divisor changes, timer
-        // resets to rand(fire_interval), and the fire animation plays.
+        // resets to rand(100), and the fire animation plays.
         if self.kind == 7 {
             self.state_timer += 1;
             if self.state_timer >= self.state_period {
                 let was_inv = self.invulnerable;
                 self.invulnerable = !self.invulnerable;
                 self.divisor = if self.invulnerable { 2.0 } else { 0.5 };
-                self.state_timer = rng.next_range(self.fire_interval as u32) as i32;
+                self.state_timer = rng.next_range(100) as i32;
                 self.fire_anim = 10;
                 if was_inv && !self.invulnerable {
                     out.became_normal = true;
@@ -700,11 +700,15 @@ impl Alien {
             } else {
                 self.health -= dmg;
             }
+            // Kind 7 uses a 4× multiplier (giving 2.0 at divisor 0.5,
+            // i.e. 4.0 visual px/tick — faster than the 3.0 used by
+            // kinds 5/6); kinds 5/6 use 3× (the same as kinds 1–3).
+            let kb = if self.kind == 7 { 4.0 } else { 3.0 };
             if self.fire_anim == 0 {
                 if cx < self.x + 60.0 {
-                    self.vx = 3.0 * s;
+                    self.vx = kb * s;
                 } else if cx > self.x + 100.0 {
-                    self.vx = -3.0 * s;
+                    self.vx = -kb * s;
                 }
             }
             if self.health <= 0.0 {

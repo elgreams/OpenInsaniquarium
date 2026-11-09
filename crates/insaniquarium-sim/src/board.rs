@@ -2520,14 +2520,8 @@ impl Board {
             self.tick += 1;
             return;
         }
-        // Kind 7 deferred roar: the original's PlaySample fires inside
-        // Alien::Update, so the sound lands one tick after the state flip.
-        // It goes through Board::PlaySample (stamping sample_last), unlike
-        // arrival roars which bypass the table.
-        if self.kind7_roar_pending {
-            self.play(0x135, Sound::Roar3);
-            self.kind7_roar_pending = false;
-        }
+        // Kind 7 transition roar is played inline (same tick as flip),
+        // in the alien update loop when `became_normal` fires.
         self.level_ticks += 1;
         // Level-tick-150 line (`Board::Update` @ `0x0054913b`, Adventure).
         if self.level_ticks == 150 {
@@ -2892,10 +2886,12 @@ impl Board {
                 &mut out,
             );
             // Kind 7 inv→normal: clear the "Stop shooting!" message
-            // and play the transition roar.
+            // and play the transition roar.  The original's PlaySample
+            // fires inside Alien::Update, so the sound lands on the
+            // same tick as the flip (not deferred).
             if out.became_normal {
                 self.message.timer = 0;
-                self.kind7_roar_pending = true;
+                self.play(0x135, Sound::Roar3);
             }
             if let Some(points) = out.volley {
                 let fired = if self.aliens[i].kind == 6 {
