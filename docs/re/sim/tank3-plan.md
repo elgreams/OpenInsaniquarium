@@ -93,15 +93,11 @@ Kind 7 is very fast (divisor 0.5, cruise ~3.6 px/tick) with 260 HP. It has a sta
 
 ### 6. 3-5 (random wave kind, possibly a pair)
 
-`static` (a plan).
+`traced` (`tank_3_5`).
 
-The final tank 3 level. 3-5 makes one app draw to pick the wave kind. Tank 1-5 re-rolls to kind 9 (pair 1+3); tank 3-5 may use a pair kind (10 = 7+3, 11 = 5+6, 12 = 3+8). The re-roll after each spawn may also draw.
+The final tank 3 level. 3-5 makes one app draw to pick the wave kind (`r & 1 | 6`, got 6). The recording exercises the full level with Stinky and Niko as pets, including pearl collection during alien presence (the pearl widget is checked before the shoot path). The fix: the board's click handler now checks `self.pearls` inside the alien-present branch, before regular coins, matching the original's front-most-widget z-order.
 
-**Record:** a full 3-5. Capture must exercise: the setup draw, the wave (whichever kind it rolls), and any re-roll.
-
-**Build:** any new re-roll formula or pair wave handling.
-
-**Test:** `tank_3_5` replays exactly. If the draw is random, a second recording with the other outcome would confirm coverage.
+**Test:** `tank_3_5` replays `tank3-5_full_01` exactly (5378 snapshots, 95 pearl ticks).
 
 ### 7. Open static claims and integration
 

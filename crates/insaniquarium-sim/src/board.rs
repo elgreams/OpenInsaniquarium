@@ -767,6 +767,31 @@ impl Board {
         // only missiles left (the Destructor dead), clicks stay shots
         // (alien-kind5.md#41).
         if !self.aliens.is_empty() || self.missiles.iter().any(|m| m.kind <= 1) {
+            // Pearls are front-most widgets: checked before regular coins
+            // (pet-niko.md#the-pearl). The pearl collect sound fires before
+            // the shot sound (observed in tank3-5_full_01 tick 5404).
+            if let Some(i) = self
+                .pearls
+                .iter()
+                .rposition(|c| !c.collected && c.kind != 16 && c.hit(x, y))
+            {
+                if !self.pearls[i].collected {
+                    self.pearls[i].collect();
+                    for p in self.pets.iter_mut().filter(|p| p.id == NIKO) {
+                        p.pearl_taken = true;
+                    }
+                    self.play(Sound::Pearl.sample_id(), Sound::Pearl);
+                }
+                let in_missile = self.missiles.iter().any(|m| {
+                    m.kind <= 1
+                        && (m.widget_x..m.widget_x + 80).contains(&x)
+                        && (m.widget_y..m.widget_y + 80).contains(&y)
+                });
+                if in_missile || self.aliens.iter().any(|a| a.contains(x, y)) {
+                    self.shoot(x, y);
+                }
+                return ClickResult::CoinCollected;
+            }
             if let Some(i) = self.coins.iter().rposition(|c| !c.collected && c.hit(x, y)) {
                 // A click inside an alien's or a missile's widget is also a
                 // shot (`0x00539d40`, alien-kind5.md#41).

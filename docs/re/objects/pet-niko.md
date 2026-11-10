@@ -48,7 +48,7 @@ The timer keeps counting while the board is paused only if the pet updates; it d
 
 Collected (clicked): glides to the money counter like other coins (`coin.md#collecting`), banking **250** (`value 0xf`). In the capture the glide takes 21 ticks and money rises by 250.
 
-`traced` for the resting pearl, the glide and banking (`coins` list). The 217-tick expiry is `static`.
+`traced` for the resting pearl, the glide and banking (`coins` list); also `traced` for pearl collection during alien presence (`tank_3_5`: the pearl widget is checked before the shoot path even when aliens are on screen). The 217-tick expiry is `static`.
 
 ## Clicks on Niko
 
