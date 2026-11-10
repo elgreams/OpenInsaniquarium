@@ -204,11 +204,6 @@ impl Alien {
         } else if matches!(self.kind, 5 | 6) {
             // The Destructor (5) and kind 6 never chase or eat
             // (alien-kind5.md#3, alien-kind6.md#3).
-            // Kind 6: during the slow loop (fire_anim > 0), vx is zeroed
-            // before wander so the alien decelerates to tvx + 0.1 in one tick.
-            if self.kind == 6 && self.fire_anim > 0 {
-                self.vx = 0.0;
-            }
             self.wander(rng);
         } else if self.kind == 7 && self.invulnerable {
             // Kind 7 invulnerable: wander instead of chase.
@@ -260,13 +255,41 @@ impl Alien {
         if self.y > MAX_Y {
             self.y = MAX_Y;
         }
-        // `(x + v/div) + lunge`: two separate adds, in this order.
-        // Kind 6's stroke (in animate) modifies vx before the x update,
-        // so defer x to after animate to use the post-stroke vx in one
-        // division (matching the original's float precision).
-        if self.kind != 6 {
-            self.x = self.x + self.vx / self.divisor + lunge;
+        // Kind 6 vx manipulation (`0x004fd560` lines 172–205): keyed on
+        // cel%5 when fire_anim==0 (normal swim), or clamped to [-0.1, 0.1]
+        // when fire_anim>0 (slow loop / pre-fire).
+        if self.kind == 6 {
+            if self.fire_anim < 1 {
+                match self.cel % 5 {
+                    1 | 2 => {
+                        // Accelerate: push vx away from 0.
+                        if self.vx > 0.0 {
+                            self.vx += 0.55;
+                        } else if self.vx < 0.0 {
+                            self.vx -= 0.55;
+                        }
+                    }
+                    0 | 4 => {
+                        // Decelerate: nudge toward ±0.9.
+                        if self.vx > 0.9 {
+                            self.vx -= 0.8;
+                        } else if self.vx < -0.9 {
+                            self.vx += 0.8;
+                        }
+                    }
+                    _ => {} // cel%5 == 3: no change
+                }
+            } else {
+                // Slow loop: clamp vx to [-0.1, 0.1].
+                if self.vx > 0.1 {
+                    self.vx = 0.1;
+                } else if self.vx < -0.1 {
+                    self.vx = -0.1;
+                }
+            }
         }
+        // `(x + v/div) + lunge`: two separate adds, in this order.
+        self.x = self.x + self.vx / self.divisor + lunge;
         self.y += self.vy / self.divisor;
         if self.cooldown > 0 {
             self.cooldown -= 1;
@@ -277,42 +300,51 @@ impl Alien {
         // Firing (alien-kind5.md#32, alien-kind6.md#32): while prey exists
         // the timer runs; past the interval a volley (the board picks the
         // targets), then a new interval `rand(50) + 150`.
-        // Kind 6: fire_timer pauses during the last ~5 ticks of a turn
-        // (|turn| ∈ {1,2,4,5} before the per-tick decrement in animate).
-        let k6_gate = self.kind == 6
-            && self.turn != 0
-            && matches!(self.turn.unsigned_abs(), 1 | 2 | 4 | 5);
-        if matches!(self.kind, 5 | 6) && !guppies.is_empty() && !k6_gate {
+        if self.kind == 5 && !guppies.is_empty() {
             self.fire_timer += 1;
             if self.fire_timer > self.fire_interval {
                 let (ix, iy) = (self.widget_x, self.widget_y);
-                if self.kind == 5 {
-                    let (a, s) = if self.vx >= 0.0 { (90, 15) } else { (-10, -15) };
-                    out.volley = Some([
-                        (ix.wrapping_add(a), iy.wrapping_sub(35)),
-                        (ix.wrapping_add(a.wrapping_add(s)), iy.wrapping_sub(30)),
-                        (ix.wrapping_add(a.wrapping_add(s * 2)), iy.wrapping_sub(25)),
-                    ]);
-                } else {
-                    // Kind 6: up to 2 missiles from two positions with
-                    // different y offsets (alien-kind6.md#32).
-                    let ox = if self.vx >= 0.0 { 60 } else { 20 };
-                    let p0 = (ix.wrapping_add(ox), iy.wrapping_sub(24));
-                    let p1 = (ix.wrapping_add(ox), iy.wrapping_sub(16));
-                    out.volley = Some([p0, p1, p0]);
+                let (a, s) = if self.vx >= 0.0 { (90, 15) } else { (-10, -15) };
+                out.volley = Some([
+                    (ix.wrapping_add(a), iy.wrapping_sub(35)),
+                    (ix.wrapping_add(a.wrapping_add(s)), iy.wrapping_sub(30)),
+                    (ix.wrapping_add(a.wrapping_add(s * 2)), iy.wrapping_sub(25)),
+                ]);
+            }
+        }
+        // Kind 6 (alien-kind6.md#32): at interval−15, start the pre-fire
+        // animation (fire_anim=40); postpone if turning. At interval+1,
+        // the actual volley fires.
+        if self.kind == 6 && !guppies.is_empty() {
+            self.fire_timer += 1;
+            if self.fire_timer <= self.fire_interval {
+                if self.fire_timer == self.fire_interval - 15 {
+                    if self.turn == 0 {
+                        let has_target = (0..guppies.len())
+                            .any(|i| hidden.get(i) != Some(&true));
+                        if has_target {
+                            self.fire_anim = 40;
+                        } else {
+                            self.fire_timer = 0;
+                        }
+                    } else {
+                        self.fire_timer -= 2;
+                    }
                 }
+            } else {
+                let (ix, iy) = (self.widget_x, self.widget_y);
+                let (ox1, ox2) = if self.vx >= 0.0 { (70, 78) } else { (10, 2) };
+                out.volley = Some([
+                    (ix.wrapping_add(ox1), iy.wrapping_sub(24)),
+                    (ix.wrapping_add(ox2), iy.wrapping_sub(16)),
+                    (ix.wrapping_add(ox1), iy.wrapping_sub(24)),
+                ]);
             }
         }
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
         if out.volley.is_none() {
             self.animate();
-        }
-        // Kind 6: deferred x update using the post-stroke vx (one
-        // division, matching the original's float precision).
-        if self.kind == 6 {
-            self.x = self.x + self.vx / self.divisor + lunge;
-            self.widget_x = self.x as i32;
         }
         out.died = self.health <= 0.0;
     }
@@ -550,7 +582,7 @@ impl Alien {
 
     /// §3.4 (`0x004daa00`): animation; strokes also move the alien.
     fn animate(&mut self) {
-        // Kind 6 uses an 18-tick turn arc; other kinds use 10.
+        // Kind 6 uses a 20-tick turn arc; other kinds use 10.
         let turn_mag = if self.kind == 6 { 20 } else { 10 };
         if self.last_vx > 0.0 && self.vx < 0.0 {
             self.turn = turn_mag;
@@ -562,86 +594,43 @@ impl Alien {
         } else if self.turn < 0 {
             self.turn += 1;
         }
-        // The Destructor's fire animation comes first (alien-kind5.md#33).
-        // Kind 6 handles fire_anim in its own turn==0 branch (slow loop).
-        let firing = self.kind != 6 && self.fire_anim > 0 && {
+        // Fire animation decrement (all kinds: `0x004daa00` line 38).
+        if self.fire_anim > 0 {
             self.fire_anim -= 1;
             if self.fire_anim == 0 {
                 self.anim = 0;
             }
-            self.fire_anim > 0
-        };
-        if firing {
-            // Kind 7 state-transition: cel direction depends on whether
-            // the alien is now invulnerable (counts up: 1..9) or normal
-            // (counts down: 9..1). Kinds 5/6 always count down.
-            self.cel = if self.kind == 7 && self.invulnerable {
-                10 - self.fire_anim
-            } else {
-                self.fire_anim
-            };
-        } else if self.turn > 0 {
-            // Kind 6 uses `9 - |turn|/2` (cel cycles 0..9 over 18 ticks)
-            // and applies stroke vx deltas during the turn; other kinds
-            // use `9 - turn` (10-tick cycle) with no vx modification.
+        }
+        if self.fire_anim > 0 {
+            // Cel during fire animation, per kind.
             if self.kind == 6 {
-                self.vx += self.kind6_turn_delta();
-                self.cel = 9 - self.turn / 2;
+                // Kind 6 ping-pong: 0→9→0 over 40 ticks.
+                self.cel = if self.fire_anim > 20 {
+                    9 - (self.fire_anim - 20) / 2
+                } else {
+                    (self.fire_anim - 1) / 2
+                };
+            } else if self.kind == 7 && self.invulnerable {
+                self.cel = 10 - self.fire_anim;
             } else {
-                self.cel = 9 - self.turn;
+                self.cel = self.fire_anim;
             }
-        } else if self.turn < 0 {
+        } else if self.turn != 0 {
+            // Turning, fire_anim == 0.
             if self.kind == 6 {
-                self.vx += self.kind6_turn_delta();
+                // Kind 6: cel = 9 − |turn|/2 (0..9 symmetric).
                 self.cel = 9 - self.turn.abs() / 2;
+            } else if self.turn > 0 {
+                self.cel = 9 - self.turn;
             } else {
                 self.cel = self.turn + 10;
             }
         } else if self.kind == 6 {
-            // Kind-6 slow loop: fire_anim counts down (39→0 after a
-            // stroke cycle, or 10→0 after a volley).  Cel via a
-            // triangle-wave (ping-pong) over 0..9 keyed on k=(39−fa).
-            // For k<20: cel=k/2 (0→9).  For k≥20: cel=(38−k)/2 (9→0).
-            if self.fire_anim > 0 {
-                self.fire_anim -= 1;
-                if self.fire_anim > 0 {
-                    let k = (39 - self.fire_anim) as i32;
-                    self.cel = if k < 20 { k / 2 } else { (38 - k) / 2 };
-                } else {
-                    // fire_anim reached 0: restart the stroke.
-                    self.anim = 0;
-                }
-            }
-            // Kind-6 stroke (only when not in slow loop).
-            // Runs anim from 0 upward with vx deltas over 59 ticks
-            // (a=1..59). When anim > 58 (checked before the increment),
-            // the stroke is done: start the slow loop (fire_anim = 39).
-            if self.fire_anim == 0 {
-                if self.anim > 58 {
-                    let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-                    self.vx += dir * 0.55;
-                    self.fire_anim = 39;
-                    self.cel = 0;
-                } else {
-                    self.anim += 1;
-                    let a = self.anim;
-                    let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-                    let delta =
-                        if a == 1 || (9..=24).contains(&a) || (49..=59).contains(&a) {
-                            dir * 0.55
-                        } else if (2..=4).contains(&a)
-                            || a == 6
-                            || (33..=40).contains(&a)
-                            || a == 48
-                        {
-                            -dir * 0.80
-                        } else {
-                            0.0
-                        };
-                    self.vx += delta;
-                    self.cel = a / 8;
-                }
-            }
+            // Kind 6 normal swim (turn==0, fire_anim==0): simple
+            // anim cycle 0..79, cel = anim/8 (0x004daa00).
+            let inc = if self.vx < -8.0 || self.vx > 8.0 { 2 } else { 1 };
+            self.anim = (self.anim + inc) % 80;
+            self.cel = self.anim / 8;
         } else if matches!(self.kind, 5 | 7) || (-1.6..=1.6).contains(&self.vx) {
             self.anim += 1;
             if self.anim > 19 {
@@ -677,17 +666,6 @@ impl Alien {
         #[allow(clippy::float_cmp)]
         if self.vx != self.last_vx && self.vx != 0.0 && self.last_vx != 0.0 {
             self.last_vx = self.vx;
-        }
-    }
-
-    /// Stroke-like vx delta applied during the kind-6 turn animation.
-    /// The 18-tick turn, keyed on `abs(turn)` after the per-tick decay.
-    fn kind6_turn_delta(&self) -> f64 {
-        let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-        match self.turn.unsigned_abs() {
-            16 | 15 | 14 | 13 | 6 | 5 | 4 | 3 => dir * 0.55,
-            10 => -dir * 0.80,
-            _ => 0.0,
         }
     }
 

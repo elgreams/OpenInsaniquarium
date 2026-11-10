@@ -1370,6 +1370,25 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
             "demo events the replay can't feed: {unsupported:?}"
         );
         inputs.dirty.extend(harness::replay::torn_snapshots(&t));
+        // The board no longer unpauses on a raw Release during focus_paused
+        // (the original only unpauses when the "Game Paused" dialog's OK
+        // button is clicked). Inject SetPaused(false) when the capture
+        // shows the paused → unpaused transition.
+        let paused_of = |s: &harness::trace::Snapshot| {
+            s.state
+                .get("board")
+                .and_then(|b| b.get("paused"))
+                .and_then(serde_json::Value::as_bool)
+        };
+        for w in t.snapshots.windows(2) {
+            if paused_of(&w[0]) == Some(true) && paused_of(&w[1]) == Some(false) {
+                inputs
+                    .inputs
+                    .entry(w[1].tick)
+                    .or_default()
+                    .push(insaniquarium_sim::board::Input::SetPaused(false));
+            }
+        }
         inputs
     } else {
         inferred_clicks(&t)

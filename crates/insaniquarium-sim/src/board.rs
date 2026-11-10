@@ -1555,14 +1555,17 @@ impl Board {
         // only): fish resume hunger and coins at once, even while missiles
         // still fly (`destructor_missiles`).
         self.has_aliens = !self.aliens.is_empty();
-        // The alien's attached missile goes with it (slot 76); later aliens
-        // shift down one in the list.
-        self.missiles.retain(|m| m.target != Some(i));
+        // Stanley's ball (kind 2) targeting this alien goes with it
+        // (slot 76); later alien indices shift down. Kind 0/1 missiles
+        // keep flying after the alien dies (alien-kind6.md#44).
+        self.missiles.retain(|m| m.kind != 2 || m.target != Some(i));
         for m in &mut self.missiles {
-            if let Some(t) = &mut m.target
-                && *t > i
-            {
-                *t -= 1;
+            if m.kind == 2 {
+                if let Some(t) = &mut m.target
+                    && *t > i
+                {
+                    *t -= 1;
+                }
             }
         }
         let (ix, iy) = (a.widget_x, a.widget_y);
@@ -2008,11 +2011,12 @@ impl Board {
                     self.right_click(x, y);
                 }
                 Input::Click { .. } | Input::RightClick { .. } => {}
-                // The "Game Paused" dialog's button resumes the board (the
-                // button rect isn't checked yet, as for board dialogs).
-                Input::DismissDialog | Input::Release { .. }
-                    if self.focus_paused && self.dialog.is_none() =>
-                {
+                // The "Game Paused" dialog's button resumes the board.
+                // Only SetPaused(false) or DismissDialog can unpause;
+                // a raw Release that missed the dialog's OK button is
+                // a no-op (the replay injects SetPaused(false) when the
+                // capture shows the transition).
+                Input::DismissDialog if self.focus_paused && self.dialog.is_none() => {
                     self.paused = false;
                     self.focus_paused = false;
                 }
