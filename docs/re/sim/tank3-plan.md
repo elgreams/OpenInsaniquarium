@@ -69,17 +69,13 @@ The first tank 3 level. Shop has guppy, food quality, food quantity, Guppycrunch
 
 ### 4. Alien kind 6 and kind-1 missiles
 
-`static` (a plan).
+`traced` (`tank_3_4`).
 
 Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles are **redirectable**: a click changes their heading instead of destroying them, so they can be bounced away from fish. They are removed when they leave the tank bounds. This is the main new combat mechanic on tank 3.
 
-**Depends on:** step 1 (the Ghidra read of kind 6 firing and kind-1 missiles).
+**Test:** `tank_3_4` replays `tank3-4_full_01` exactly. Exercised: kind-6 spawn, firing (volleys of 2), pre-fire animation (interval−15, ping-pong cel), vx manipulation (cel%5), missile update (no smoke trail — corrected from the static claim), death with kind-1 missile retention (`kill_alien` only removes kind-2), and the `focus_paused` fix (Release no longer blindly unpauses).
 
-**Record:** a level where kind 6 appears (from step 1's wave-kind table). Capture must exercise: the kind-6 spawn (ROAR2, warp, y = 280), a volley of kind-1 missiles, clicking a missile (redirect, not destroy), a redirected missile leaving the tank bounds, a missile hitting a fish, the laser kill (damage `2·laser + 2` as kind 5, sideways-only knockback), Stanley shooting a kind-1 missile, and the death (diamond, floor corpse).
-
-**Build:** alien kind 6 (differences from kind 5 in the firing and the arrival sound), kind-1 missile (redirect on click, additive glow draw, `0x11f` on removal, out-of-bounds removal, Wadsworth shelter check on hit).
-
-**Test:** `alien_kind6_missiles` replays exactly.
+**Not yet exercised:** click-to-redirect, Wadsworth shelter check, Stanley vs kind-1 missile. These remain `static` in `alien-kind6.md`.
 
 ### 5. Alien kind 7
 
