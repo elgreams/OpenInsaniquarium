@@ -964,6 +964,37 @@ fn tank_3_5() {
     }
 }
 
+/// Rhubarb on tank 3-4 (`tank3-4_rhubarb_01`): Stinky, Niko and Rhubarb;
+/// money pushed to 3000, countdown to 600, guppies kept hungry so they sink
+/// near the floor. Validates Rhubarb's snap claw behaviour with tank 3
+/// guppies (pet-rhubarb.md).
+#[test]
+fn tank_3_rhubarb() {
+    if captured("tank3-4_rhubarb_01") {
+        replay_level_tank("tank3-4_rhubarb_01", 3, 4);
+    }
+}
+
+/// Blip on tank 3-4 (`tank3-4_blip_01`): Stinky, Niko and Blip; money pushed
+/// to 1500, countdown to 400. Validates the shop reveal at tick 201 (SONAR)
+/// and the alien spawn y pinned to 280 during the reticle (pet-blip.md).
+#[test]
+fn tank_3_blip() {
+    if captured("tank3-4_blip_01") {
+        replay_level_tank("tank3-4_blip_01", 3, 4);
+    }
+}
+
+/// Wadsworth on tank 3-1 (`tank3-1_wadsworth_01`): Stinky, Niko and Wadsworth;
+/// money pushed to 1500, countdown to 400, a Balrog wave. Wadsworth shelters
+/// the guppies while the alien is present and releases them after the kill.
+#[test]
+fn tank_3_wadsworth() {
+    if captured("tank3-1_wadsworth_01") {
+        replay_level_tank("tank3-1_wadsworth_01", 3, 1);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
@@ -1210,6 +1241,7 @@ fn needs_global(name: &str) -> bool {
         || name.starts_with("stanley")
         || name.starts_with("walter")
         || name.contains("stanley")
+        || name.contains("wadsworth")
         || name.starts_with("tank2-4")
         || name.starts_with("tank2-5")
         || name.starts_with("tank3-4")
