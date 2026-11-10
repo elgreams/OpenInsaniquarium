@@ -15,7 +15,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-13 differen
   - board draw `0x0053f5f0` @ `0x0053ffc3` (reticles).
 - Animation `0x004dfc50`: default branch; draw body `0x004f8610` case 13 → generic pet draw `0x004dfbb0` with `IMAGE_BLIP`
 
-Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: the shop reveal at tick 201, SONAR at countdown 225 and the spawn at y 280 on both waves) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
+Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: the shop reveal at tick 201, SONAR at countdown 225 and the spawn at y 280 on both waves) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. `tank_3_blip` (`tank1_1.rs`) replays 3-4 with Stinky, Niko and Blip (`tank3-4_blip_01`), confirming the shop reveal at tick 201 and the alien spawn y pinned to 280 during the reticle on tank 3 with a kind-6 alien. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
 
 ## Fields used by id 13
 
@@ -82,5 +82,5 @@ The generic pet draw (`pet-vert.md#drawing-0x004dfbb0`) with `IMAGE_BLIP` (globa
 - Which classes own the draws at `0x004dd280`, `0x004e15e0`, `0x004e2e30` (500) and `0x004e19f0` (900); likely Gekko, Penta, Grubber and Breeder.
 - `+0x148` and `board+0x4ff` in the hunger-marker test (from stage 3 on the marker needs `board+0x4ff`).
 - Whether the shop reveal also shows its pop animation sound per button (`RefreshSlotButton` with popAnim 1).
-- First capture: tank 3-5 or later with Blip chosen; check the shop at tick 201 and the alien spawn y (280).
+- Tank 3 verified: `tank_3_blip` replays 3-4 with a kind-6 alien (Stinky, Niko, Blip); the shop reveal at tick 201 (SONAR) and the alien spawn y pinned to 280 both match the original on tank 3.
 - `zoo_d_01` (the first zoo D recording) has a catch-up burst at its first alien death where the capture read the board clock one update ahead of the objects for ~5 reads; it was re-recorded as `zoo_d_02`.

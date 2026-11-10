@@ -10,7 +10,7 @@ Same class, fields and update skeleton as Stinky (`pet-stinky.md`), Clyde (`pet-
 - Animation `0x004eb7c0` (id-14 path)
 - Draw (slot 26) `0x004f37c0` → `0x004f3590` case 14
 
-Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: 53 snaps flinging guppies) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
+Confidence per section. `zoo_d_blip_rhubarb_nimbus` (`tank1_1.rs`) replays 1-2 with Blip, Rhubarb and Nimbus from the game's own demo (`zoo_d_02`, about 5,900 ticks, two waves: 53 snaps flinging guppies) and compares the pets, guppies, coins, food, sounds and the app RNG every tick. `tank_3_rhubarb` (`tank1_1.rs`) replays 3-4 with Stinky, Niko and Rhubarb (`tank3-4_rhubarb_01`, guppies kept hungry near the floor), confirming the snap claw behaviour on tank 3 with a kind-6 alien (the pre-fire `has_target` fix). Drawing, the Virtual Tank and fish lists not on tank 1 stay `static`.
 
 ## Fields used by id 14
 
@@ -142,4 +142,4 @@ Then the shared tail (drop-in flash, missile overlay, drop-in timer). Shadow: ty
 - **5 app draws** on AddPet (x, discarded y, mode, `+0x1b8`, shadow). Per tick: one parity draw per flung fish (during the update's step 3, list order guppy → carnivore → Gekko → breeder → Ultravore), then the wander reroll.
 - Effects: vy −20/−30 and damp timer 50 on fish low in the tank (widget y > 270, or > 260 during an attack) that are in his claw box 15 ticks after a snap starts. No damage to anything.
 - Open: whether the Virtual Tank really leaves him motionless (step 2 skips the drift on tank 5; check against a VT run); breeder `+0x1d8` meaning; whether a flung guppy shows the splash bubbles (`Fish::Update`'s bubble branch needs vy > 0, so presumably not); the sound id behind `0x005e8c40` (assumed `SOUND_BUTTONCLICK` from its single writer) and whether the app's `+0xd8` slot throttles repeats.
-- First capture should be tank 3-5 or later with Rhubarb and guppies near the floor (an empty food supply makes guppies sink).
+- Tank 3 verified: `tank_3_rhubarb` replays 3-4 with a kind-6 alien and hungry guppies near the floor (Stinky, Niko, Rhubarb); the snap claw fling behaviour matches the original on tank 3. The fix for the kind-6 pre-fire `has_target` check (`alien.rs:324`, commit c37254e) was required — without it the alien skipped firing when all guppies already had missiles.

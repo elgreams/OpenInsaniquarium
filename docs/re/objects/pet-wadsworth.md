@@ -11,7 +11,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-9 differenc
 - Readers: `Fish::Update` @ `0x004f6970` (`0x004f69a2`), `Fish::Draw` @ `0x004e4a90`, the prey filter `0x00500ff0`, the alien-missile hit `0x004fc070` (`0x004fc8b6`)
 - Draw body `0x004f8610` case 9 → `0x004e4e40`
 
-Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, three waves, 270 sheltering ticks) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
+Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, three waves, 270 sheltering ticks) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. `tank_3_wadsworth` (`tank1_1.rs`) replays 3-1 with Stinky, Niko and Wadsworth (`tank3-1_wadsworth_01`, a Balrog wave) and confirms the sheltering/release cycle works on tank 3 with a kind-3 alien. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
 
 ## Fields used by id 9
 
@@ -126,4 +126,5 @@ Then, if **not** sheltering while a threat exists (alien, Bilaterus or missile) 
 
 - **9 app draws** on AddPet (as Itchy); then only the 21-tick re-roll. Release costs 2 bubbles on the **global** stream.
 - While count ≠ 0: every stage-0/1 guppy homes on him (±5/±4 far, ±3 near, 5-px deadzone), skips hunger and swim modes, is hidden within 8 px, and is immune to aliens and missiles everywhere.
-- Open: the `0x004e7010` both-axes test (intended "either"?); which alien kinds use `0x004e95f0`/`0x004e9470`/`0x004e8df0`; first capture should be tank 3-1 with a wave.
+- Open: the `0x004e7010` both-axes test (intended "either"?); which alien kinds use `0x004e95f0`/`0x004e9470`/`0x004e8df0`.
+- Tank 3 verified: `tank_3_wadsworth` replays 3-1 with a Balrog wave (Stinky, Niko, Wadsworth); the sheltering/release cycle, guppy homing and alien protection all match the original on tank 3.
