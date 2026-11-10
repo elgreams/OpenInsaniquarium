@@ -182,7 +182,7 @@ impl Missile {
         }
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
-        self.cel = self.heading_cel();
+        self.cel = (self.cel + 1) % 5;
         MissileStep::Keep
     }
 

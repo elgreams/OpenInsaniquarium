@@ -942,8 +942,10 @@ impl Board {
                     break;
                 }
                 if self.missiles[mi].click_redirect(x, y) {
-                    // Kind 1: redirect; clear the target fish's link.
+                    // Kind 1: redirect; clear both the target fish's link
+                    // and the missile's target field.
                     let id = self.missiles[mi].id;
+                    self.missiles[mi].target = None;
                     for f in self.guppies.iter_mut().chain(self.carnivores.iter_mut()) {
                         if f.missile == Some(id) {
                             f.missile = None;
@@ -1324,7 +1326,8 @@ impl Board {
             }
             _ => {
                 // Smoke (kind 0): `r % 3`; on 0 two `r % 5` and a puff.
-                if self.rng.next_range(3) == 0 {
+                // Suppressed during launch phase (launch > 0).
+                if self.missiles[i].launch == 0 && self.rng.next_range(3) == 0 {
                     let a = self.rng.next_range(5) as i32;
                     let b = self.rng.next_range(5) as i32;
                     let m = &self.missiles[i];
@@ -1393,8 +1396,9 @@ impl Board {
                 false
             }
             _ => {
-                // Smoke trail (same as kind 0).
-                if self.rng.next_range(3) == 0 {
+                // Smoke trail (same as kind 0); suppressed during launch
+                // phase (launch > 0) per capture evidence (tank3-4 tick 2208).
+                if self.missiles[i].launch == 0 && self.rng.next_range(3) == 0 {
                     let a = self.rng.next_range(5) as i32;
                     let b = self.rng.next_range(5) as i32;
                     let m = &self.missiles[i];
@@ -1486,11 +1490,12 @@ impl Board {
 
     /// Kind 6's volley (`alien-kind6.md#32`): up to 2 kind-1 missiles,
     /// each at the farthest eligible fish; sound `0x143` once.
-    fn fire_volley_k1(&mut self, a: usize, point: (i32, i32)) -> bool {
+    fn fire_volley_k1(&mut self, a: usize, points: [(i32, i32); 3]) -> bool {
         let (acx, acy) = (self.aliens[a].widget_x.wrapping_add(80), self.aliens[a].widget_y.wrapping_add(80));
-        let (x, y) = point;
         let mut fired = false;
+        let mut slot = 0;
         for _ in 0..2 {
+            let (x, y) = points[slot];
             let sheltered = self.shelter.is_some();
             let mut best = 0;
             let mut pick: Option<(bool, usize)> = None;
@@ -1521,7 +1526,8 @@ impl Board {
             let Some((c, j)) = pick else { break };
             let id = self.next_missile_id;
             self.next_missile_id += 1;
-            let m = crate::missile::Missile::new_missile_k1(x, y, id, &mut self.global_rng);
+            let mut m = crate::missile::Missile::new_missile_k1(x, y, id, &mut self.global_rng);
+            m.target = Some(0); // original stores fish ptr; we just need non-None for snapshot
             self.missiles.push(m);
             if c {
                 self.carnivores[j].missile = Some(id);
@@ -1532,6 +1538,7 @@ impl Board {
                 self.play(0x143, Sound::Unleash);
             }
             fired = true;
+            slot += 1;
         }
         fired
     }
@@ -2895,7 +2902,7 @@ impl Board {
             }
             if let Some(points) = out.volley {
                 let fired = if self.aliens[i].kind == 6 {
-                    self.fire_volley_k1(i, points[0])
+                    self.fire_volley_k1(i, points)
                 } else {
                     self.fire_volley(i, points)
                 };

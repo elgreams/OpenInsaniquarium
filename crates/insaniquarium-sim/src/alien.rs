@@ -294,12 +294,12 @@ impl Alien {
                         (ix.wrapping_add(a.wrapping_add(s * 2)), iy.wrapping_sub(25)),
                     ]);
                 } else {
-                    // Kind 6: up to 2 missiles from a single facing-dependent
-                    // position (alien-kind6.md#32). The third slot is unused;
-                    // fire_volley_k1 reads only the first entry.
-                    let ox = if self.vx >= 0.0 { 70 } else { 10 };
-                    let p = (ix.wrapping_add(ox), iy.wrapping_sub(24));
-                    out.volley = Some([p, p, p]);
+                    // Kind 6: up to 2 missiles from two positions with
+                    // different y offsets (alien-kind6.md#32).
+                    let ox = if self.vx >= 0.0 { 60 } else { 20 };
+                    let p0 = (ix.wrapping_add(ox), iy.wrapping_sub(24));
+                    let p1 = (ix.wrapping_add(ox), iy.wrapping_sub(16));
+                    out.volley = Some([p0, p1, p0]);
                 }
             }
         }
@@ -542,7 +542,7 @@ impl Alien {
     pub fn finish_volley(&mut self, fired: bool, rng: &mut MtRand) {
         self.fire_timer = 0;
         self.fire_interval = rng.next_range(50) as i32 + 150;
-        if fired {
+        if fired && self.fire_anim == 0 {
             self.fire_anim = 10;
         }
         self.animate();
@@ -605,33 +605,41 @@ impl Alien {
                 self.fire_anim -= 1;
                 if self.fire_anim > 0 {
                     self.cel = ((39 - self.fire_anim) / 2) % 10;
-                    return;
+                } else {
+                    // fire_anim reached 0: restart the stroke.
+                    self.anim = 0;
                 }
-                // fire_anim reached 0: restart the stroke.
-                self.anim = 0;
             }
-            // Kind-6 stroke: runs anim from 0 upward with vx deltas.
-            // The stroke is 59 ticks (a=1..59). When anim > 58, the
-            // stroke is done: start the slow loop (fire_anim = 39).
-            if self.anim > 58 {
-                let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-                self.vx += dir * 0.55;
-                self.fire_anim = 39;
-                self.cel = 0;
-                return;
+            // Kind-6 stroke (only when not in slow loop).
+            // Runs anim from 0 upward with vx deltas over 59 ticks
+            // (a=1..59). When anim > 58 (checked before the increment),
+            // the stroke is done: start the slow loop (fire_anim = 39).
+            if self.fire_anim == 0 {
+                if self.anim > 58 {
+                    let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
+                    self.vx += dir * 0.55;
+                    self.fire_anim = 39;
+                    self.cel = 0;
+                } else {
+                    self.anim += 1;
+                    let a = self.anim;
+                    let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
+                    let delta =
+                        if a == 1 || (9..=24).contains(&a) || (49..=59).contains(&a) {
+                            dir * 0.55
+                        } else if (2..=4).contains(&a)
+                            || a == 6
+                            || (33..=40).contains(&a)
+                            || a == 48
+                        {
+                            -dir * 0.80
+                        } else {
+                            0.0
+                        };
+                    self.vx += delta;
+                    self.cel = a / 8;
+                }
             }
-            self.anim += 1;
-            let a = self.anim;
-            let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-            let delta = if a == 1 || (9..=24).contains(&a) || (49..=58).contains(&a) {
-                dir * 0.55
-            } else if (2..=4).contains(&a) || a == 6 || (33..=40).contains(&a) || a == 48 {
-                -dir * 0.80
-            } else {
-                0.0
-            };
-            self.vx += delta;
-            self.cel = a / 8;
         } else if matches!(self.kind, 5 | 7) || (-1.6..=1.6).contains(&self.vx) {
             self.anim += 1;
             if self.anim > 19 {

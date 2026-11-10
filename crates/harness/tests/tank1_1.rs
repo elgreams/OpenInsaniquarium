@@ -1212,6 +1212,8 @@ fn needs_global(name: &str) -> bool {
         || name.contains("stanley")
         || name.starts_with("tank2-4")
         || name.starts_with("tank2-5")
+        || name.starts_with("tank3-4")
+        || name.starts_with("tank3-5")
 }
 
 fn captured(name: &str) -> bool {
