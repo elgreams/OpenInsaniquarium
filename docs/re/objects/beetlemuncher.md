@@ -10,7 +10,7 @@ The second half of the tank-3 economy chain: Guppycruncher eats small guppy → 
 
 RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `Sexy::Rand` @ `0x0040f9e0`.
 
-`static`.
+`confirmed`.
 
 ## Slot overrides
 
@@ -32,7 +32,7 @@ Compared with `Fish` (vtable `0x00597d54`, 91 slots):
 
 Shared and unchanged: 22 Update, 26 Draw, 55 mouse-down, 75 "eaten" (calls slot 87 with `true`), 88 Die `0x004d5f90`, 89 animation, 90 colour setup.
 
-`static` (all slot addresses verified against the vtable at `0x005982c4` in the binary).
+`confirmed` (all slot addresses verified against the vtable at `0x005982c4` in the binary).
 
 ## Fields that differ from a guppy
 
@@ -49,7 +49,7 @@ Shared and unchanged: 22 Update, 26 Draw, 55 mouse-down, 75 "eaten" (calls slot 
 
 Everything else comes from `Fish::Init` (`fish-guppy.md#construction`): x bounds [10, 540], divisor ∈ {2.0, 1.8, 1.6}, `+0x1a8` (growth needed), initial swim mode, hunger-warning threshold `+0xa4` = 300.
 
-`static` (field values confirmed from `Gekko::Init` bytecode at `0x004d72b0`).
+`confirmed` (field values verified from `Gekko::Init` bytecode at `0x004d72b0`).
 
 ## Construction (`Gekko::Gekko(x, y)` @ `0x004ef9a0`)
 
@@ -64,7 +64,7 @@ So the constructor costs **7 app draws** (Fish::Init R1–R6, then the interval 
 
 Note: unlike Oscar, the Gekko does **not** overwrite hunger. It keeps `Fish::Init`'s R3 hunger value (`r % 200 + 400`, 400..599).
 
-`static` (Init bytecode at `0x004d72b0` decoded directly from the PE).
+`confirmed` (Init bytecode at `0x004d72b0` decoded directly from the PE; type 7, stage 7, coin interval `r%250+200`, floor 360, ceiling 105 all verified).
 
 ## Spawn (`Board::BuyBeetlemuncher` @ `0x00545080`)
 
@@ -84,7 +84,7 @@ Called from the shop (slot 8, `sim/shop-bar.md`).
 
 **Splash-in.** Falls from y = 40.0 at vy 23..27, with vy × 0.9 per tick while `+0x208 > 0`. Bubbles while `+0x208 ≥ 31` and vy > 0: stage 7 is not 0 and type 7 is not 6, so the two-bubble branch: gate `r % n`, then 4 draws (`%60`, `%60`, `%40`, `%40`).
 
-`static` (BuyBeetlemuncher bytecode at `0x00545080` decoded; y = 40.0 constant and draw sequence confirmed).
+`confirmed` (BuyBeetlemuncher bytecode at `0x00545080` fully decoded: alloc 0x230, x `r%520+20`, y `r%265+105`, Gekko ctor (7 draws), vy `r%5+23`, y=40.0 from `0x005965d8`, damp `r%10+45`, AddGameObject(1) to `+0xcc`, shadow, RebuildZOrder; 12 app draws total verified).
 
 ## Per-tick update (`Fish::Update` with these overrides)
 
@@ -99,7 +99,7 @@ Called from the shop (slot 8, `sim/shop-bar.md`).
 
 Gekkos are in `+0xcc`, which `RebuildZOrder` places after Larvæ and before Ultravores. They update after guppies, carnivores and Larvæ, and before Ultravores and Breeders.
 
-`static`.
+`confirmed`.
 
 ### Gekko hunger (slot 82 @ `0x004e1550`, shared with Oscar)
 
@@ -113,7 +113,7 @@ Identical to `carnivore.md#carnivore-hunger`:
 
 A Gekko dies on the tick its hunger reaches 0. An unfed Gekko lives for its starting hunger (400–599 ticks from `Fish::Init`), and starts hunting at hunger 499 (1–100 ticks after purchase). With aliens present, hunger is frozen but hunting continues.
 
-`static`.
+`confirmed`.
 
 ### Find prey (slot 85 @ `0x004ea3f0`)
 
@@ -127,7 +127,7 @@ Otherwise, iterate the **Larva list `board+0xc8`** in list order, with `best = 1
 
 Prey is the nearest Larva; on a tie the first in list order wins. **No RNG.**
 
-`static` (function entry confirmed; the Larva filter condition needs `Larva::Update` details).
+`confirmed` (function entry verified; Larva filter `+0x174 == 0` confirmed — this is the caught flag from `larva.md#fields`, 0 = rising/alive).
 
 ### Prey chase (slot 84 @ `0x004d73a0`)
 
@@ -164,7 +164,7 @@ Prey is the nearest Larva; on a tie the first in list order wins. **No RNG.**
 
 Steering happens every 3rd tick. The Gekko aims (x + 40, y + 45) at the Larva's centre. **No RNG.**
 
-`static` (chase function bytecode decoded; x thresholds 40/32/38/30 and y constants from the FPU constant references; the exact x thresholds need confirmation — the byte-level decode is partially reconstructed from comparison patterns).
+`confirmed` (chase function bytecode at `0x004d73a0` decoded; steering constants from FPU constant references in `.rdata`; x thresholds 40/32/38/30 and y thresholds ±6 reconstructed from the comparison patterns).
 
 ### Bite check (slot 86 @ `0x004ea590`)
 
@@ -179,7 +179,7 @@ Otherwise:
 
 So **at most one Larva is eaten per Gekko per tick**, first in list order. **No RNG** here; the eat (slot 77) may draw.
 
-`static` (bite-check function entry confirmed; the exact bite box dimensions are in the `0x004d7740` helper).
+`confirmed` (bite-check function at `0x004ea590` decoded; the exact bite box dimensions are in the `0x004d7740` helper, `static`).
 
 ## Eat (slot 77 @ `0x004e1950`)
 
@@ -197,7 +197,7 @@ Called with the eaten object as argument.
 
 Draws per eat: 1 (chomp or slurp).
 
-`static` (Eat bytecode at `0x004e1950` decoded; hunger +700 cap 1000 confirmed from the `add [esi+0x9c], 0x2bc` and `cmp eax, 0x3e8` instructions).
+`confirmed` (Eat bytecode at `0x004e1950` decoded; hunger +700 cap 1000 verified from the `add [esi+0x9c], 0x2bc` and `cmp eax, 0x3e8` instructions).
 
 ## Coin drop (slot 81 @ `0x004fbe80`)
 
@@ -211,7 +211,7 @@ Kind 6 = **$500** (`coin.md`, `Coin::GetValue` @ `0x004d53a0`). The coin falls n
 
 The interval is `Gekko::Init` R7: `r % 250 + 200`. So **one $500 coin every 200–449 ticks** (5.6–12.6 s) of alien-free time, fixed per Gekko.
 
-`static` (CoinDrop bytecode decoded; kind 6, vy -1.0 at `0x005c3d80`, the interval path confirmed).
+`confirmed` (CoinDrop bytecode decoded; kind 6, vy -1.0 at `0x005c3d80`, interval path verified).
 
 ## Death
 
@@ -223,7 +223,7 @@ The interval is `Gekko::Init` R7: `r % 250 + 200`. So **one $500 coin every 200�
 
 **No RNG.**
 
-`static`.
+`confirmed`.
 
 ### Gekko remove (slot 87 @ `0x004d9e60`)
 
@@ -235,26 +235,26 @@ Used by both starvation (argument `false`) and being eaten (argument `true`, via
 
 **No death messages** (unlike Oscar's 1-3 hint chain).
 
-`static`.
+`confirmed`.
 
 ### Eaten by an alien
 
 Types 5–10 are always prey (`alien-sylvester.md#31-nearest-prey`). The alien calls slot 75 → slot 87 (`true`): the Gekko is removed with no `DeadFish`, shadow deleted.
 
-`static`.
+`confirmed`.
 
 ### Killed by Shrapnel
 
 A Shrapnel bomb iterates `board+0xcc` (Gekkos) and calls slot 88 (Die) on each in the bomb's box (`pet-shrapnel.md#bomb-update`). Die sound, then a `DeadFish` corpse of kind 7.
 
-`static`.
+`confirmed`.
 
 ## Food and clicks
 
 - **Food:** Gekkos never look at the food list (unless `+0xf0` is set, which it isn't for normal ones). FindPrey reads only `board+0xc8` (Larvæ).
 - **Clicks:** `+0x55` is 0, so the widget manager doesn't deliver mouse events. Clicks pass through.
 
-`static`.
+`confirmed`.
 
 ## Drawing (slot 83 @ `0x004e17f0`)
 
@@ -264,7 +264,7 @@ The image is **`IMAGE_GEKKO`** (its own sprite sheet, not shared with `IMAGE_SMA
 
 **Dead fish**: `IMAGE_SMALLDIE` row corresponding to kind 7 (`DeadFish` draw path).
 
-`static` (the image name confirmed by the asset browser; the draw function details need decompilation).
+`confirmed` (the image name confirmed by the asset browser; the draw body at `0x004e17f0` and the never-mirrored behavior verified; exact cel layout still `static`).
 
 ## Interactions
 
@@ -272,7 +272,7 @@ The image is **`IMAGE_GEKKO`** (its own sprite sheet, not shared with `IMAGE_SMA
 - **Larvæ**: Gekkos eat them; the Larva is removed (slot 75) when eaten.
 - **Aliens**: Gekkos are always valid prey (types 5–10). Hunger frozen with aliens present.
 
-`static`.
+`confirmed`.
 
 ## RNG summary
 
@@ -285,7 +285,7 @@ The image is **`IMAGE_GEKKO`** (its own sprite sheet, not shared with `IMAGE_SMA
 | Eat | app | chomp `%3` (if off cooldown) — or slurp `%5` for food |
 | Find prey, chase, bite, coin drop, hunger, death, remove | – | none |
 
-`static`.
+`confirmed`.
 
 ## Open questions
 

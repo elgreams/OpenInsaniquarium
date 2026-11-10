@@ -49,16 +49,19 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 - SetupShop tank-3 branch: wave kinds, egg prices, re-roll formulas, initial countdown all recorded above.
 - OnStageUp tank-3 branch: reveals slots 2, 3, 7 with pop animation, no messages.
 
-**Still TODO** (split into `t3-ghidra-b-specs`):
+**Economy chain done** (`confirmed`, `t3-ghidra-b-ecosystem`):
 
-- **Grubber** (`0x00545430` spawn, `Grubber` ctor, `Grubber::Update`): what it eats, how it drops Larvae, its ctor draws, hunger, coin-like economy.
-- **Gekko** (`0x00545080` spawn, `Gekko` ctor, `Gekko::Update`, slot 82 `0x004e1550`): what it eats (Larvae), how it drops coins, its ctor draws.
-- **Larva** (`Larva` ctor at the `0x1d` code path, `Larva::Update`): drop behaviour, lifetime, floor crawl, how the Beetlemuncher catches it.
+- **Grubber** (`guppycruncher.md`): spawn, ctor (5 draws), Init fields, behaviour (colour fade, hunger countdown, starving check at ≤ 0, chase at < 900), Larva drop timer. All `confirmed`.
+- **Gekko** (`beetlemuncher.md`): spawn (12 draws), ctor, Init fields (type 7, stage 7, coin interval), Fish::Update overrides (hunger, prey chase, Larva bite, coin drop kind 6). All `confirmed`.
+- **Larva** (`larva.md`): ctor (1 phantom draw), AddBeetle (no shadow/splash), Update (rise at 1.0/tick, removal at y < 64, click sets caught flag → $150 on exit, mouse-visible at y < 320), Draw (10 cels, 5 cols). All `confirmed`.
+
+**Still TODO** (aliens):
+
 - **Alien kind 6 firing** (`0x004fdd34`): `PickTarget(0)`/`(1)` meaning, the launch positions, the volley size, the interval.
 - **Kind-1 missile** (`Missle::Update` kind-1 branch, click at `0x004d82a0` kind-1 branch): redirect mechanics, out-of-bounds rule, Wadsworth hit check.
 - **Alien kind 7** (`Alien::Update` kind-7 branches, `+0x204` logic): what it does, its chase/wander pattern, its special action timer `+0x1ac`.
 
-Write specs: `objects/guppycruncher.md`, `objects/beetlemuncher.md`, `objects/larva.md`, `objects/alien-kind6.md`, `objects/alien-kind7.md`. All initially `static`.
+Write specs: `objects/alien-kind6.md` (expand from existing `static` draft), `objects/alien-kind7.md`. Existing economy specs (`guppycruncher.md`, `beetlemuncher.md`, `larva.md`) are `confirmed`.
 
 ### 2. 3-1: Guppycruncher economy
 

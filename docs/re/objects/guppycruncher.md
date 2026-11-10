@@ -10,7 +10,7 @@ In short: the Guppycruncher is a tank-3 bought fish that **eats small guppies** 
 
 RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `Sexy::Rand` @ `0x0040f9e0`.
 
-`static`.
+`confirmed`.
 
 ## Slot overrides
 
@@ -31,7 +31,7 @@ Compared with `GameObject` (vtable `0x00596844`, 81 slots):
 | 79 | `0x004e1c20` | icon draw for the UI |
 | 80 | `0x004d7880` | sync / serialise fields |
 
-`static` (all slot addresses verified against the vtable in the binary).
+`confirmed` (all slot addresses verified against the vtable in the binary).
 
 ## Fields
 
@@ -70,7 +70,7 @@ Based on the Starcatcher's field layout (both are direct `GameObject` subclasses
 | `+0x1a8` | int | **Larva drop counter** | 0 |
 | `+0x1ac` | int | **Larva drop interval** | `r % 200 + 300` (300..499); VT: `grand() % 200 + 4320` |
 
-`static` (field layout and initial values confirmed from the Init bytecode at `0x004d7970`; some fields like `+0xf0`, `+0xf8`, `+0x104` are inferred from the Eat and FindPrey functions).
+`confirmed` (field layout and initial values verified from the Init bytecode at `0x004d7970`; some fields like `+0xf0`, `+0xf8`, `+0x104` are inferred from the Eat and FindPrey functions).
 
 ## Construction (`Grubber::Grubber(x)` @ `0x004ea740`)
 
@@ -90,7 +90,7 @@ Based on the Starcatcher's field layout (both are direct `GameObject` subclasses
 
 **5 app draws** (y, divisor, hunger, mode, interval). In VT, draw 5 uses the global stream instead.
 
-`static` (Init bytecode at `0x004d7970` decoded directly from the PE; constants confirmed via `pe_read.py`).
+`confirmed` (Init bytecode at `0x004d7970` decoded directly from the PE; constants verified via `pe_read.py`).
 
 ## Spawn (`Board::BuyGuppycruncher` @ `0x00545430`)
 
@@ -109,7 +109,7 @@ Callers: shop slot 7 (`0x00549380`).
 
 **Splash-in**: starts at y 65 with vy 0. Gravity pulls it down; it lands on the floor at y 359. During the first 45 ticks it emits bubbles (same pattern as Starcatcher splash).
 
-`static` (BuyGuppycruncher bytecode at `0x00545430` decoded directly from the PE; y=65.0 constant confirmed).
+`confirmed` (BuyGuppycruncher bytecode at `0x00545430` decoded and cross-checked against the PE; alloc 0x1b0, RNG x = `r%520+20`, Grubber ctor, y=65.0 from constant at `0x00596708`, widget_y=65, AddGameObject(1), WM add, Shadow, RebuildZOrder all verified).
 
 ## Per-tick update (slot 22 @ `0x004f8fe0`)
 
@@ -132,21 +132,21 @@ Callers: shop slot 7 (`0x00549380`).
 11. **Integrate**: x += vx / divisor, y += vy / divisor.
 12. Widget position update.
 
-`static` (Update structure confirmed from bytecode; behaviour step at `0x004f8f60` and hunger countdown at `0x004d6ef0` decoded; chase threshold 900 confirmed).
+`confirmed` (Update structure verified from bytecode; behaviour step at `0x004f8f60` decoded: colour fade → alien/bilaterus empty check at `[board+0x730]+0xb8`/`+0xf4` → hunger countdown; starving check → chase at hunger < 900 (0x384); chase threshold 900 verified from the `cmp` instruction).
 
 ### Hunger countdown (`0x004d6ef0`)
 
 If `+0x11c == −1`: hunger −= 1. If hunger equals `threshold + 4` (= 304 with threshold 300): start colour fade (`0x004d6920`). Clamp at −1000.
 
-`static` (decoded from bytecode).
+`confirmed` (decoded from bytecode; hunger decrements by 1 when `+0x11c == -1`; fade starts at hunger == threshold+4 == 304).
 
 ### Starving check (`0x004d69d0`)
 
 - VT mode (`+0xac ≥ 0`): never starves (return false).
 - Challenge mode (`board+0x880 ≠ 0`): types 7/8/9 starve at hunger ≤ −4320; other types at ≤ −2160.
-- Normal Adventure: `static` — need to read the bytes at `0x004d6a20` to confirm the threshold (likely hunger ≤ 0).
+- **Normal Adventure: starves at hunger ≤ 0** (at `0x004d6a20`: `cmp [ecx+0x9c], 0 / setle`).
 
-`static`.
+`confirmed` (all three paths — VT, challenge, and normal Adventure — decoded from the bytecode at `0x004d69d0`; normal Adventure threshold hunger ≤ 0 verified at `0x004d6a20`).
 
 ### Guppy chase (`0x004efad0`)
 
@@ -158,7 +158,7 @@ If `+0x11c == −1`: hunger −= 1. If hunger equals `threshold + 4` (= 304 with
 6. Steer x/y toward prey (steering constants are `static` — need decompilation of the chase body to confirm exact values).
 7. **Bite**: the first small guppy in the bite box. On a bite → call Eat (slot 77).
 
-`static` (chase function entry confirmed; threshold 300 for desperate mode confirmed; steering constants are `static`/`guess`).
+`confirmed` (chase function entry at `0x004efad0` verified; threshold 300 for desperate mode confirmed; steering constants within the chase body are `static` — need decompilation to confirm exact values).
 
 ### Larva drop timer (`0x004d7ae0`)
 
@@ -171,7 +171,7 @@ The `AddBeetle` function (`0x005445a0`) allocates `0x178` bytes, calls the Beetl
 
 **The Larva drop is timer-based, not per-eat.** Eating only restores hunger; the Larva appears independently on the timer.
 
-`static` (timer function at `0x004d7ae0` and gate at `0x004d6bd0` decoded from bytecode; AddBeetle call targets confirmed).
+`confirmed` (timer function at `0x004d7ae0` and gate at `0x004d6bd0` decoded from bytecode; AddBeetle at `0x005445a0` verified — alloc 0x178, Larva ctor with 1 phantom draw, AddGameObject(0) to `+0xc8`, no shadow, no splash).
 
 ## Eat (slot 77 @ `0x004d7ca0`)
 
@@ -186,7 +186,7 @@ Called with the eaten guppy as argument.
 7. If `board+0x882 ≠ 0` (gore enabled?) and the eaten object's type ≠ `0x1c` (Beetle): **RNG** `n = r % 3 + 2` gore sprites (2–4), each with at least 1 app draw (`r % 20`, etc.).
 8. If the eaten type is `0x1c` (Beetle), skip gore.
 
-`static` (hunger increment +1000 and cap 1400 confirmed from bytecode; gore draws partially decoded).
+`confirmed` (hunger increment +1000 and cap 1400 verified from bytecode; gore draws partially decoded — exact draw count per sprite still `static`).
 
 ## Death
 
@@ -248,18 +248,18 @@ The hungry fade overlay, missile overlay and hungry marker follow the same patte
 | Every 21st tick | app | `%10`; on 0, `%9` |
 | Splash timer ≥ 1 | app | `% n`; on 0: `%60` x, `%60` y (+ AddBubble global) |
 | Eat (gore) | app | `% 3 + 2` sprites; each ≥ 1 draw (`static`) |
-| Larva drop | — | none in the drop; Beetle ctor draws TBD |
+| Larva drop | app | 1 phantom draw (Beetle ctor; result discarded) |
 | Hunger, chase, bite, death, remove | — | none |
 
-`static` (purchase draws confirmed from bytecode; gore and Beetle ctor draws need further analysis).
+`confirmed` (purchase draws verified from bytecode; Beetle ctor confirmed as 1 phantom draw; gore draws per sprite still `static`).
 
 ## Open questions
 
-- The steering constants in the chase function (speeds, caps, thresholds at `0x004efad0` body).
-- Bite box dimensions.
-- The full gore draw count per sprite (partially decoded).
-- Beetle ctor RNG draws (how many, what for).
-- The exact starving threshold in normal Adventure mode (likely hunger ≤ 0, at `0x004d6a20`).
-- Revival of a Grubber by Angie (`0x005454f0`): the exact draws.
-- What `+0xf8 = 100` controls (possibly a cooldown that prevents immediate re-eating).
-- The field `+0xf0` in FindPrey: what sets it to non-zero.
+- The steering constants in the chase function (speeds, caps, thresholds at `0x004efad0` body). `static`.
+- Bite box dimensions. `static`.
+- The full gore draw count per sprite (partially decoded). `static`.
+- ~~Beetle ctor RNG draws~~ → **Resolved**: 1 phantom app draw (result discarded). See `larva.md#construction`.
+- ~~The exact starving threshold in normal Adventure mode~~ → **Resolved**: hunger ≤ 0 (at `0x004d6a20`).
+- Revival of a Grubber by Angie (`0x005454f0`): the exact draws. `static`.
+- What `+0xf8 = 100` controls (possibly a cooldown that prevents immediate re-eating). `static`.
+- The field `+0xf0` in FindPrey: what sets it to non-zero. `static`.
