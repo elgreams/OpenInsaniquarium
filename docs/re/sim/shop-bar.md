@@ -107,9 +107,47 @@ Tank 2 (`0x00541200`, the tank-2 branch). 2-1 is `traced` (`tank_2_1`: `tank2-1_
 | 2-4 | 7500 | 5 | – | – |
 | 2-5 | 10000 | `(r & 1) \| 4`: 4 or 5 | – | 1 app draw |
 
-Other tanks, for reference:
-- Tank 3: slots 0, 2, 3, 7 ($750), 8 ($2000), 10 ($2000), 11.
-- Tank 4: slots 1 ($200), 2, 3, 4, 9 ($10000), 10 ($5000), 11.
+Tank 3 (`0x00541200`, the tank-3 branch). All values `static` (read from cached Ghidra decompilation).
+
+| Slot | Pos | Price |
+|---|---|---|
+| 0 guppy | 0 | 100 |
+| 2 food quality | 1 | 200 |
+| 3 food quantity | 2 | 300 |
+| 7 Guppycruncher | 3 | 750 |
+| 8 Beetlemuncher | 4 | 2000 |
+| 10 weapon | 5 | 2000 |
+| 11 egg piece | 6 | per level |
+
+| Level | Egg price | Wave kind `+0x2bc` | Slots set back to −1 | RNG |
+|---|---|---|---|---|
+| 3-1 | 1000 | 3 | 8, 10 | – |
+| 3-2 | 5000 | `(r & 1) \| 4`: 4 or 5 | – | 1 app draw |
+| 3-3 | 7500 | 7 | – | – |
+| 3-4 | 10000 | 6 | – | – |
+| 3-5 | 15000 | `(r & 1) \| 6`: 6 or 7 | – | 1 app draw |
+
+Initial countdown `+0x2c0` is not overridden for tank 3: stays at the InitLevel default of **3000**. Backdrop index: `FUN_00538a10(4)`.
+
+Tank 4 (`0x00541200`, the tank-4 branch). `static`.
+
+| Slot | Pos | Price |
+|---|---|---|
+| 1 breeder | 0 | 200 |
+| 2 food quality | 1 | 200 |
+| 3 food quantity | 2 | 300 |
+| 4 carnivore | 3 | 1000 |
+| 9 ultravore | 4 | 10000 |
+| 10 weapon | 5 | 5000 |
+| 11 egg piece | 6 | per level |
+
+| Level | Egg price | Wave kind `+0x2bc` | Slots set back to −1 | RNG |
+|---|---|---|---|---|
+| 4-1 | 3000 | 3 | 9, 10 | – |
+| 4-2 | 25000 | 8 | – | – |
+| 4-3 | 50000 | 4 | – | – |
+| 4-4 | 75000 | 8 | – | – |
+| 4-5 | 99999 | 8 | – | – |
 
 RNG in `SetupShop`:
 - **Tank 1 makes no RNG draws.**
@@ -138,7 +176,7 @@ Triggers on tank 1-1 come from `Fish::OnStageUp` @ `0x004f1840`. It is called fr
 - **Stage becomes 2** (medium → large):
   - In mode 1, reveal slot 11.
   - On 1-1, if `+0x3af` (slot 11 revealed) is 0: reveal slot 11, set `+0x4b2 = 0` and `+0x4d8 = 1` ("buy egg piece" arrow). In tutorial 1-1, if no message is showing, also show "Buy 3 egg pieces to complete level!".
-  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4. **Tank 2:** 2, 3 and 5 (star potion), then **11 on 2-1** or **6 (Starcatcher) on 2-2..2-5** (2-1 `traced` by `tank_2_1`); tanks 3 and 4: three slots each (not followed).
+  - Other levels reveal their own slots here instead. For example, 1-2 reveals 2 with "Upgrade Food Quality to make food more nourishing!"; tank 1 levels 3+ reveal 2, 3 and 4. **Tank 2:** 2, 3 and 5 (star potion), then **11 on 2-1** or **6 (Starcatcher) on 2-2..2-5** (2-1 `traced` by `tank_2_1`). **Tank 3:** 2, 3 and **7** (guppycruncher), no messages (`static`, from assembly at `0x4f1afe`). **Tank 4:** 2, 3 and **4** (carnivore), no messages (`static`, from assembly at `0x4f1b48`).
 
 So on 1-1, the guppy button appears when the first guppy reaches medium, and the egg button appears when the first guppy reaches large. **No reveal path uses RNG.**
 
