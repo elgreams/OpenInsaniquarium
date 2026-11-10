@@ -599,12 +599,14 @@ impl Alien {
             }
         } else if self.kind == 6 {
             // Kind-6 slow loop: fire_anim counts down (39→0 after a
-            // stroke cycle, or 10→0 after a volley); cel via
-            // (39 − fa) / 2 % 10.  Only runs when turn == 0.
+            // stroke cycle, or 10→0 after a volley).  Cel via a
+            // triangle-wave (ping-pong) over 0..9 keyed on k=(39−fa).
+            // For k<20: cel=k/2 (0→9).  For k≥20: cel=(38−k)/2 (9→0).
             if self.fire_anim > 0 {
                 self.fire_anim -= 1;
                 if self.fire_anim > 0 {
-                    self.cel = ((39 - self.fire_anim) / 2) % 10;
+                    let k = (39 - self.fire_anim) as i32;
+                    self.cel = if k < 20 { k / 2 } else { (38 - k) / 2 };
                 } else {
                     // fire_anim reached 0: restart the stroke.
                     self.anim = 0;

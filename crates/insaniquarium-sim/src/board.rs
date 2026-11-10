@@ -1396,16 +1396,12 @@ impl Board {
                 false
             }
             _ => {
-                // Smoke trail (same as kind 0); suppressed during launch
-                // phase (launch > 0) per capture evidence (tank3-4 tick 2208).
-                if self.missiles[i].launch == 0 && self.rng.next_range(3) == 0 {
-                    let a = self.rng.next_range(5) as i32;
-                    let b = self.rng.next_range(5) as i32;
-                    let m = &self.missiles[i];
-                    let x = m.widget_x - 20 * (m.vx as i32) + 17 + a;
-                    let y = m.widget_y - 16 * (m.vy as i32) + 17 + b;
-                    self.add_effect_shot(x, y, 8);
-                }
+                // Kind-1 missiles have NO smoke trail: the per-tick draw
+                // counts at launch+0 match the baseline (no extra draws).
+                // Confirmed by tank3-4 capture: at tick 2222 (launch=0),
+                // expected mti advances by the baseline 3 (laser hit cycle),
+                // not 3 + smoke.  The `static` claim in alien-kind6.md §5.2
+                // was wrong.
                 true
             }
         }
