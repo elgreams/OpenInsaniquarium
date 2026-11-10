@@ -321,7 +321,7 @@ impl Alien {
                 if self.fire_timer == self.fire_interval - 15 {
                     if self.turn == 0 {
                         let has_target = (0..guppies.len())
-                            .any(|i| hidden.get(i) != Some(&true));
+                            .any(|i| hidden.get(i) != Some(&true) && guppies[i].missile.is_none());
                         if has_target {
                             self.fire_anim = 40;
                         } else {
