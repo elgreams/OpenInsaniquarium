@@ -204,6 +204,11 @@ impl Alien {
         } else if matches!(self.kind, 5 | 6) {
             // The Destructor (5) and kind 6 never chase or eat
             // (alien-kind5.md#3, alien-kind6.md#3).
+            // Kind 6: during the slow loop (fire_anim > 0), vx is zeroed
+            // before wander so the alien decelerates to tvx + 0.1 in one tick.
+            if self.kind == 6 && self.fire_anim > 0 {
+                self.vx = 0.0;
+            }
             self.wander(rng);
         } else if self.kind == 7 && self.invulnerable {
             // Kind 7 invulnerable: wander instead of chase.
@@ -606,19 +611,21 @@ impl Alien {
                 self.anim = 0;
             }
             // Kind-6 stroke: runs anim from 0 upward with vx deltas.
-            // When anim > 43, the stroke is done: start the slow loop
-            // (fire_anim = 39) without incrementing anim further.
-            if self.anim > 43 {
+            // The stroke is 59 ticks (a=1..59). When anim > 58, the
+            // stroke is done: start the slow loop (fire_anim = 39).
+            if self.anim > 58 {
+                let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
+                self.vx += dir * 0.55;
                 self.fire_anim = 39;
-                self.cel = self.anim / 8;
+                self.cel = 0;
                 return;
             }
             self.anim += 1;
             let a = self.anim;
             let dir = if self.vx >= 0.0 { 1.0_f64 } else { -1.0 };
-            let delta = if a == 1 || (9..=24).contains(&a) {
+            let delta = if a == 1 || (9..=24).contains(&a) || (49..=58).contains(&a) {
                 dir * 0.55
-            } else if (2..=4).contains(&a) || (33..=39).contains(&a) || a == 44 {
+            } else if (2..=4).contains(&a) || a == 6 || (33..=40).contains(&a) || a == 48 {
                 -dir * 0.80
             } else {
                 0.0
