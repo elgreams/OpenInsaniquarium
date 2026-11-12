@@ -1,12 +1,12 @@
 # Alien kind 6 and kind-1 missiles (`Sexy::Alien` kind 6, `Sexy::Missle` kind 1)
 
-Status: `partial (traced)`. Core behaviour (spawn, update, firing, animation, missile update, death) traced via `tank_3_4`. Drawing/sound sections remain `static`. Addresses are inner-PE VAs. Offsets are raw `this`-relative.
+Status: `partial (traced)`. Core behaviour (spawn, update, firing, animation, missile update, death) traced via `tank_3_4`. Drawing, sound and Wadsworth hit check sections `confirmed`. Addresses are inner-PE VAs. Offsets are raw `this`-relative.
 
 Kind 6 is the new tank 3 alien. It shares the `Alien` class and most behaviour with the Destructor (kind 5, `alien-kind5.md`); **this spec only describes what differs for kind 6.** Anything not mentioned here behaves as in `alien-kind5.md`, which in turn defers to `alien-sylvester.md`. Notation is the same.
 
 In short: kind 6 is a **slow floor walker** (divisor 3.5, y = 280) that fires **kind-1 missiles** at fish. Kind-1 missiles differ from the Destructor's kind-0 missiles: a click **redirects** them (changes their heading) instead of destroying them. Once redirected, the missile flies straight, unclamped, until it leaves the tank. Stanley shoots both kinds down the same way.
 
-Confidence: most sections `traced` via `tank_3_4`; drawing/sound sections `confirmed` from Ghidra decompilation (`Alien::DrawSprite` @ `0x004dae20`, `Alien::Update` @ `0x004fd560`); Wadsworth hit check (§6.2) and click redirect (§6.4) remain `static`.
+Confidence: most sections `traced` via `tank_3_4`; drawing/sound sections `confirmed` from Ghidra decompilation (`Alien::DrawSprite` @ `0x004dae20`, `Alien::Update` @ `0x004fd560`); Wadsworth hit check (§6.2) `confirmed` by cross-referencing traced specs and the decompiled prey filter; click redirect (§6.4) remains `static`.
 
 ## 1. Wave timing
 
@@ -171,9 +171,11 @@ Same as kind 5 (`alien-kind5.md` §6.1): `PickTarget` picks the farthest eligibl
 
 ### 6.2 Hit test, kind 1
 
-`static`
+`confirmed` (cross-referenced: `alien-kind5.md` §6.2 traced, `pet-wadsworth.md` traced, prey filter `FUN_00500ff0` @ `0x00500ff0` decompiled)
 
 Same box as kind 0 (alien-kind5.md §6.2), but with the **Wadsworth shelter check** at `0x004fc8b6` (`pet-wadsworth.md`): if `0x005e89d0 ≠ 0` (Wadsworth is sheltering) and the target guppy's stage `+0x1a0 < 2`, the hit is blocked. The missile keeps flying past the fish. (Kind 0 has no such check: a sheltered guppy that was targeted before Wadsworth started is still hit by kind 0.)
+
+The shelter check on the kind-1 path mirrors the prey filter `FUN_00500ff0`, which also gates on fish type `+0x8c == 0` (guppy); for kind-1 missiles this is always true since `PickTarget` only selects guppies. The traced `alien-kind5.md` §6.2 explicitly confirms: "the check at `0x004fc8b6` … belongs to the kind-1 path" and "Kind 1 differs in … its hit path (which has the Wadsworth check)." The traced `pet-wadsworth.md` lists `0x004fc070 (0x004fc8b6)` as a reader of `DAT_005e89d0`.
 
 On a hit (not sheltered), the same as kind 0: clear `+0x98`, kill the target fish (DIE, corpse), remove the missile (§6.3).
 
@@ -282,7 +284,7 @@ Same as kind 5: PickTarget ties by heap address (sim uses list order, replay can
 - ~~**Firing interval**: confirmed `rand(50) + 150` via `tank_3_4`.~~
 - **Redirect mechanic**: assumed velocity reversal (`vx = −vx, vy = −vy`). May use click position instead — not yet individually confirmed by a recording that exercises redirect.
 - **Redirect re-clickable**: assumed only one redirect per missile. Not yet individually confirmed.
-- **Hit with Wadsworth**: assumed shelter blocks the hit (the missile keeps flying). Confirm whether the missile is removed instead.
+- ~~**Hit with Wadsworth**: confirmed via cross-referencing traced `alien-kind5.md` §6.2, traced `pet-wadsworth.md`, and decompiled prey filter `FUN_00500ff0`. Shelter blocks the hit; the missile keeps flying.~~
 - ~~**Kind-6 image global**: confirmed `DAT_005e8e58` (`IMAGE_KIND6`) from `DrawSprite`.~~
 - ~~**Sound `0x143`**: confirmed as the volley sound from the `Alien::Update` firing code.~~
 - **Sound `0x11f`**: played before EXPLODE on kind-1 removal. Identify (also used by kind `0x14` death).
