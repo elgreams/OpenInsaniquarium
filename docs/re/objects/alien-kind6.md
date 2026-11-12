@@ -6,7 +6,7 @@ Kind 6 is the new tank 3 alien. It shares the `Alien` class and most behaviour w
 
 In short: kind 6 is a **slow floor walker** (divisor 3.5, y = 280) that fires **kind-1 missiles** at fish. Kind-1 missiles differ from the Destructor's kind-0 missiles: a click **redirects** them (changes their heading) instead of destroying them. Once redirected, the missile flies straight, unclamped, until it leaves the tank. Stanley shoots both kinds down the same way.
 
-Confidence: most sections `traced` via `tank_3_4`; drawing/sound/Wadsworth sections remain `static`.
+Confidence: most sections `traced` via `tank_3_4`; drawing/sound sections `confirmed` from Ghidra decompilation (`Alien::DrawSprite` @ `0x004dae20`, `Alien::Update` @ `0x004fd560`); Wadsworth hit check (§6.2) and click redirect (§6.4) remain `static`.
 
 ## 1. Wave timing
 
@@ -67,16 +67,16 @@ Kind 6 uses a **pre-fire** animation: the fire_anim starts 15 ticks before the i
    - At `+0x1a4 == +0x1a8 − 15`: if `turn == 0` and a target exists, set `fire_anim = 40` (start the pre-fire ping-pong animation, §3.3). If turning, subtract 2 from `fire_timer` to postpone.
    - Otherwise, stop.
 2. When `+0x1a4 > +0x1a8`: `PickTarget()` (`0x004e8df0`), the same farthest-fish algorithm as kind 5 (`alien-kind5.md` §6.1). If no target, skip. Otherwise:
-   1. The launch point depends on facing (`vx ≥ 0`):
+   1. The launch points depend on facing (`vx ≥ 0`):
 
-      | Facing | Launch (x, y) |
-      |---|---|
-      | vx ≥ 0 (right) | `(ix + 70, iy − 24)` |
-      | vx < 0 (left) | `(ix + 10, iy − 24)` |
+      | Facing | Missile 1 (x, y) | Missile 2 (x, y) |
+      |---|---|---|
+      | vx ≥ 0 (right) | `(ix + 70, iy − 24)` | `(ix + 78, iy − 16)` |
+      | vx < 0 (left) | `(ix + 10, iy − 24)` | `(ix + 2, iy − 16)` |
 
-      Source: `pet-stanley.md#open-questions` (`0x004fddac`, `(wx + 10, wy − 24)`) and the mirror offset `0x46` = 70 from `tank3-plan.md`. The y-offset −24 is shared.
-   2. `AddMissile(point, target, kind 1)` (`0x00544130`, §5).
-   3. `PickTarget()` again; if found, `AddMissile(point, target, kind 1)` from the same position.
+      `confirmed` from decompilation at `0x004fdd34`: the offsets are `0x46`/`0x18` and `0x4e`/`0x10` (right), `0x0a`/`0x18` and `0x02`/`0x10` (left). The second missile fires from a slightly offset position, not from the same point.
+   2. `AddMissile(point1, target, kind 1)` (`0x00544130`, §5).
+   3. `PickTarget()` again; if found, `AddMissile(point2, target, kind 1)` from the second position.
    4. Sample **`0x143`** (`SOUND_UNLEASH`?), gap 3.
 3. Always: `+0x1a4 = 0`, **interval `+0x1a8 = rand(50) + 150`** (app; same formula as kind 5).
 4. If fired: **fire animation `+0x1ac = 10`** (the post-volley snap, distinct from the pre-fire that used 40).
@@ -207,11 +207,16 @@ After redirect, the missile:
 
 ### 7.1 Alien, kind 6
 
-`static`
+`confirmed` (from `Alien::DrawSprite` @ `0x004dae20`)
 
-- Sheet: the kind-6 image global (not yet identified; likely `IMAGE_KIND6` at an `0x005e8e..` slot). 10 × 2 layout, 160 × 160 cels, same as the Destructor's `IMAGE_DESTRUCTOR`.
-- Mirror, row, cel: same rules as kind 5. Fire flash (additive white pulse when `0 < +0x1ac < 10`) and hit flash shared.
-- Dead alien: `DeadAlien` draw maps kind 6 to the same sheet.
+- **Sheet: `IMAGE_KIND6`** (global `DAT_005e8e58`). **10 columns × 3 rows**, 160 × 160 cels.
+- **Row selection**: row 0 = normal swim; row 1 = turning (mirror by turn direction); **row 2 = fire animation** (`+0x1ac > 0`). The fire animation takes priority over turning.
+- **Turn counter**: **±20** for kind 6 (not ±10 like other kinds), from `0x004daa00`.
+- Mirror by vx as kind 1. Column = cel `+0x1c0` (0..9).
+- **Hit flash** (white additive, alpha `25 · +0x200`): same as kind 1.
+- **No fire flash**: the additive fire-flash code in `DrawSprite` checks `kind == 5` specifically (`0x004db0aa`). Kind 6 does **not** have the white fire pulse. (The earlier `static` claim was wrong.)
+- **Dead alien**: `DeadAlien` draw maps kind 6 to `IMAGE_KIND6` (`DAT_005e8e58`).
+- Warp-in scaling, shadow, health bar (Blip): as kind 1.
 
 ### 7.2 Missile, kind 1
 
@@ -221,7 +226,7 @@ Same as kind 0 (`alien-kind5.md` §7.2): `IMAGE_MISSILE`, heading cel, crosshair
 
 ### 7.3 Sounds
 
-`static`
+`confirmed` (spawn from `AddAlien` @ `0x0054589e`; volley from `Alien::Update` @ `0x004fde47`)
 
 | Event | Sample | Notes |
 |---|---|---|
@@ -265,6 +270,11 @@ Same as kind 5: PickTarget ties by heap address (sim uses list order, replay can
 - The pre-fire animation starts at `interval − 15`, not at the volley itself.
 - `kill_alien()` only removes kind-2 missiles (Stanley's balls), not kind-0/kind-1.
 
+**Corrections from Ghidra read (`t3-ghidra-c-combat`):**
+- The second missile fires from a different position than the first (§3.2 table).
+- Kind 6 does NOT have the fire flash — the `DrawSprite` check is `kind == 5` only.
+- The kind-6 sprite sheet is 10 × 3 (row 2 for the fire animation), not 10 × 2.
+
 ## Open questions
 
 - ~~**Volley size**: confirmed 2 via `tank_3_4`.~~
@@ -273,9 +283,9 @@ Same as kind 5: PickTarget ties by heap address (sim uses list order, replay can
 - **Redirect mechanic**: assumed velocity reversal (`vx = −vx, vy = −vy`). May use click position instead — not yet individually confirmed by a recording that exercises redirect.
 - **Redirect re-clickable**: assumed only one redirect per missile. Not yet individually confirmed.
 - **Hit with Wadsworth**: assumed shelter blocks the hit (the missile keeps flying). Confirm whether the missile is removed instead.
-- **Kind-6 image global**: which `IMAGE_*` constant. Likely at an `0x005e8e..` slot.
-- **Sound `0x143`**: assumed as the volley sound from `tank3-plan.md`. May be UNLEASH (used by Shrapnel's bomb too).
-- **Sound `0x11f`**: played before EXPLODE on kind-1 removal. Identify.
+- ~~**Kind-6 image global**: confirmed `DAT_005e8e58` (`IMAGE_KIND6`) from `DrawSprite`.~~
+- ~~**Sound `0x143`**: confirmed as the volley sound from the `Alien::Update` firing code.~~
+- **Sound `0x11f`**: played before EXPLODE on kind-1 removal. Identify (also used by kind `0x14` death).
 
 ## Recording
 

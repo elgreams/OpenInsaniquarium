@@ -55,13 +55,12 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
 - **Gekko** (`beetlemuncher.md`): spawn (12 draws), ctor, Init fields (type 7, stage 7, coin interval), Fish::Update overrides (hunger, prey chase, Larva bite, coin drop kind 6). All `confirmed`.
 - **Larva** (`larva.md`): ctor (1 phantom draw), AddBeetle (no shadow/splash), Update (rise at 1.0/tick, removal at y < 64, click sets caught flag → $150 on exit, mouse-visible at y < 320), Draw (10 cels, 5 cols). All `confirmed`.
 
-**Still TODO** (aliens):
+**Combat aliens done** (`t3-ghidra-c-combat`):
 
-- **Alien kind 6 firing** (`0x004fdd34`): `PickTarget(0)`/`(1)` meaning, the launch positions, the volley size, the interval.
-- **Kind-1 missile** (`Missle::Update` kind-1 branch, click at `0x004d82a0` kind-1 branch): redirect mechanics, out-of-bounds rule, Wadsworth hit check.
-- **Alien kind 7** (`Alien::Update` kind-7 branches, `+0x204` logic): what it does, its chase/wander pattern, its special action timer `+0x1ac`.
+- **Alien kind 6** (`alien-kind6.md`): most sections `traced` via `tank_3_4`. Drawing/sound sections now `confirmed` from Ghidra: `IMAGE_KIND6` = `DAT_005e8e58`, 10×3 layout (row 2 for fire animation, not 10×2), no fire flash (kind 5 only), volley sound confirmed as `0x143`. Second missile position corrected (different from first: `+0x4e/+0x10` vs `+0x46/+0x18`). Wadsworth hit check (§6.2) and click redirect (§6.4) remain `static`.
+- **Alien kind 7** (`alien-kind7.md`): new spec, all `static` from Ghidra. Fast alien (div 0.5, 260 HP) that alternates surfaced/submerged every 301–400 ticks. Surfaced: chases and eats fish. Submerged: slow (div 2.0), pets skip it (`+0x204`), laser heals it (+3·laser, "Stop shooting!" message). Panic dive at health < 100 if first submerge hasn't happened. 9-zone knockback, 5-row sprite sheet (surfaced/submerged × normal/turning, plus transition row).
 
-Write specs: `objects/alien-kind6.md` (expand from existing `static` draft), `objects/alien-kind7.md`. Existing economy specs (`guppycruncher.md`, `beetlemuncher.md`, `larva.md`) are `confirmed`.
+Existing economy specs (`guppycruncher.md`, `beetlemuncher.md`, `larva.md`) are `confirmed`.
 
 ### 2. 3-1: Guppycruncher economy
 
@@ -95,15 +94,17 @@ Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles a
 
 ### 5. Alien kind 7
 
-`static` (a plan).
+`static` (spec written, not yet recorded).
 
-Kind 7 is very fast (divisor 0.5, cruise ~3.6 px/tick) with 260 HP. It has a state byte `+0x204` that causes Itchy, Gash and Stanley to skip it as a target. This likely means it has a "hiding" or "submerging" phase. The special-action timer `+0x1ac` is used by kinds 5/6/7 — for kind 7 it may control this state.
+Kind 7 is a fast alien (divisor 0.5, 260 HP) that **alternates between surfaced and submerged** states every 301–400 ticks. When surfaced it chases and eats fish (like Sylvester, but 4× faster). When submerged (`+0x204 ≠ 0`): divisor changes to 2.0 (slow), pets skip it, and **laser hits heal it** (3·laser, "Stop shooting!" message). The submerge timer `+0x194` counts toward threshold `+0x198` (400); it starts at 200 (first submerge at tick 200 after spawn). A panic dive triggers if health drops below 100 before the first natural submerge. The 5-row sprite sheet has surfaced/submerged × normal/turning rows plus a transition animation row.
 
-**Depends on:** step 1 (the Ghidra read of kind-7 behaviour).
+Full spec: `objects/alien-kind7.md` (all `static`).
 
-**Record:** a level where kind 7 appears. Capture must exercise: the spawn (ROAR3, `0x135`), the chase, the `+0x204` state transition (pets skip it), the eat (if it eats), and the laser kill.
+**Depends on:** step 1 (done).
 
-**Build:** the kind-7 branches in Alien::Update, the `+0x204` transitions, any kind-7-specific death or eating behaviour.
+**Record:** a 3-3 playthrough. Capture must exercise: the spawn (ROAR3, `0x135`), the surfaced chase and eat, the first submerge (dive animation, divisor change), laser hits while submerged (heal, message, knockback), a surfacing (ROAR3, chase resumes), and the laser kill (44 hits at base laser).
+
+**Build:** the kind-7 branches in Alien::Update (submerge toggle, chase gate on `+0x204`), the Hit function's heal-when-submerged branch, the panic dive, and the 5-row drawing.
 
 **Test:** `alien_kind7` replays exactly.
 
