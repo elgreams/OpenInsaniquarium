@@ -94,19 +94,15 @@ Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles a
 
 ### 5. Alien kind 7
 
-`static` (spec written, not yet recorded).
+`traced` (`tank_3_3`).
 
 Kind 7 is a fast alien (divisor 0.5, 260 HP) that **alternates between surfaced and submerged** states every 301–400 ticks. When surfaced it chases and eats fish (like Sylvester, but 4× faster). When submerged (`+0x204 ≠ 0`): divisor changes to 2.0 (slow), pets skip it, and **laser hits heal it** (3·laser, "Stop shooting!" message). The submerge timer `+0x194` counts toward threshold `+0x198` (400); it starts at 200 (first submerge at tick 200 after spawn). A panic dive triggers if health drops below 100 before the first natural submerge. The 5-row sprite sheet has surfaced/submerged × normal/turning rows plus a transition animation row.
 
-Full spec: `objects/alien-kind7.md` (all `static`).
+Full spec: `objects/alien-kind7.md` (most sections `traced` via `tank_3_3`; panic dive, exact knockback constants, and Rufus targeting remain `static`).
 
-**Depends on:** step 1 (done).
+**Test:** `tank_3_3` replays `tank3-3_full_01` exactly: spawn, surfaced chase/eat, submerge/surface toggle (div 0.5↔2.0), laser healing while submerged (+6.0 per hit, 32 events), Itchy at full damage (1.0/tick, not 0.25 — corrected from the static claim), and death.
 
-**Record:** a 3-3 playthrough. Capture must exercise: the spawn (ROAR3, `0x135`), the surfaced chase and eat, the first submerge (dive animation, divisor change), laser hits while submerged (heal, message, knockback), a surfacing (ROAR3, chase resumes), and the laser kill (44 hits at base laser).
-
-**Build:** the kind-7 branches in Alien::Update (submerge toggle, chase gate on `+0x204`), the Hit function's heal-when-submerged branch, the panic dive, and the 5-row drawing.
-
-**Test:** `alien_kind7` replays exactly.
+**Correction:** the spec originally claimed kind 7 uses the reduced-damage table (Itchy 0.25, Gash 0.5) from kinds 4/5. The capture disproves this: Itchy deals 1.0/tick (full `STAB`), and the reduced table applies **only** to kinds 4 and 5.
 
 ### 6. 3-5 (random wave kind, possibly a pair)
 
