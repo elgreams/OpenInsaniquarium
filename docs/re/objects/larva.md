@@ -10,6 +10,8 @@ The Larva is the intermediate currency in the tank-3 economy chain. The **Guppyc
 
 RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`.
 
+`static`.
+
 ## Slot overrides
 
 Compared with `GameObject` (vtable `0x00596844`, 81 slots):
@@ -27,7 +29,7 @@ Compared with `GameObject` (vtable `0x00596844`, 81 slots):
 | 77 | `0x0051a440` (no-op) | eat: none (passive object) |
 | 80 | `0x004d7df0` | **sync** (serialise fields) |
 
-`confirmed` (all slot addresses verified against the vtable at `0x00596ad4` in the binary).
+`static` (all slot addresses verified against the vtable at `0x00596ad4` in the binary).
 
 ## Fields
 
@@ -46,7 +48,7 @@ Compared with `GameObject` (vtable `0x00596844`, 81 slots):
 | `+0x174` | byte | **caught flag** (0 = rising, 1 = caught/flying off) | 0 |
 | `+0x175` | byte | **suppress auto-reveal** | 0 |
 
-`confirmed` (field layout and initial values verified from the ctor bytecode at `0x004ead40` and the sync function at `0x004d7df0`).
+`static` (field layout and initial values verified from the ctor bytecode at `0x004ead40` and the sync function at `0x004d7df0`).
 
 ## Construction (`Larva::Larva(x, y)` @ `0x004ead40`)
 
@@ -65,7 +67,7 @@ Compared with `GameObject` (vtable `0x00596844`, 81 slots):
 
 **1 app draw** (phantom). The ctor does not set up a shadow or splash.
 
-`confirmed` (ctor bytecode at `0x004ead40` decoded directly from the PE; `GameObject::GameObject` at `0x004e9cb0`, `MTRand::NextNoAssert` at `0x0040aeb0`, `fld1` for the 1.0 constant all verified).
+`static` (ctor bytecode at `0x004ead40` decoded directly from the PE; `GameObject::GameObject` at `0x004e9cb0`, `MTRand::NextNoAssert` at `0x0040aeb0`, `fld1` for the 1.0 constant all verified).
 
 ## Spawn (`Board::AddBeetle` @ `0x005445a0`)
 
@@ -79,13 +81,15 @@ Called from the Guppycruncher's Larva drop timer (`guppycruncher.md#larva-drop-t
 
 **No shadow. No splash.** Total: **1 app draw** (the phantom draw from the ctor).
 
-`confirmed` (AddBeetle bytecode at `0x005445a0` decoded; alloc 0x178, Larva ctor call, AddGameObject arg 0, WM add, RebuildZOrder all verified).
+`static` (AddBeetle bytecode at `0x005445a0` decoded; alloc 0x178, Larva ctor call, AddGameObject arg 0, WM add, RebuildZOrder all verified).
 
 ## Per-tick update (slot 22 @ `0x004f2930`)
 
 0. Return if the board's app pointer (`[board+0x730]`) is null or paused (`+0x94 != 0`).
 1. **PreUpdate** `0x004f22c0` (generic timers).
 2. **Auto-reveal**: if `+0x55 == 0` (mouse-invisible) and y < **320.0** (constant at `0x00598f88`) and `+0x175 == 0`: set `+0x55 = 1` (mouse-visible), `+0x7c = 1`.
+`static`.
+
 3. Branch on **caught flag** `+0x174`:
 
 ### Rising state (`+0x174 == 0`)
@@ -94,6 +98,8 @@ Called from the Guppycruncher's Larva drop timer (`guppycruncher.md#larva-drop-t
 5. If `y < 64.0` (constant at `0x005c3d50`): **remove** via `0x004d9570` (WM remove, board remove, list remove) and return.
 6. If `x > 530.0` (constant at `0x00598f80`): clamp `x = 530.0`.
 7. Fall through to **post-update**.
+
+`static`.
 
 ### Caught state (`+0x174 != 0`)
 
@@ -113,12 +119,14 @@ Entered when the player clicks the Larva (see **Mouse-down** below). The Larva d
    - Return.
 7. If `widget_y >= 40`: fall through to **post-update**.
 
+`static`.
+
 ### Post-update (both states)
 
 8. **Widget position**: truncate x and y to ints, call slot 41 (widget SetPosition).
 9. **Animation**: `+0x170 = (+0x170 + 1) % 10` (via `0x004d7e80`).
 
-`confirmed` (Update bytecode at `0x004f2930` fully decoded; constants 320.0, 64.0, 530.0, 550.0, 30.0, 7.0 all read from the PE `.rdata` section at their referenced addresses; the rise-speed 1.0 from `+0x168`, removal threshold at y < 64.0, x clamp at 530.0, caught-state formulas, and the $150/$7 money path all verified).
+`static` (Update bytecode at `0x004f2930` fully decoded; constants 320.0, 64.0, 530.0, 550.0, 30.0, 7.0 all read from the PE `.rdata` section at their referenced addresses; the rise-speed 1.0 from `+0x168`, removal threshold at y < 64.0, x clamp at 530.0, caught-state formulas, and the $150/$7 money path all verified).
 
 ## Mouse-down (slot 54 @ `0x004d7ed0`)
 
@@ -128,7 +136,7 @@ On click (arg3 >= 0):
 1. Set `+0x174 = 1` (caught flag): triggers the caught-state branch in the next Update.
 2. Play sound: sample **`0x12c`** (300), gap 3 (via `0x005383d0`).
 
-`confirmed` (mouse-down bytecode at `0x004d7ed0` decoded; `+0x174 = 1` write and `0x005383d0` call verified).
+`static` (mouse-down bytecode at `0x004d7ed0` decoded; `+0x174 = 1` write and `0x005383d0` call verified).
 
 ## Remove (slot 75 @ `0x004ec5f0`)
 
@@ -139,7 +147,7 @@ A direct jump to `0x004d9570`:
 
 Called by Update (rising past the top, or caught and off-screen) and by the Beetlemuncher's bite check (when a Beetlemuncher eats the Larva).
 
-`confirmed` (slot 75 is `jmp 0x004d9570`; the remove function decoded).
+`static` (slot 75 is `jmp 0x004d9570`; the remove function decoded).
 
 ## Drawing (slot 26 @ `0x004d7ea0`)
 
@@ -152,7 +160,7 @@ The widget is 72 x 72. The sprite sheet has 5 columns and 2 rows (10 cels total,
 
 **Never mirrored.** Direction is not shown (the Larva rises vertically).
 
-`confirmed` (Draw bytecode at `0x004d7ea0` decoded; image pointer, cel index, and the 5-column argument verified).
+`static` (Draw bytecode at `0x004d7ea0` decoded; image pointer, cel index, and the 5-column argument verified).
 
 ## Sync (slot 80 @ `0x004d7df0`)
 
@@ -165,7 +173,7 @@ Serialises, in order:
 6. `+0x174` (caught flag).
 7. `+0x175` (suppress auto-reveal).
 
-`confirmed` (sync bytecode decoded; field offsets and types verified).
+`static` (sync bytecode decoded; field offsets and types verified).
 
 ## Interactions
 
@@ -174,7 +182,7 @@ Serialises, in order:
 - **Shrapnel**: bombs iterate `board+0xc8` but the Larva has no die function, so Shrapnel likely does not affect Larvae. `static`.
 - **Aliens**: Larvae are not prey (type `0x1d` is not in the 5-10 range for `NearestPrey`).
 
-`confirmed` except Shrapnel interaction (`static`).
+`static` (Shrapnel interaction also `static`).
 
 ## RNG summary
 
@@ -185,7 +193,7 @@ Serialises, in order:
 
 The Larva consumes exactly **1 app draw** on its creation tick and **none** thereafter. This is important for replay fidelity: adding or removing a Larva shifts the RNG by exactly 1.
 
-`confirmed`.
+`static`.
 
 ## Lifecycle summary
 
