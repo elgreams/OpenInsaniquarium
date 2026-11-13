@@ -1467,6 +1467,81 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
             push(s.tick, mid, click, &mut out);
         }
         prev_food = foods.len();
+        // Instant-eat: food bought and eaten in the same tick — no pellet
+        // appears in any snapshot.  Detected by money dropping by exactly
+        // the food cost (5) while a guppy's hunger jumps by ≥ 200.  The
+        // food position is recovered from the food-chase velocity change
+        // (food.md § food chase).
+        if let (Some(pm), Some(cm)) = (money_of(prev_snap), money_of(Some(s))) {
+            if pm - cm == 5 && foods.is_empty() {
+                let guppy_raws = |snap: Option<&Snapshot>| -> Vec<Vec<u8>> {
+                    snap.and_then(|s| s.state.get("guppies"))
+                        .and_then(Value::as_array)
+                        .map_or(Vec::new(), |a| {
+                            a.iter()
+                                .filter_map(|g| g.get("raw")?.as_str().and_then(hex_bytes))
+                                .collect()
+                        })
+                };
+                let pr = guppy_raws(prev_snap);
+                let cr = guppy_raws(Some(s));
+                for (prev_r, cur_r) in pr.iter().zip(&cr) {
+                    let ph = rd_i32(prev_r, 0x9c);
+                    let ch = rd_i32(cur_r, 0x9c);
+                    if ch - ph < 200 {
+                        continue;
+                    }
+                    // This guppy ate instantly.  Compute the food widget
+                    // position from the velocity brackets so that the food
+                    // chase produces the same vx/vy change as the original.
+                    let dvx = rd_f64(cur_r, 0x168) - rd_f64(prev_r, 0x168);
+                    let dvy = rd_f64(cur_r, 0x170) - rd_f64(prev_r, 0x170);
+                    let fx = (rd_f64(prev_r, 0x158) + 40.0) as i32;
+                    let fy = (rd_f64(prev_r, 0x160) + 40.0) as i32;
+                    let peckish = ph > 300;
+                    // X offset: food center tx = fx + x_off.
+                    let x_off = if dvx.abs() < 0.01 {
+                        0
+                    } else if peckish {
+                        if dvx > 0.5 { 9 } else if dvx > 0.07 { 5 } else if dvx > 0.0 { 1 }
+                        else if dvx < -0.5 { -9 } else if dvx < -0.07 { -5 } else { -1 }
+                    } else {
+                        if dvx > 0.7 { 9 } else if dvx > 0.12 { 5 } else if dvx > 0.0 { 1 }
+                        else if dvx < -0.7 { -9 } else if dvx < -0.12 { -5 } else { -1 }
+                    };
+                    // Y offset: food center ty = fy + y_off.
+                    let y_off = if dvy.abs() < 0.1 {
+                        0
+                    } else if peckish {
+                        if dvy < -0.4 { -7 } else if dvy < 0.0 { -1 }
+                        else if dvy > 0.8 { 7 } else { 1 }
+                    } else {
+                        if dvy < -0.7 { -7 } else if dvy < 0.0 { -1 }
+                        else if dvy > 1.0 { 7 } else { 1 }
+                    };
+                    // food_x = tx − 20, food_y chosen so that after one
+                    // tick of falling (+1.5) the widget y = ty − 20:
+                    // trunc(food_y + 1.5) = food_y + 1 = ty − 20.
+                    let food_x = fx + x_off - 20;
+                    let food_y = fy + y_off - 21;
+                    eprintln!(
+                        "instant-eat: tick {} ph={} ch={} dvx={} dvy={} fx={} fy={} \
+                         x_off={} y_off={} food=({},{})",
+                        s.tick, ph, ch, dvx, dvy, fx, fy, x_off, y_off, food_x, food_y
+                    );
+                    push(
+                        s.tick,
+                        false,
+                        Input::DropFood {
+                            x: food_x,
+                            y: food_y,
+                        },
+                        &mut out,
+                    );
+                    break;
+                }
+            }
+        }
         let coins: Vec<Coin> = raw_list(s, "coin")
             .iter()
             .map(|b| coin_from_raw(b))

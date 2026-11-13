@@ -37,6 +37,12 @@ pub enum Input {
     Buy(Slot),
     /// Pause / unpause the board (focus loss or the menu; no dialog).
     SetPaused(bool),
+    /// Drop food directly at `(x, y)` with delay 0, bypassing widget
+    /// routing.  Used by the replay harness when a food pellet was eaten
+    /// in the same tick it was dropped (instant-eat): the click position
+    /// is unknown, but the food position can be recovered from the
+    /// velocity change.
+    DropFood { x: i32, y: i32 },
 }
 
 /// Modal dialogs the board can raise. While one is up the board is paused.
@@ -2022,7 +2028,7 @@ impl Board {
                         self.paused = p;
                         self.focus_paused = p;
                     }
-                    Input::DismissDialog | Input::Buy(_) => {}
+                    Input::DismissDialog | Input::Buy(_) | Input::DropFood { .. } => {}
                 }
                 continue;
             }
@@ -2057,6 +2063,16 @@ impl Board {
                         self.focus_paused = p;
                     }
                 }
+                Input::DropFood { x, y } if self.dialog.is_none() && !self.focus_paused => {
+                    if !self.potion_armed {
+                        if self.money < self.food_price {
+                            continue;
+                        }
+                        self.money -= self.food_price;
+                    }
+                    self.add_food_delay(x, y, 0);
+                }
+                Input::DropFood { .. } => {}
             }
         }
     }
