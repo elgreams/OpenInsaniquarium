@@ -52,11 +52,14 @@ pub struct Alien {
     pub fire_interval: i32,
     pub fire_anim: i32,
     /// Kind 7: state timer (`+0x194`), period (`+0x198`), invulnerable
-    /// flag (`+0x204`).  While invulnerable the alien wanders (divisor
-    /// 2.0) and laser hits heal; while normal it chases (divisor 0.5).
+    /// flag (`+0x204`), has-submerged (`+0x19c`).  While invulnerable the
+    /// alien wanders and laser hits heal; while normal it chases.
     pub state_timer: i32,
     pub state_period: i32,
     pub invulnerable: bool,
+    /// `+0x19c`: set to 1 on the first submerge (natural or panic dive)
+    /// and stays 1 forever.  The panic dive only fires while this is 0.
+    pub has_submerged: bool,
     pub widget_x: i32,
     pub widget_y: i32,
 }
@@ -130,6 +133,7 @@ impl Alien {
             state_timer: if kind == 7 { 200 } else { 0 },
             state_period: if kind == 7 { 400 } else { 0 },
             invulnerable: false,
+            has_submerged: false,
             widget_x: x,
             widget_y: y,
         };
@@ -233,6 +237,9 @@ impl Alien {
                 let was_inv = self.invulnerable;
                 self.invulnerable = !self.invulnerable;
                 self.divisor = if self.invulnerable { 2.0 } else { 0.5 };
+                if self.invulnerable {
+                    self.has_submerged = true;
+                }
                 self.state_timer = rng.next_range(100) as i32;
                 self.fire_anim = 10;
                 if was_inv && !self.invulnerable {
@@ -677,7 +684,14 @@ impl Alien {
     }
 
     /// `Alien::Hit(cx, cy)` (`0x004fa6f0`): returns `Some(killed)` if hit.
-    pub fn hit(&mut self, cx: i32, cy: i32, laser: i32) -> Option<bool> {
+    /// `rng` is needed for kind 7's panic dive (`rand() % 100`).
+    pub fn hit(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        laser: i32,
+        rng: &mut MtRand,
+    ) -> Option<bool> {
         let (cx, cy) = (f64::from(cx), f64::from(cy));
         if !(self.x < cx && cx < self.x + 160.0 && self.y < cy && cy < self.y + 160.0) {
             return None;
@@ -686,24 +700,14 @@ impl Alien {
             return None;
         }
         let s = self.divisor;
-        if matches!(self.kind, 5 | 6 | 7) {
-            // Kinds 5/6/7: 2·laser + 2; sideways knockback only, none
-            // during the fire animation.  Kind 7 invulnerable: heals.
-            let dmg = f64::from(2 * laser + 2);
-            if self.kind == 7 && self.invulnerable {
-                self.health += dmg;
-            } else {
-                self.health -= dmg;
-            }
-            // Kind 7 uses a 4× multiplier (giving 2.0 at divisor 0.5,
-            // i.e. 4.0 visual px/tick — faster than the 3.0 used by
-            // kinds 5/6); kinds 5/6 use 3× (the same as kinds 1–3).
-            let kb = if self.kind == 7 { 4.0 } else { 3.0 };
+        // Kinds 5/6: 2·laser + 2, sideways knockback only.
+        if matches!(self.kind, 5 | 6) {
+            self.health -= f64::from(2 * laser + 2);
             if self.fire_anim == 0 {
                 if cx < self.x + 60.0 {
-                    self.vx = kb * s;
+                    self.vx = 3.0 * s;
                 } else if cx > self.x + 100.0 {
-                    self.vx = -kb * s;
+                    self.vx = -3.0 * s;
                 }
             }
             if self.health <= 0.0 {
@@ -712,10 +716,62 @@ impl Alien {
             self.cooldown = 10;
             return Some(false);
         }
+        // Kind 7: 3·laser, 9-zone knockback, panic dive, heal when
+        // submerged (alien-kind7.md §4.2).
+        if self.kind == 7 {
+            let dmg = f64::from(3 * laser);
+            if self.invulnerable {
+                self.health += dmg;
+            } else {
+                self.health -= dmg;
+            }
+            // 9-zone knockback with larger constants (3.5 diag, 4.0 axis).
+            let (left, right) = (cx < self.x + 60.0, cx > self.x + 100.0);
+            let (top, bottom) = (cy < self.y + 60.0, cy > self.y + 100.0);
+            match (left, right, top, bottom) {
+                (true, _, true, _) => {
+                    self.vx = 3.5 * s;
+                    self.vy = 3.5 * s;
+                }
+                (true, _, false, false) => self.vx = 4.0 * s,
+                (true, _, _, true) => {
+                    self.vx = 3.5 * s;
+                    self.vy = -3.5 * s;
+                }
+                (false, false, true, _) => self.vy = 4.0 * s,
+                (false, false, _, true) => self.vy = -4.0 * s,
+                (_, true, true, _) => {
+                    self.vx = -3.5 * s;
+                    self.vy = 3.5 * s;
+                }
+                (_, true, false, false) => self.vx = -4.0 * s,
+                (_, true, _, true) => {
+                    self.vx = -3.5 * s;
+                    self.vy = -3.5 * s;
+                }
+                _ => {}
+            }
+            // Panic dive (0x004fa997): if surfaced, health < 100, never
+            // submerged, not VT → force submerge.  Does NOT change divisor.
+            if !self.invulnerable
+                && self.health < 100.0
+                && !self.has_submerged
+            {
+                self.invulnerable = true;
+                self.has_submerged = true;
+                self.fire_anim = 10;
+                self.state_timer = rng.next_range(100) as i32;
+            }
+            if self.health <= 0.0 {
+                return Some(true);
+            }
+            self.cooldown = 10;
+            return Some(false);
+        }
+        // Kinds 1–3: 3·laser, 9-zone knockback.
         self.health -= f64::from(3 * laser);
         let (left, right) = (cx < self.x + 60.0, cx > self.x + 100.0);
         let (top, bottom) = (cy < self.y + 60.0, cy > self.y + 100.0);
-        // Knockback away from the click (§4.2 step 5).
         match (left, right, top, bottom) {
             (true, _, true, _) => {
                 self.vx = 2.5 * s;

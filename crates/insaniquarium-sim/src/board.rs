@@ -939,7 +939,7 @@ impl Board {
         }
         if y > 40 {
             for i in 0..self.aliens.len() {
-                if let Some(killed) = self.aliens[i].hit(x, y, self.laser) {
+                if let Some(killed) = self.aliens[i].hit(x, y, self.laser, &mut self.rng) {
                     if self.aliens[i].kind == 7 && self.aliens[i].invulnerable {
                         // Kind 7 invulnerable: no effect shot, no hit
                         // sound; just the warning message.

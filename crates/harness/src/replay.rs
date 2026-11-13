@@ -295,6 +295,7 @@ pub fn alien_from_raw(b: &[u8]) -> Alien {
         state_timer: rd_i32(b, 0x194),
         state_period: rd_i32(b, 0x198),
         invulnerable: b.get(0x204).is_some_and(|&v| v != 0),
+        has_submerged: b.get(0x19c).is_some_and(|&v| v != 0),
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
     }
@@ -641,6 +642,7 @@ fn alien_json(a: &Alien) -> Value {
     // unrelated data at those offsets, so skip them to avoid false diffs.
     if a.kind == 7 {
         v["inv"] = json!(a.invulnerable);
+        v["has_sub"] = json!(a.has_submerged);
         v["st"] = json!([a.state_timer, a.state_period]);
     }
     v

@@ -945,6 +945,18 @@ fn tank_3_3() {
     }
 }
 
+/// Kind-7 panic dive (`kind7_panic_01`): tank 3-3 with Stinky, Itchy and
+/// Gash. HP pushed to 105 via orig_mem.py, a laser hit brought it below
+/// 100 and triggered the panic dive (alien-kind7.md §3.2, §4.2). Also
+/// exercises the 9-zone knockback with the kind-7 constants (3.5/4.0).
+/// The demo was not saved in the recording session, so inputs are inferred.
+#[test]
+fn kind7_panic_dive() {
+    if captured("kind7_panic_01") {
+        replay_level_full("kind7_panic_01", 3, 3, false, 0);
+    }
+}
+
 /// Tank 3-4 (`tank3-4_full_01`): wave kind 6, the floor walker with
 /// kind-1 missiles. Validates kind-6 spawn, missile firing, redirect
 /// on click, and combat.
