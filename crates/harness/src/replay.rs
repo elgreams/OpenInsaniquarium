@@ -2340,6 +2340,20 @@ pub fn replay_resync_global(
         {
             board.wave_countdown = c as i32;
         }
+        // Alien HP pushed by the recorder (`orig_mem.py alien_hp=N`) to
+        // trigger a panic dive (alien-kind7.md#panic-dive).  Normal per-tick
+        // damage is ≤ 10 (laser + pets).  A capture HP that is 20+ lower than
+        // the sim's is the recorder's write.  Adopt it.
+        if let Some(cap_alien) = t
+            .snapshots
+            .iter()
+            .find(|s| s.tick == board.tick)
+            .and_then(|s| raw_list(s, "alien").first().map(|b| alien_from_raw(b)))
+            && let Some(sim_alien) = board.aliens.first_mut()
+            && sim_alien.health - cap_alien.health > 20.0
+        {
+            sim_alien.health = cap_alien.health;
+        }
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's
         // RNG already includes that click's draws.

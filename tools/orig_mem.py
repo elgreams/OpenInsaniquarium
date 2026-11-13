@@ -3,13 +3,14 @@
 /proc/<pid>/mem (needs sudo). Works while a CE capture holds CE's Lua engine.
 
 Usage: sudo python3 tools/orig_mem.py <pid> [money=N] [cd=N] [owned=all]
-                                          [potion] [quiet]
+                                          [potion] [alien_hp=N] [quiet]
   (no args)  print clock, wave countdown, money, pets, guppies, food
   money=N    board money (+0x3f0)
   cd=N       wave countdown (+0x2c0)
   owned=all  profile owns all 24 pets (+0x00..+0x17 = 1, count +0x18 = 24):
              with more than 3 owned, Adventure opens the pet screen
   potion     Nostradamus (id 21): push his throw clock to 5 ticks before a potion
+  alien_hp=N set the first alien's health (+0x1f0, double) to N
 """
 import struct
 import sys
@@ -33,6 +34,12 @@ def wr(a, v):
     f.write(struct.pack("<i", v))
 
 
+def wrd(a, v):
+    """Write a double (f64) at address a."""
+    f.seek(a)
+    f.write(struct.pack("<d", v))
+
+
 def vec(v):
     return range(ptr(v + 4), ptr(v + 8), 4)
 
@@ -46,13 +53,20 @@ for a in args:
         f.write(bytes([1] * 24))
         wr(prof + 0x18, 24)
         print("owned all 24")
-if not b or "quiet" in args and not any(a[:3] in ("mon", "cd=") for a in args):
+if not b or "quiet" in args and not any(a[:3] in ("mon", "cd=", "ali") for a in args):
     sys.exit(0)
 for a in args:
     if a.startswith("money="):
         wr(b + 0x3F0, int(a[6:]))
     elif a.startswith("cd="):
         wr(b + 0x2C0, int(a[3:]))
+    elif a.startswith("alien_hp="):
+        hp = float(a[9:])
+        for p in vec(ptr(b + 0xB8)):
+            o = ptr(p)
+            wrd(o + 0x1F0, hp)
+            print(f"alien @ 0x{o:08x} hp -> {hp}")
+            break  # first alien only
 if "quiet" in args:
     sys.exit(0)
 print("clock", rd(b + 0x28), "countdown", rd(b + 0x2C0), "money", rd(b + 0x3F0))
