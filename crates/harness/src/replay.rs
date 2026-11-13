@@ -1524,11 +1524,6 @@ pub fn inferred_clicks(t: &Trace) -> Inferred {
                     // trunc(food_y + 1.5) = food_y + 1 = ty − 20.
                     let food_x = fx + x_off - 20;
                     let food_y = fy + y_off - 21;
-                    eprintln!(
-                        "instant-eat: tick {} ph={} ch={} dvx={} dvy={} fx={} fy={} \
-                         x_off={} y_off={} food=({},{})",
-                        s.tick, ph, ch, dvx, dvy, fx, fy, x_off, y_off, food_x, food_y
-                    );
                     push(
                         s.tick,
                         false,
@@ -1893,6 +1888,24 @@ pub fn debris_ticks(t: &Trace) -> Vec<u32> {
         prev = shots;
     }
     out
+}
+
+/// Raw capture ticks just *before* an HP push by the recorder
+/// (`orig_mem.py alien_hp=N`): the alien's HP at the next snapshot drops by
+/// more than 30, which no normal damage does in one tick (laser = 6).  The
+/// sim needs an RNG re-sync at these ticks so the step that processes the
+/// pushed HP (typically a panic dive) draws from the correct state.
+pub fn hp_push_pre_ticks(t: &Trace) -> Vec<u32> {
+    t.snapshots
+        .windows(2)
+        .filter_map(|w| {
+            let a = raw_list(&w[0], "alien");
+            let b = raw_list(&w[1], "alien");
+            let hp_a = a.first().map(|x| rd_f64(x, 0x1f0))?;
+            let hp_b = b.first().map(|x| rd_f64(x, 0x1f0))?;
+            (hp_a - hp_b > 30.0).then_some(w[0].tick)
+        })
+        .collect()
 }
 
 /// Drop the shot list from snapshots while debris sparks are alive: their
@@ -2300,6 +2313,33 @@ pub fn replay_resync_global(
             }
             board.shots = shots;
         }
+        // Alien HP pushed by the recorder (`orig_mem.py alien_hp=N`) to
+        // trigger a panic dive (alien-kind7.md#panic-dive).  The push
+        // happens between CE polls, so the capture at the next tick
+        // already reflects both the push and the tick's own damage.
+        // Detect it before all trial steps so that artifact_plan, the
+        // global-stream adjustment, and the real step all see the pushed
+        // HP and the panic dive fires correctly.  A trial step on the
+        // un-pushed board measures the tick's damage; we set HP so that
+        // after the real step the result matches the capture.
+        if let Some(cap_hp) = t
+            .snapshots
+            .iter()
+            .find(|s| s.tick == next)
+            .and_then(|s| s.state.get("aliens"))
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(|v| v.get("hp"))
+            .and_then(Value::as_f64)
+            && let Some(sim_alien) = board.aliens.first()
+            && sim_alien.health - cap_hp > 20.0
+        {
+            let mut trial = board.clone();
+            trial.step(step_inputs);
+            let trial_hp = trial.aliens.first().map_or(0.0, |a| a.health);
+            let damage = board.aliens[0].health - trial_hp;
+            board.aliens[0].health = cap_hp + damage;
+        }
         // On a deviation tick the original's effect-shot ctor may draw a
         // stale start delay (`alien-sylvester.md#deviations`) for some of
         // the tick's sparks. Re-syncing after the tick fixes the RNG but not
@@ -2416,20 +2456,6 @@ pub fn replay_resync_global(
                 || (c > 3000 && c != i64::from(board.wave_countdown)))
         {
             board.wave_countdown = c as i32;
-        }
-        // Alien HP pushed by the recorder (`orig_mem.py alien_hp=N`) to
-        // trigger a panic dive (alien-kind7.md#panic-dive).  Normal per-tick
-        // damage is ≤ 10 (laser + pets).  A capture HP that is 20+ lower than
-        // the sim's is the recorder's write.  Adopt it.
-        if let Some(cap_alien) = t
-            .snapshots
-            .iter()
-            .find(|s| s.tick == board.tick)
-            .and_then(|s| raw_list(s, "alien").first().map(|b| alien_from_raw(b)))
-            && let Some(sim_alien) = board.aliens.first_mut()
-            && sim_alien.health - cap_alien.health > 20.0
-        {
-            sim_alien.health = cap_alien.health;
         }
         // Re-sync only where the snapshot is a whole tick: a mid-frame click
         // (input applied at `next + 1` and marked dirty) means the capture's

@@ -945,10 +945,15 @@ impl Board {
         }
         if y > 40 {
             for i in 0..self.aliens.len() {
+                // The invulnerable check is against the state BEFORE the
+                // hit: a panic dive that fires during this hit still gets
+                // the effect shot and hit sound; only hits on an already-
+                // submerged alien show the warning and heal.
+                let was_inv = self.aliens[i].kind == 7 && self.aliens[i].invulnerable;
                 if let Some(killed) = self.aliens[i].hit(x, y, self.laser, &mut self.rng) {
-                    if self.aliens[i].kind == 7 && self.aliens[i].invulnerable {
-                        // Kind 7 invulnerable: no effect shot, no hit
-                        // sound; just the warning message.
+                    if was_inv {
+                        // Kind 7 already invulnerable: no effect shot, no
+                        // hit sound; just the warning message.
                         self.show_message(
                             "Stop shooting! Alien regains health!",
                             true,

@@ -1300,7 +1300,8 @@ fn replay_level_tank(name: &str, tank: i32, level: i32) -> usize {
 
 fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: usize) -> usize {
     use harness::replay::{
-        debris_ticks, deviation_resyncs, rebase_rng, window, without_debris_shots,
+        debris_ticks, deviation_resyncs, hp_push_pre_ticks, rebase_rng, window,
+        without_debris_shots,
     };
     // Whole-level replays hold several copies of a capture (several GB for
     // the long ones): run them one at a time.
@@ -1351,17 +1352,53 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         .and_then(|u| u.as_i64())
         .map(|u| u - i64::from(from));
     let demo_map = from_demo.then(|| harness::replay::demo_tick_map(&raw));
+    // HP-push pre-ticks (raw capture ticks): the tick just before an HP
+    // push by the recorder. The sim needs an RNG re-sync there so the
+    // step that processes the pushed HP draws from the correct state.
+    let hp_pre = hp_push_pre_ticks(&raw);
+    // Debug: check alien presence in raw data
+    let hex_to_bytes = |s: &str| -> Option<Vec<u8>> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i+2], 16).ok()).collect()
+    };
+    for s in &raw.snapshots {
+        if let Some(alien_arr) = s.state.get("raw").and_then(|r| r.get("alien")).and_then(|a| a.as_array()) {
+            if let Some(hex) = alien_arr.first().and_then(|v| v.as_str()) {
+                if let Some(bytes) = hex_to_bytes(hex) {
+                    if bytes.len() > 0x1f8 {
+                        let hp = f64::from_le_bytes(bytes[0x1f0..0x1f8].try_into().unwrap());
+                        eprintln!("DBG raw tick={} alien_hp={hp:.1}", s.tick);
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("DBG hp_pre={hp_pre:?}");
+    let hp_pre_clock: Vec<u32> = {
+        let clk = |s: &harness::trace::Snapshot| {
+            s.state.get("board")?.get("clock")?.as_i64()
+        };
+        let base = raw.snapshots.first().and_then(clk).unwrap_or(0);
+        let tick0 = i64::from(raw.snapshots[0].tick);
+        hp_pre
+            .iter()
+            .filter_map(|&rt| {
+                let c = raw.snapshots.iter().find(|s| s.tick == rt).and_then(clk)?;
+                Some((tick0 + c - base) as u32)
+            })
+            .collect()
+    };
     // The RNG at every debris tick, then the full capture can go: long
     // captures are several GB once parsed.
     let debris = debris_ticks(&harness::replay::by_board_clock(&raw));
     let tick_of = |clock_tick: u32| harness::replay::original_tick(&raw, clock_tick);
     // Also the tick after each: a debris tick caught mid-frame (dirty) has
     // its click, and the spark's draw, replayed one tick later.
-    let originals: Vec<u32> = debris
+    let mut originals: Vec<u32> = debris
         .iter()
         .flat_map(|&ct| [ct, ct + 1])
         .filter_map(tick_of)
         .collect();
+    originals.extend(&hp_pre);
     let resync_orig = deviation_resyncs(&full, &originals);
     // The global stream after each tick, for replays whose pets decide on
     // it (Nostradamus's sneeze): keyed by the board clock below.
@@ -1375,11 +1412,16 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         .map(|s| (s.to_string(), rebase_rng(&full, s, from).unwrap()))
         .collect();
     drop(full);
-    let resync_at: std::collections::BTreeMap<u32, _> = debris
+    let mut resync_at: std::collections::BTreeMap<u32, _> = debris
         .iter()
         .flat_map(|&ct| [ct, ct + 1])
         .filter_map(|ct| Some((ct, resync_orig.get(&tick_of(ct)?)?.clone())))
         .collect();
+    for (i, &ct) in hp_pre_clock.iter().enumerate() {
+        if let Some(r) = resync_orig.get(&hp_pre[i]) {
+            resync_at.insert(ct, r.clone());
+        }
+    }
     drop(resync_orig);
     // Keyed like `by_board_clock`: first tick + (clock − first clock).
     let clock = |s: &harness::trace::Snapshot| s.state.get("board")?.get("clock")?.as_i64();
@@ -1440,7 +1482,7 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
     inferred.dirty.extend(harness::replay::after_gaps(&t));
     // A debris tick caught mid-frame (dirty) gets its click, and the
     // spark's stale-field draw, replayed one tick later: re-sync there.
-    let resync: std::collections::BTreeMap<u32, _> = debris
+    let mut resync: std::collections::BTreeMap<u32, _> = debris
         .iter()
         .flat_map(|&ct| {
             let late = inferred.dirty.contains(&ct) && !inferred.dirty.contains(&(ct + 1));
@@ -1448,6 +1490,11 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         })
         .filter_map(|ct| Some((ct, resync_at.get(&ct)?.clone())))
         .collect();
+    for &ct in &hp_pre_clock {
+        if let Some(r) = resync_at.get(&ct) {
+            resync.insert(ct, r.clone());
+        }
+    }
     drop(resync_at);
     let expected = without_debris_shots(&inferred.clean(&decode_capture(&t)), &t);
     let mut board = board_from_capture(&t).unwrap();
