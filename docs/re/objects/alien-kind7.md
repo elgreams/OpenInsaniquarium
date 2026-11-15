@@ -1,6 +1,6 @@
 # Alien kind 7 (`Sexy::Alien` kind 7)
 
-Status: `traced` (`tank_3_3`, `kind7_panic_dive`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`; panic dive and knockback traced by `kind7_panic_dive` (`kind7_panic_01`). Three items resolved without dedicated recordings: 3-5 draw `confirmed` by `tank_3_5`, Rufus targeting `confirmed` by cross-referencing `pet-rufus.md`, Virtual Tank health deferred (VT mode only, not reached in Adventure). Warning line corrected to TYPE-P (`traced` by `tank_3_3`). The pair-kind table entry remains `static` (the 3-5 re-roll doesn't produce pair kinds; they likely appear on tank 4+). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
+Status: `traced` (`tank_3_3`, `kind7_panic_dive`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`; panic dive and knockback traced by `kind7_panic_dive` (`kind7_panic_01`). Three items resolved without dedicated recordings: 3-5 draw `confirmed` by `tank_3_5`, Rufus targeting `confirmed` by cross-referencing `pet-rufus.md`, Virtual Tank health deferred (VT mode only, not reached in Adventure). Warning line corrected to TYPE-P (`traced` by `tank_3_3`). The pair-kind table entry is `confirmed` from the binary (component kinds verified by decoding PUSH immediates in AddAlien; the re-roll structure for tank 4 identified the levels where kind 10 first appears: 4-3 and 4-5). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
 
 Kind 7 is a tank 3 alien that alternates between **surfaced** (fast, chases and eats fish) and **submerged** (slow, untargetable by pets, heals from laser hits). It shares the `Alien` class with all other aliens; **this spec only describes what differs for kind 7.** Anything not mentioned here behaves as in `alien-sylvester.md`. Notation is the same.
 
@@ -16,7 +16,7 @@ Kind 7 does not fire missiles, so the countdown freeze rule that applies to kind
 
 **Warning line** (countdown 275): "ALIEN SIGNATURE TYPE-P DETECTED" (`sim/board.md#the-alien-warning-line`). `traced` (`tank_3_3` compares the message text).
 
-**Pair kind** on 3-5: the pair-kind table in `AddAlien` maps kind 10 to a pair of kind 7 (at A) + kind 3 (at B). `static` — the table entry has not been observed as a pair spawn (only kind 9 is `traced`). Note: the 3-5 re-roll (`0x00548cb0`) always produces `(!r & 1) | 6` (kind 6 or 7, 1 draw); it has **no pair branch**, so pair kind 10 never appears on tank 3. It likely appears on a tank 4+ re-roll.
+**Pair kind** on 3-5: the pair-kind table in `AddAlien` maps kind 10 to a pair of kind 7 (at A) + kind 3 (at B). `confirmed` — upgraded from `static`; the component kinds verified by decoding the x86 PUSH immediates in AddAlien's kind-10 branch (binary: `push 7` at `0x54569c`, `push 3` at `0x5456a8`). The 3-5 re-roll (`0x00548cb0`) always produces `(!r & 1) | 6` (kind 6 or 7, 1 draw); it has **no pair branch**, so pair kind 10 never appears on tank 3. Kind 10 first appears on **4-3** (`0x548d35`): `(rand() & 1) ? 4 : 10` (50/50, 1 app draw). It also appears on **4-5** (40% chance). Tracing remains `static` until a tank 4 recording.
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 
@@ -240,7 +240,7 @@ The submerge/surface cycle means the alien's presence (`+0xb8` non-empty) blocks
 - ~~**Warning line text**~~: resolved — the text is "TYPE-P", not "TYPE-F". `traced` by `tank_3_3`.
 - ~~**Rufus vs submerged kind 7**~~: resolved — `pet-rufus.md` §Attack confirms the `+0x204 == 0` check in both targeting and hit. Rufus skips submerged kind 7.
 - **Music cue** (`0x00537f90(−1)`): what it does (likely resumes alien music).
-- **Pair kind 10** on 3-5: the 3-5 re-roll (`0x00548cb0`) only produces kinds 6/7, never pair kinds. Kind 10 (7+3) likely appears on a tank 4+ level. Tracing it requires analyzing the tank 4/5 re-roll code.
+- ~~**Pair kind 10** on 3-5~~: resolved — the 3-5 re-roll only produces kinds 6/7. Kind 10 first appears on **4-3** (`(r & 1) ? 4 : 10`, 50%) and **4-5** (40% via `r % 5`). `confirmed` from binary re-roll code at `0x548d35`/`0x548da8`.
 
 ## Recording
 

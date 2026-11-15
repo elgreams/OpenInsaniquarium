@@ -1831,14 +1831,15 @@ impl Board {
                 self.wave_2c4 = 35;
                 // `AddAlien` (`0x00545620`): pair wave kinds spawn two
                 // aliens, each at its own position.  Kind 9 is traced
-                // (`tank_1_5_won`); 10–11 are `static` from the pair
-                // table.  TODO(spec): kind 8 (Bilaterus) and kind 12
-                // (3 + Bilaterus).
+                // (`tank_1_5_won`); 10–11 confirmed from binary PUSH
+                // immediates.  TODO(spec): kind 8 (Bilaterus) and
+                // kind 12 (3 + Bilaterus).  Pair kinds first appear on
+                // tank 4 (4-3: kind 10, 4-4: kind 11, 4-5: 10/11/12).
                 let spawns: &[(i32, (i32, i32))] = match self.wave_kind {
                     9 => &[(1, self.wave_a), (3, self.wave_b)],
-                    // Pair kind 10 = kind 7 + kind 3 (static, alien-sylvester.md §1)
+                    // Pair kind 10 = kind 7 + kind 3 (confirmed, alien-sylvester.md §1)
                     10 => &[(7, self.wave_a), (3, self.wave_b)],
-                    // Pair kind 11 = kind 5 + kind 6 (static, alien-sylvester.md §1)
+                    // Pair kind 11 = kind 5 + kind 6 (confirmed, alien-sylvester.md §1)
                     11 => &[(5, self.wave_a), (6, self.wave_b)],
                     k => &[(k, self.wave_a)],
                 };

@@ -29,7 +29,7 @@ From `SetupShop` (`0x00541200`, `sim/shop-bar.md#shop-setup`):
   - **Kind-1 missiles** (`Missle` kind 1): fired by alien kind 6. Spec needed in `objects/alien-kind6.md` or a shared missile spec.
 - **Backdrop** index 4 (`FUN_00538a10(4)` in SetupShop; `+0x3e8`), tank-3 music (module 2, order 32; `assets/music.md`).
 - **Pets hatched** (from `hatch-screen.md#pet-award-table`): 3-1 Seymour (10), 3-2 Shrapnel (11), 3-3 Gumbo (12), 3-4 Blip (13), 3-5 Rhubarb (14).
-- **Pair wave kinds** that may appear on 3-5: with `(r & 1) | 6` → kind 6 or 7. Kind 6 pairs to 11 (5+6); kind 7 pairs to 10 (7+3) (`alien-sylvester.md#per-tick-countdown`).
+- **Pair wave kinds**: the pair-kind table maps kind 10 → 7+3, kind 11 → 5+6, kind 12 → 3+8. However, **no pair kinds appear on tank 3**: the 3-5 re-roll (`(!r & 1) | 6`) only produces kinds 6 or 7, and there is no pair branch. Pair kinds first appear on **tank 4**: 4-3 (kind 10), 4-4 (kind 11), 4-5 (kinds 10/11/12). `confirmed` from the binary re-roll code at `0x548d35`.
 
 `static` for the list itself (wave kinds, egg prices, reveals all read from the binary). Fish class specs are TODO.
 
