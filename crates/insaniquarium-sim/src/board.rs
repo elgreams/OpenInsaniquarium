@@ -1836,7 +1836,9 @@ impl Board {
                 // (3 + Bilaterus).
                 let spawns: &[(i32, (i32, i32))] = match self.wave_kind {
                     9 => &[(1, self.wave_a), (3, self.wave_b)],
+                    // Pair kind 10 = kind 7 + kind 3 (static, alien-sylvester.md §1)
                     10 => &[(7, self.wave_a), (3, self.wave_b)],
+                    // Pair kind 11 = kind 5 + kind 6 (static, alien-sylvester.md §1)
                     11 => &[(5, self.wave_a), (6, self.wave_b)],
                     k => &[(k, self.wave_a)],
                 };
