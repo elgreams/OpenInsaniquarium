@@ -74,7 +74,7 @@ This runs after the ambient-bubble draw (`rand(1000)`, `sim/board.md`) and after
 
 `traced` for steps 1–3 and 5 on 1-2 (countdown, warning draws, spawn: `full_tank_1_2_replays`), and for the 1-5 re-roll (`tank_1_5_won`). Step 4 (Sneeze of Power) is `static`.
 
-**Wave kind 9** (1-5) spawns two aliens through `AddAlien` (`0x00545620`), each added in full (ctor draws, warp, shadow draw, roar): **Sylvester (kind 1) at A, then Balrog (kind 3) at B**. Kinds 10–12 pair 7+3, 5+6 and 3+8 the same way (`static`). `traced` for kind 9 (`tank_1_5_won`).
+**Wave kind 9** (1-5) spawns two aliens through `AddAlien` (`0x00545620`), each added in full (ctor draws, warp, shadow draw, roar): **Sylvester (kind 1) at A, then Balrog (kind 3) at B**. The pair-kind table in `AddAlien` also defines: kind 10 → 7+3, kind 11 → 5+6, kind 12 → 3+8 (Bilaterus) (`static`). Note: neither the 2-5 nor 3-5 re-rolls produce pair kinds 10–12; the 2-5 re-roll only produces kind 9 (`alien-kind4.md` §1), and the 3-5 re-roll at `0x00548cb0` always gives `(!r & 1) | 6` (kind 6 or 7). Pair kinds 10–12 likely appear on tank 4+ levels. `traced` for kind 9 (`tank_1_5_won`).
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`, kind 1 path)
 

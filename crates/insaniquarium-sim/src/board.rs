@@ -1829,11 +1829,15 @@ impl Board {
             1 => self.music = Some(Music::AlienFight),
             c if c <= 0 => {
                 self.wave_2c4 = 35;
-                // `AddAlien` (`0x00545620`): wave kind 9 is two aliens,
-                // Sylvester at A then Balrog at B, each added in full.
-                // TODO(spec): wave kinds 8 (Bilaterus) and 10..12.
+                // `AddAlien` (`0x00545620`): pair wave kinds spawn two
+                // aliens, each at its own position.  Kind 9 is traced
+                // (`tank_1_5_won`); 10–11 are `static` from the pair
+                // table.  TODO(spec): kind 8 (Bilaterus) and kind 12
+                // (3 + Bilaterus).
                 let spawns: &[(i32, (i32, i32))] = match self.wave_kind {
                     9 => &[(1, self.wave_a), (3, self.wave_b)],
+                    10 => &[(7, self.wave_a), (3, self.wave_b)],
+                    11 => &[(5, self.wave_a), (6, self.wave_b)],
                     k => &[(k, self.wave_a)],
                 };
                 for &(kind, (x, y)) in spawns {
