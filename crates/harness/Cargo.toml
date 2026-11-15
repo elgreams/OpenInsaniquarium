@@ -14,5 +14,9 @@ zstd = "0.13"
 insaniquarium-sim.workspace = true
 sexy-core.workspace = true
 
+[[test]]
+name = "kind7_panic_dive"
+path = "tests/tank1_1.rs"
+
 [lints]
 workspace = true
