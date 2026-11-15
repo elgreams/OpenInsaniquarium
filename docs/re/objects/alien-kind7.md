@@ -115,7 +115,7 @@ Hit box and 10-tick cooldown: unchanged (160×160, `+0x200 > 0` → no effect).
 
 #### Surfaced (`+0x204 == 0`)
 
-`traced` (`tank_3_3`)
+`traced` (`tank_3_3`); panic dive and 9-zone knockback constants `traced` (`kind7_panic_dive`).
 
 **Damage: `health −= 3 · laser`** (same as kinds 1–3). At laser 2 that is **6 per hit**, so **44 hits** to kill 260 HP. EffectShot and HIT sound (`0x126`, gap 3) as kind 1. Verified: the capture shows −6.0 HP drops every ~10 ticks while surfaced.
 
