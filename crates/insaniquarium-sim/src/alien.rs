@@ -684,14 +684,20 @@ impl Alien {
     }
 
     /// `Alien::Hit(cx, cy)` (`0x004fa6f0`): returns `Some(killed)` if hit.
-    /// `rng` is needed for kind 7's panic dive (`rand() % 100`).
+    /// `rng` is needed for the effect shot and kind 7's panic dive.
+    /// `shots` / `artifacts` are passed so the effect shot can be created
+    /// at the spec-correct point (§4.2 step 4, before knockback) — this
+    /// matters for kind 7 where the panic dive draws RNG after the shot.
     pub fn hit(
         &mut self,
         cx: i32,
         cy: i32,
         laser: i32,
         rng: &mut MtRand,
+        shots: &mut Vec<Shot>,
+        artifacts: &mut ArtifactPlan,
     ) -> Option<bool> {
+        let (icx, icy) = (cx, cy);
         let (cx, cy) = (f64::from(cx), f64::from(cy));
         if !(self.x < cx && cx < self.x + 160.0 && self.y < cy && cy < self.y + 160.0) {
             return None;
@@ -724,6 +730,10 @@ impl Alien {
                 self.health += dmg;
             } else {
                 self.health -= dmg;
+                // §4.2 step 4: effect shot before knockback/panic dive.
+                // The RNG draw order matters — the panic dive's
+                // `next_range(100)` must come after the shot's draws.
+                add_effect_shot_with(shots, rng, icx - 40, icy - 40, 2, artifacts);
             }
             // 9-zone knockback with larger constants (3.5 diag, 4.0 axis).
             let (left, right) = (cx < self.x + 60.0, cx > self.x + 100.0);

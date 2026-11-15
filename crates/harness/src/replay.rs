@@ -2334,11 +2334,23 @@ pub fn replay_resync_global(
             && let Some(sim_alien) = board.aliens.first()
             && sim_alien.health - cap_hp > 20.0
         {
-            let mut trial = board.clone();
-            trial.step(step_inputs);
-            let trial_hp = trial.aliens.first().map_or(0.0, |a| a.health);
-            let damage = board.aliens[0].health - trial_hp;
-            board.aliens[0].health = cap_hp + damage;
+            // Search for the pushed HP that produces cap_hp after the
+            // step.  The panic dive flips invulnerable; subsequent
+            // clicks then heal rather than damage, changing the net
+            // damage the trial measures.
+            let mut best_hp = cap_hp;
+            for offset in 0..=20i32 {
+                let try_hp = cap_hp + f64::from(offset);
+                let mut trial = board.clone();
+                trial.aliens[0].health = try_hp;
+                trial.step(step_inputs);
+                let result_hp = trial.aliens.first().map_or(0.0, |a| a.health);
+                if (result_hp - cap_hp).abs() < 0.01 {
+                    best_hp = try_hp;
+                    break;
+                }
+            }
+            board.aliens[0].health = best_hp;
         }
         // On a deviation tick the original's effect-shot ctor may draw a
         // stale start delay (`alien-sylvester.md#deviations`) for some of

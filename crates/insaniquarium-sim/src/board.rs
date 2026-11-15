@@ -949,8 +949,12 @@ impl Board {
                 // hit: a panic dive that fires during this hit still gets
                 // the effect shot and hit sound; only hits on an already-
                 // submerged alien show the warning and heal.
-                let was_inv = self.aliens[i].kind == 7 && self.aliens[i].invulnerable;
-                if let Some(killed) = self.aliens[i].hit(x, y, self.laser, &mut self.rng) {
+                let is_kind7 = self.aliens[i].kind == 7;
+                let was_inv = is_kind7 && self.aliens[i].invulnerable;
+                if let Some(killed) = self.aliens[i].hit(
+                    x, y, self.laser, &mut self.rng,
+                    &mut self.shots, &mut self.artifacts,
+                ) {
                     if was_inv {
                         // Kind 7 already invulnerable: no effect shot, no
                         // hit sound; just the warning message.
@@ -960,8 +964,12 @@ impl Board {
                             -1,
                         );
                     } else {
-                        // `EffectShot(x − 40, y − 40, 2)` and the hit sound.
-                        self.add_effect_shot(x - 40, y - 40, 2);
+                        // Kind 7 creates its effect shot inside hit()
+                        // (§4.2: before knockback/panic dive); other kinds
+                        // have no RNG draws in knockback so order is fine.
+                        if !is_kind7 {
+                            self.add_effect_shot(x - 40, y - 40, 2);
+                        }
                         self.play(0x126, Sound::Hit);
                         if killed {
                             self.kill_alien(i);
