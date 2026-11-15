@@ -98,7 +98,7 @@ Kind 6 is a floor walker (y = 280) that fires kind-1 missiles. Kind-1 missiles a
 
 Kind 7 is a fast alien (divisor 0.5, 260 HP) that **alternates between surfaced and submerged** states every 301–400 ticks. When surfaced it chases and eats fish (like Sylvester, but 4× faster). When submerged (`+0x204 ≠ 0`): divisor changes to 2.0 (slow), pets skip it, and **laser hits heal it** (3·laser, "Stop shooting!" message). The submerge timer `+0x194` counts toward threshold `+0x198` (400); it starts at 200 (first submerge at tick 200 after spawn). A panic dive triggers if health drops below 100 before the first natural submerge. The 5-row sprite sheet has surfaced/submerged × normal/turning rows plus a transition animation row.
 
-Full spec: `objects/alien-kind7.md` (most sections `traced` via `tank_3_3`; panic dive, exact knockback constants, and Rufus targeting remain `static`).
+Full spec: `objects/alien-kind7.md` (all core sections `traced` via `tank_3_3` and `kind7_panic_dive`; 3-5 draw and Rufus targeting `confirmed`; VT health deferred; only the pair-kind table entry remains `static`).
 
 **Test:** `tank_3_3` replays `tank3-3_full_01` exactly: spawn, surfaced chase/eat, submerge/surface toggle (div 0.5↔2.0), laser healing while submerged (+6.0 per hit, 32 events), Itchy at full damage (1.0/tick, not 0.25 — corrected from the static claim), and death.
 

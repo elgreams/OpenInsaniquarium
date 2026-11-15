@@ -1,6 +1,6 @@
 # Alien kind 7 (`Sexy::Alien` kind 7)
 
-Status: `traced` (`tank_3_3`, `kind7_panic_dive`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`; panic dive and knockback traced by `kind7_panic_dive` (`kind7_panic_01`). Remaining `static` items: Virtual Tank health, and the 3-5 wave draw (covered by `tank_3_5`). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
+Status: `traced` (`tank_3_3`, `kind7_panic_dive`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`; panic dive and knockback traced by `kind7_panic_dive` (`kind7_panic_01`). Three items resolved without dedicated recordings: 3-5 draw `confirmed` by `tank_3_5`, Rufus targeting `confirmed` by cross-referencing `pet-rufus.md`, Virtual Tank health deferred (VT mode only, not reached in Adventure). The pair-kind value for kind 7 on 3-5 remains `static` (from the pair table in `alien-sylvester.md`). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
 
 Kind 7 is a tank 3 alien that alternates between **surfaced** (fast, chases and eats fish) and **submerged** (slow, untargetable by pets, heals from laser hits). It shares the `Alien` class with all other aliens; **this spec only describes what differs for kind 7.** Anything not mentioned here behaves as in `alien-sylvester.md`. Notation is the same.
 
@@ -8,7 +8,7 @@ In short: kind 7 is **very fast when surfaced** (divisor 0.5, cruise ~2.0 px/tic
 
 ## 1. Wave timing
 
-`traced` (`tank_3_3`); 3-5 draw `static` (see `tank_3_5`).
+`traced` (`tank_3_3`); 3-5 draw `confirmed` (`tank_3_5` verified the `(r & 1) | 6` formula, which drew kind 6; the kind-7 branch is the other bit value of the same draw).
 
 Kind 7 first appears on tank 3. Per the level table at `0x00541200` (tank 3 branch): **3-3 sets kind 7**, and **3-5 uses `(r & 1) | 6`** (kind 6 or 7, 1 app draw). The countdown, re-roll formulas and pair-kind assignments are in `tank3-plan.md`.
 
@@ -16,7 +16,7 @@ Kind 7 does not fire missiles, so the countdown freeze rule that applies to kind
 
 **Warning line** (countdown 275): "ALIEN SIGNATURE TYPE-F DETECTED" (expected from the sequence TYPE-A through TYPE-F; not yet confirmed).
 
-**Pair kind** on 3-5: if 3-5 rolls kind 7, the pair kind is 10 (= 7 + 3: Sylvester plus kind 7). `static` from `alien-sylvester.md#per-tick-countdown`.
+**Pair kind** on 3-5: if 3-5 rolls kind 7, the pair kind is 10 (= 7 + 3: Sylvester plus kind 7). `static` — from the pair-kind table in `alien-sylvester.md#per-tick-countdown`; the table entry for kind 10 has not been observed as a pair spawn (only kind 9 is `traced`).
 
 ## 2. Spawn (`Board::AddAlien` @ `0x00545620`)
 
@@ -26,7 +26,7 @@ The same steps and the same **3 app draws** as kind 1 (ctor 2, shadow 1). The ar
 
 ### Constructor (`0x004ecfa0`), kind 7
 
-`traced` (`tank_3_3`); Virtual Tank health `static`.
+`traced` (`tank_3_3`); Virtual Tank health deferred (VT mode only, not reached in Adventure; belongs to a future Virtual Tank spec).
 
 - **Divisor `+0x1b8` = 0.5** (`0x5c3c20`), **health `+0x1f0` = max `+0x1f8` = 260.0** (`0x5966f0`).
 - **No y override**: unlike kinds 5/6, kind 7 does not force y to 280. It spawns at the warning's A.y and swims freely.
@@ -141,13 +141,13 @@ The board displays **"Stop shooting! Alien regains health!"** via the message li
 
 ### 4.3 Pets and other damage sources
 
-`traced` (`tank_3_3`); Rufus targeting `static`.
+`traced` (`tank_3_3`); Rufus targeting `confirmed` (cross-reference: `pet-rufus.md` §Attack documents the `+0x204 == 0` check in both targeting at `0x004e7270` and hit at `0x004e7c30`, traced via `zoo_a_clyde_vert_rufus`).
 
 **Correction:** kind 7 does **not** use the reduced-damage table of kinds 4/5. The capture shows Itchy dealing **1.0 HP/tick** (46 hits of exactly −1.0 while surfaced), matching the default `STAB` constant. Gash deals **3.0** and Stanley's ball **15** (full values). The reduced table (`Itchy 0.25, Gash 0.5`) applies **only to kinds 4 and 5** (Gus and Destructor), per `0x004fb5b0`.
 
 Pets skip kind 7 when submerged (`+0x204 ≠ 0`): Itchy, Gash and Stanley confirm this (`pet-itchy.md`, `pet-gash.md`, `pet-stanley.md`).
 
-Whether Rufus also skips it is not checked (`static`). Rufus targets the nearest alien; if he checks `+0x204` he'd skip submerged kind 7 too.
+Rufus also skips it: `pet-rufus.md` §Attack documents `+0x204 == 0` in both the target selection (`0x004e7270`) and the hit test (`0x004e7c30`). `confirmed` by cross-referencing the traced pet-rufus attack code with the traced kind-7 submerge flag.
 
 ### 4.4 Death (`0x004f9c70(1)`), kind 7
 
@@ -238,7 +238,7 @@ The submerge/surface cycle means the alien's presence (`+0xb8` non-empty) blocks
 ## Open questions
 
 - **Warning line text**: "TYPE-F" is expected from the A–F sequence but not confirmed.
-- **Rufus vs submerged kind 7**: whether Rufus checks `+0x204` before targeting.
+- ~~**Rufus vs submerged kind 7**~~: resolved — `pet-rufus.md` §Attack confirms the `+0x204 == 0` check in both targeting and hit. Rufus skips submerged kind 7.
 - **Music cue** (`0x00537f90(−1)`): what it does (likely resumes alien music).
 
 ## Recording
