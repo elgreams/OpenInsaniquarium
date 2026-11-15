@@ -1,6 +1,6 @@
 # Alien kind 7 (`Sexy::Alien` kind 7)
 
-Status: `traced` (`tank_3_3`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`. Remaining `static` items: panic dive (health never dropped below 100 before first natural submerge in the recording), Virtual Tank health, exact knockback constants, and the 3-5 wave draw (covered by `tank_3_5`). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
+Status: `traced` (`tank_3_3`, `kind7_panic_dive`). Most sections verified by the `tank_3_3` replay of `tank3-3_full_01`; panic dive and knockback traced by `kind7_panic_dive` (`kind7_panic_01`). Remaining `static` items: Virtual Tank health, and the 3-5 wave draw (covered by `tank_3_5`). Addresses are inner-PE VAs. Offsets are raw `this`-relative.
 
 Kind 7 is a tank 3 alien that alternates between **surfaced** (fast, chases and eats fish) and **submerged** (slow, untargetable by pets, heals from laser hits). It shares the `Alien` class with all other aliens; **this spec only describes what differs for kind 7.** Anything not mentioned here behaves as in `alien-sylvester.md`. Notation is the same.
 
@@ -67,7 +67,7 @@ Cruise speed: surfaced (div 0.5) ≈ 1.5/0.5 = 3.0 px/tick; submerged (div 2.0) 
 
 ### 3.2 Submerge toggle
 
-`traced` (`tank_3_3`); panic dive `static` (health stayed above 100 before first natural submerge in the recording).
+`traced` (`tank_3_3`, `kind7_panic_dive`); panic dive traced by `kind7_panic_dive`.
 
 Each tick that reaches step 5 (after wander/chase, after clamp), if kind is 7 and not the Virtual Tank:
 
@@ -109,7 +109,7 @@ Same as kind 1 (`alien-sylvester.md` §4.1): laser path, `Alien::Hit` on each al
 
 ### 4.2 `Alien::Hit(cx, cy)` (`0x004fa6f0`), kind 7
 
-`traced` (`tank_3_3`); panic dive `static` (not triggered in the recording — see §3.2); exact knockback constants `static`.
+`traced` (`tank_3_3`, `kind7_panic_dive`); panic dive and knockback constants traced by `kind7_panic_dive`.
 
 Hit box and 10-tick cooldown: unchanged (160×160, `+0x200 > 0` → no effect).
 
@@ -119,7 +119,7 @@ Hit box and 10-tick cooldown: unchanged (160×160, `+0x200 > 0` → no effect).
 
 **Damage: `health −= 3 · laser`** (same as kinds 1–3). At laser 2 that is **6 per hit**, so **44 hits** to kill 260 HP. EffectShot and HIT sound (`0x126`, gap 3) as kind 1. Verified: the capture shows −6.0 HP drops every ~10 ticks while surfaced.
 
-**Panic dive** (`0x004fa997`): `static` — after applying damage, if **all** of:
+**Panic dive** (`0x004fa997`): `traced` (`kind7_panic_dive`) — after applying damage, if **all** of:
 - kind is 7,
 - `health < 100.0` (`0x5c3bd0`),
 - `+0x19c == 0` (has never submerged before),
@@ -129,7 +129,7 @@ then: **force submerge** — `+0x204 = 1`, `+0x19c = 1`, `+0x1ac = 10`, `+0x194 
 
 This is a **one-time emergency dive**: once `+0x19c = 1` (either from the first natural submerge or from the panic dive), it never triggers again. At the base laser (6 per hit, 10-tick cooldown), the player can deal at most 20 × 6 = 120 damage in the first 200 ticks, bringing health from 260 to 140 — **not below 100**. The panic dive only matters at higher laser levels.
 
-**9-zone knockback** (`0x004fab6e`): same structure as kinds 1–3 (`alien-sylvester.md` §4.2), with zone boundaries at `x+60 / x+100` and `y+60 / y+100`. The impulse magnitudes are **div-scaled** (`vx = div · k`), and since the move divides by div, the actual displacement per tick is `k` regardless of the current divisor. The constants `k` for kind 7 are **larger** than for kinds 1–3 (approximately 3.5 for diagonals and ±3.0/±2.5 for axes, vs 2.5/3.0 for kinds 1–3). The exact per-zone constants are at `0x597560`, `0x599180`, `0x596588`, `0x5965b0`, `0x596598`; `static`, full verification needs a focused knockback recording.
+**9-zone knockback** (`0x004fab6e`): `traced` (`kind7_panic_dive`). Same structure as kinds 1–3 (`alien-sylvester.md` §4.2), with zone boundaries at `x+60 / x+100` and `y+60 / y+100`. The impulse magnitudes are **div-scaled** (`vx = div · k`), and since the move divides by div, the actual displacement per tick is `k` regardless of the current divisor. The constants `k` for kind 7 are **larger** than for kinds 1–3 (approximately 3.5 for diagonals and ±3.0/±2.5 for axes, vs 2.5/3.0 for kinds 1–3). The exact per-zone constants are at `0x597560`, `0x599180`, `0x596588`, `0x5965b0`, `0x596598`.
 
 #### Submerged (`+0x204 ≠ 0`)
 
@@ -238,9 +238,7 @@ The submerge/surface cycle means the alien's presence (`+0xb8` non-empty) blocks
 ## Open questions
 
 - **Warning line text**: "TYPE-F" is expected from the A–F sequence but not confirmed.
-- **Knockback constants**: the 9-zone impulse magnitudes are div-scaled; the exact per-zone constants need a focused recording to verify.
 - **Rufus vs submerged kind 7**: whether Rufus checks `+0x204` before targeting.
-- **Panic dive**: not triggered in the recording (health never dropped below 100 before the first natural submerge). Requires a higher laser level or additional pet damage to exercise.
 - **Music cue** (`0x00537f90(−1)`): what it does (likely resumes alien music).
 
 ## Recording

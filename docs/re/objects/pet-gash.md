@@ -61,11 +61,11 @@ The re-roll draws (`r % 10`, then `r % 9 + 1` on 0, every 21 ticks) are unchange
 
 Best = 10000; distances are computed as for Itchy: `dx = trunc((cx_t) − (x + 40))`, `dy = trunc((cy_t) − (y + 40))`, `d = trunc(f32 sqrt(f32(dx² + dy²)))`, and a candidate wins only if `d < best` (first in list order wins ties).
 
-- **Alien or Bilaterus present:** walk the Bilaterus list `+0xf4` (centre `wx + 40, wy + 40`, every entry a candidate), then the alien list `+0xb8` (centre `wx + 80, wy + 80`; skipped if its byte `+0x204` is set).
+- **Alien or Bilaterus present:** walk the Bilaterus list `+0xf4` (centre `wx + 40, wy + 40`, every entry a candidate), then the alien list `+0xb8` (centre `wx + 80, wy + 80`; skipped if its byte `+0x204` is set — i.e. kind 7 submerged/invulnerable aliens are not targeted).
 - **Otherwise**, only if `clock > threshold` and `+0xa0` is non-empty: walk the guppies `+0xa0` in list order; a guppy is a candidate if its `+0xac < 0` (normal live state), centre `wx + 40, wy + 40`. Any stage qualifies (small to king), and Wadsworth's shelter (`pet-wadsworth.md`) is **not** checked: a sheltered guppy can be eaten (only between waves, when the shelter is off anyway).
 - Otherwise no target.
 
-`traced` (`zoo_e_shrapnel_gash_angie`).
+`traced` (`zoo_e_shrapnel_gash_angie`, `kind7_panic_dive`).
 
 ## Chase (`0x004e02d0`, id 0x11)
 

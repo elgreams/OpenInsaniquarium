@@ -1259,6 +1259,11 @@ impl Fish {
         let mut target: Option<(i32, i32)> = None;
         if aliens {
             for a in ctx.aliens {
+                // Kind 7 invulnerable (`+0x204`): Gash skips, like Itchy
+                // and Stanley (see `nearest_alien`).
+                if a.invulnerable {
+                    continue;
+                }
                 let c = (a.widget_x.wrapping_add(80), a.widget_y.wrapping_add(80));
                 let dd = d(c.0, c.1);
                 if dd < best {
