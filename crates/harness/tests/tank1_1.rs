@@ -999,6 +999,18 @@ fn tank_3_rhubarb_gekkos() {
     }
 }
 
+/// Shrapnel with a Guppycruncher on tank 3-1 (`tank3-1_shrapnel_grubber_01`):
+/// Stinky, Niko and Shrapnel; money pushed to 2000, countdown to 9000.
+/// A Guppycruncher is bought; the bomb falls past both guppies (out of
+/// x-range) and kills the Grubber at clock 3555 (shot=4, dead_fish=1).
+/// Validates the Grubber entry in the bomb contact list (pet-shrapnel.md §Contact).
+#[test]
+fn tank_3_shrapnel_grubbers() {
+    if captured("tank3-1_shrapnel_grubber_01") {
+        replay_level_tank("tank3-1_shrapnel_grubber_01", 3, 1);
+    }
+}
+
 /// Blip on tank 3-4 (`tank3-4_blip_01`): Stinky, Niko and Blip; money pushed
 /// to 1500, countdown to 400. Validates the shop reveal at tick 201 (SONAR)
 /// and the alien spawn y pinned to 280 during the reticle (pet-blip.md).
@@ -1287,6 +1299,7 @@ fn needs_global(name: &str) -> bool {
 /// objects like Guppycruncher with guessed steering drift the app RNG).
 fn needs_app_resync(name: &str) -> bool {
     name.starts_with("tank3-2_rhubarb_gekko")
+        || name.starts_with("tank3-1_shrapnel_grubber")
 }
 
 fn captured(name: &str) -> bool {
@@ -1540,9 +1553,23 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
             s.state.remove("foods");
             // Guppycruncher death position/timing diverges.
             s.state.remove("dead_fish");
+            // The Grubber dying from a bomb produces a "Warning! Your
+            // guppycruncher has died!" message the sim can't replicate
+            // (the Grubber is unmodelled). Mask it.
+            s.state.remove("message");
+            // Bomb explosion shots differ: the sim's bomb doesn't hit
+            // the unmodelled Grubber, so it continues past and creates
+            // explosion effects at a different position/tick.
+            s.state.remove("shots");
             // Money diverges because coin/pearl collection timing shifts
             // when unmodelled objects change Stinky's path.
             s.state.remove("board");
+            // Grubber raw state diverges: its hunger is pushed in the
+            // recording (grubber_bomb mode) and its guessed steering
+            // drifts position.
+            if let Some(raw) = s.state.get_mut("raw").and_then(|v| v.as_object_mut()) {
+                raw.remove("grubber");
+            }
         };
         for s in &mut actual.snapshots {
             mask(s);

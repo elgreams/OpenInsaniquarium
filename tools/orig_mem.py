@@ -53,7 +53,9 @@ for a in args:
         f.write(bytes([1] * 24))
         wr(prof + 0x18, 24)
         print("owned all 24")
-if not b or "quiet" in args and not any(a[:3] in ("mon", "cd=", "ali") for a in args):
+if not b and not any(a.startswith("capture=") for a in args):
+    sys.exit(0)
+if "quiet" in args and not any(a[:3] in ("mon", "cd=", "ali") for a in args):
     sys.exit(0)
 for a in args:
     if a.startswith("money="):
@@ -240,6 +242,8 @@ if cap_arg:
         "build":"f54c2c6ee54b00ae6da7f4bde15feb90d0a867aba6b4151b0277c1f81da3ff66",
         "start_tick":st,"rng":{"app":rand_json(amt2,ami2),"global":rand_json(gmt2,gmi2)},
         "fields":["board.money","counts","guppies","rng_mti"]}) + "\n")
+    grubber_bomb = "grubber_bomb" in args
+    gb_done = 0
     last_t = st - 1
     captured = 0
     while captured < max_ticks:
@@ -254,6 +258,17 @@ if cap_arg:
                         n = len(vp(ptr(bd + off)))
                         if n > 0: counts[name] = n
                     except: pass
+            # grubber_bomb: while a Grubber is alive, keep it fed so it
+            # survives until a natural bomb hits it. Don't push Shrapnel's
+            # counter (the replay can't reproduce that).
+            if grubber_bomb and bd and counts.get("grubber", 0) > 0:
+                try:
+                    for grp in vp(ptr(bd + 0xc4)):
+                        wr(grp + 0x9c, 1400)  # keep Grubber alive
+                    if not gb_done:
+                        gb_done = captured
+                        print(f"grubber_bomb: grubber alive at tick {t}", file=sys.stderr, flush=True)
+                except: pass
             fish = []
             if bd:
                 for p in vp(ptr(bd + 0xa0)):

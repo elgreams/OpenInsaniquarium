@@ -2446,14 +2446,18 @@ fn replay_resync_impl(
         if let Some(g) = global.get(&board.tick) {
             board.global_rng = g.clone();
         }
-        if let Some(a) = app.get(&board.tick) {
-            board.rng = a.clone();
+        // Skip app-stream resync on dirty (torn) ticks: the captured
+        // RNG is mid-update and would corrupt the next tick's draws.
+        if !dirty.contains(&board.tick) {
+            if let Some(a) = app.get(&board.tick) {
+                board.rng = a.clone();
+            }
         }
         // When app-stream resync is active (unmodelled objects like
         // Guppycruncher drift the app RNG within a tick), also resync
         // pet state: the shifted draws affect RNG-dependent decisions
         // (e.g. Rhubarb's mode reroll, animation, shell).
-        if !app.is_empty() {
+        if !app.is_empty() && !dirty.contains(&board.tick) {
             if let Some(Value::Array(pets)) = t
                 .snapshots
                 .iter()
@@ -2532,6 +2536,56 @@ fn replay_resync_impl(
                     if let Some(v) = i("stage") { g.stage = v; }
                     if let Some(v) = i("coin_iv") { g.coin_interval = v; }
                     if let Some(v) = a("growth", 0) { g.growth = v; }
+                }
+            }
+            // Also resync fish-pet state: pet-fish (Stinky, Niko, etc.)
+            // use app-stream draws for mode rerolls, swim animation,
+            // and facing changes — all shift when the Guppycruncher
+            // drifts the app RNG within a tick.
+            if let Some(Value::Array(fps)) = t
+                .snapshots
+                .iter()
+                .find(|s| s.tick == board.tick)
+                .and_then(|s| s.state.get("fish_pets"))
+            {
+                for (fp, cap) in board.fish_pets.iter_mut().zip(fps) {
+                    let i = |k: &str| cap.get(k).and_then(Value::as_i64).map(|v| v as i32);
+                    let f = |k: &str| cap.get(k).and_then(Value::as_f64);
+                    let a = |k: &str, idx: usize| {
+                        cap.get(k)
+                            .and_then(Value::as_array)
+                            .and_then(|a| a.get(idx))
+                            .and_then(Value::as_i64)
+                            .map(|v| v as i32)
+                    };
+                    if let Some(v) = i("mode") { fp.mode = v; }
+                    if let Some(v) = i("mode_t") { fp.mode_timer = v; }
+                    if let Some(v) = i("reroll_t") { fp.reroll_timer = v; }
+                    if let Some(v) = f("vx") { fp.vx = v; }
+                    if let Some(v) = f("vy") { fp.vy = v; }
+                    if let Some(v) = f("x") { fp.x = v; }
+                    if let Some(v) = f("y") { fp.y = v; }
+                    if let Some(v) = f("facing") { fp.facing = v; }
+                    if let Some(v) = a("widget", 0) { fp.widget_x = v; }
+                    if let Some(v) = a("widget", 1) { fp.widget_y = v; }
+                    if let Some(v) = a("anim", 0) { fp.anim_frame = v; }
+                    if let Some(v) = a("anim", 1) { fp.swim_cycle = v; }
+                    if let Some(v) = a("anim", 2) { fp.cel = v; }
+                    if let Some(v) = a("anim", 3) { fp.turn_timer = v; }
+                    if let Some(v) = a("anim", 4) { fp.eat_timer = v; }
+                    if let Some(v) = a("anim", 5) { fp.pulse_timer = v; }
+                    if let Some(v) = i("hunger") { fp.hunger = v; }
+                    if let Some(v) = i("coin_t") { fp.coin_timer = v; }
+                    if let Some(v) = a("timers", 0) { fp.timer_108 = v; }
+                    if let Some(v) = a("timers", 1) { fp.timer_10c = v; }
+                    if let Some(v) = a("timers", 2) { fp.timer_f8 = v; }
+                    if let Some(v) = a("timers", 3) { fp.fade = v; }
+                    if let Some(v) = a("timers", 4) { fp.vy_damp_timer = v; }
+                    if let Some(v) = a("timers", 5) { fp.push_timer = v; }
+                    if let Some(v) = a("timers", 6) { fp.misc_timer = v; }
+                    if let Some(v) = f("push") { fp.push = v; }
+                    if let Some(v) = i("patrol_dir") { fp.patrol_dir = v; }
+                    if let Some(v) = i("coin_iv") { fp.coin_interval = v; }
                 }
             }
         }
