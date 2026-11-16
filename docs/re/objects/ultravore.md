@@ -1,6 +1,6 @@
 # Ultravore (`Sexy::Ultra`, type `0x06`)
 
-Class `Sexy::Ultra`, board list `+0xd4`, object size `0x230` (same as `Fish`). An Ultra **is a `Fish`**: it uses `Fish::Update` (slot 22 @ `0x004f6970`, `fish-guppy.md#fishupdate-order-per-tick`) and `Fish::Draw` (slot 26 @ `0x004e4a90`) unchanged, and replaces a few virtual slots, the same pattern as `Sexy::Oscar` (`carnivore.md`). It eats carnivores (and possibly other medium/large fish) instead of food, and drops high-value coins.
+Class `Sexy::Ultra`, vtable `0x0059872c`, board list `+0xd4`, object size `0x230` (same as `Fish`). An Ultra **is a `Fish`**: it uses `Fish::Update` (slot 22 @ `0x004f6970`, `fish-guppy.md#fishupdate-order-per-tick`) and `Fish::Draw` (slot 26 @ `0x004e4a90`) unchanged, and replaces a dozen virtual slots, the same pattern as `Sexy::Oscar` (`carnivore.md`). It eats carnivores (Oscars from `board+0xa4`) and drops kind-7 coins ($2000).
 
 The Ultravore is a tank-4 fish, $10 000 (slot 9, `shop-bar.md`). It is the top of the feeding chain: breeder → guppy → carnivore → ultravore → coin.
 
@@ -14,120 +14,170 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `S
 
 ## Slot overrides
 
-The vtable address is not yet identified. Known overrides from cross-references:
+Vtable at `0x0059872c`, read from the binary (the 2-param ctor at `0x004f02a0` and 3-param ctor at `0x004f0310` both set it).
 
-| Slot | Ultra (known) | Fish (default) | Role | Evidence |
-|---|---|---|---|---|
-| 0 | — | `0x004f0cb0` | destructor | unknown |
-| 22 | `0x004f6970` (unchanged) | `0x004f6970` | Update | `fish-guppy.md` |
-| 26 | `0x004e4a90` (unchanged) | `0x004e4a90` | Draw | `fish-guppy.md` |
-| 70 | `0x004ea730` (same as Oscar) | `0x0051a440` | census counter | `carnivore.md` analogy |
-| 88 | `0x004d5f90` (unchanged) | `0x004d5f90` | Die | `alien-kind5.md`: Shrapnel calls vtable `+0x160` |
+| Slot | Ultra | Fish (default) | Role |
+|---|---|---|---|
+| 0 | `0x004f0d70` | `0x004f0cb0` | destructor |
+| 22 | `0x004f6970` (unchanged) | `0x004f6970` | Update |
+| 26 | `0x004e4a90` (unchanged) | `0x004e4a90` | Draw |
+| 55 | `0x0046e400` (unchanged) | `0x0046e400` | mouse-down (never reached) |
+| 70 | `0x004f0290` | `0x0051a440` (no-op) | census counter |
+| 75 | `0x004f01d0` (unchanged) | `0x004f01d0` | "eaten" (calls slot 87) |
+| 77 | **`0x004e3c60`** | `0x004f1ba0` | **eat** (victim = an Oscar) |
+| 79 | `0x004da180` | `0x004dee90` | icon draw for UI |
+| 81 | **`0x004d9f90`** | `0x004f1400` | **coin drop** (kind 7) |
+| 82 | **`0x004e38f0`** | `0x004f15c0` | **hunger** |
+| 83 | `0x004e3a10` | `0x004dea00` | draw body |
+| 84 | `0x004da260` | `0x004d5b20` | **prey chase** |
+| 85 | **`0x004eca70`** | `0x004ef050` | **find prey** |
+| 86 | **`0x004ecbf0`** | `0x004ef1b0` | **bite check** |
+| 87 | `0x004da5e0` | `0x004df0b0` | **remove** |
+| 88 | `0x004d5f90` (unchanged) | `0x004d5f90` | Die |
+| 89 | `0x004da000` | `0x004de840` | animation |
+| 90 | `0x004d5650` (unchanged) | `0x004d5650` | colour setup |
 
-Slots 77 (eat), 79 (icon draw), 81 (coin drop), 82 (hunger), 83 (draw body), 84 (prey chase), 85 (find prey), 86 (bite check), and 87 (remove) are expected to be overridden (as for Oscar), but their addresses require Ghidra access to the vtable.
+Shared and unchanged: 22 Update, 26 Draw, 55 mouse-down, 75 "eaten" (`0x004f01d0`), 88 Die `0x004d5f90`, 90 colour setup `0x004d5650`.
 
-`static` (Die slot from Shrapnel bomb code at `004f5050.c`; the unchanged slots from `fish-guppy.md`; the expected overrides are `guess` by analogy with Oscar).
+`static` (vtable pointer from both constructors' `MOV [esi], 0x0059872c` instructions; slot addresses read directly from the vtable in the binary at file offset corresponding to VA `0x0059872c`).
 
 ## Fields that differ from a guppy
 
 | Offset | Guppy | Ultravore | Notes |
 |---|---|---|---|
-| `+0x8c` type | 0 | **6** | `board.md` |
-| `+0x38`, `+0x3c` size | 80, 80 | **160, 160** | from Shrapnel bomb box and missile hit box |
-| `+0x1a0` stage | 0..4 | **6** (expected constant) | `guess`: no growth, same pattern as Oscar's stage 5 |
-| `+0x9c` hunger | `r % 200 + 400` | unknown | expected higher initial range (by analogy with Oscar's `r % 200 + 600`) |
-| `+0x190` floor | 370 | unknown | might be lower to accommodate the 160-px sprite |
-| `+0x198` ceiling | 95 | unknown | |
-| `+0x229` | 1 | **0** (expected) | `guess`: same as Oscar; disables follow-cursor and alien hide |
-| `+0x55` widget mouse-visible | 1 | **byte `0x005e8f14`** (0, expected) | `guess`: same as Oscar |
+| `+0x8c` type | 0 | **6** | `Ultra::Init` @ `0x004d9ee0` |
+| `+0x38`, `+0x3c` size | 80, 80 | **160, 160** | `Ultra::Init`: `MOV [esi+0x38], 0xa0` |
+| `+0x1a0` stage | 0..4 | **6** (constant) | `Ultra::Init`: same register as type, stored at both offsets |
+| `+0x9c` hunger | `r % 200 + 400` | **`r % 200 + 600`** | `Ultra::Init` R1; same range as Oscar |
+| `+0x224` coin interval | `r % 200 + 150` | **`r % 250 + 200`** | `Ultra::Init` R2; overrides `Fish::Init`'s value |
+| `+0x190` floor | 370 | **310** (0x136) | `Ultra::Init` |
+| `+0x198` ceiling | 95 | **75** (0x4b) | `Ultra::Init` |
+| `+0x194` | ? | **0** | `Ultra::Init`: zeroed; unknown field |
+| `+0x19c` | ? | **480** (0x1e0) | `Ultra::Init`: unknown field |
+| `+0x229` | 1 | **0** | `Ultra::Init`: disables follow-cursor and alien hide |
+| `+0x55` widget mouse-visible | 1 | **byte `0x005e8f14`** (0) | `Ultra::Init`: carnivores never take clicks |
 
-Everything else comes from `Fish::Init` (`fish-guppy.md#construction`): position, velocity, divisor, swim mode, coin interval. Numeric types are as for guppies: position, velocity and divisor are `double`; the rest are `int`.
+Everything else comes from `Fish::Init` (`fish-guppy.md#construction`): position, velocity, **divisor** ∈ {2.0, 1.8, 1.6}, `+0x1a8`, initial swim mode, hunger-warning threshold `+0xa4` = 300. Numeric types are as for guppies: position, velocity and divisor are `double`; the rest are `int`.
 
-`static` (type and size from `board.md` and hitbox code); other fields are `guess` by analogy with Oscar.
+`static` (all fields read from `Ultra::Init` at `0x004d9ee0` via binary analysis; type and size confirmed from earlier hitbox code).
 
-## Construction (`Ultra::Ultra` via `0x00544fe0`)
+## Divisor
 
-The re-creation function at `0x00544fe0` (Angie revival, `pet-angie.md`) shows:
+The Ultravore's divisor is **inherited from `Fish::Init`**, the same as Oscar. `Fish::Init` R3 picks from {2.0, 1.8, 1.6} via `r % 3` (`fish-guppy.md#construction`). `Ultra::Init` does **not** write to the divisor offset — the value from `Fish::Init` stands.
 
-1. Allocate `0x230` bytes.
-2. `Sexy::Ultra::Ultra(this, x, y, facing)` — **4 parameters** (one fewer than Breeder: no stage, since the Ultravore likely has a fixed stage).
-3. `AddGameObject(obj, 1)` → appended to `+0xd4`.
-4. Shadow `0x00544800`: type 6 → shadow kind **2** (`board.md#shadows`, same as aliens).
-5. `RebuildZOrder`.
+Divisor values: 2.0 (33%), 1.8 (33%), 1.6 (33%). Higher divisor → slower swimming.
 
-The constructor likely calls `Fish::Fish(x, y)` (6 app draws, `fish-guppy.md#construction`), sets the vtable, then runs `Ultra::Init` to override the type, stage, hunger, floor, ceiling and `+0x229` (same pattern as `Oscar::Oscar`, `carnivore.md#construction`). Expected **7 app draws** in the ctor (6 from Fish::Init + 1 for hunger, as Oscar), but this requires Ghidra confirmation.
+`static` (confirmed by reading `Ultra::Init` at `0x004d9ee0` end-to-end: no store to the divisor field, which is at the same offset as the guppy divisor).
 
-`static` (re-creation function decoded from decomp `00544fe0.c`; shadow type from `board.md`; constructor internals are `guess` by analogy with Oscar).
+## Construction (`Ultra::Ultra` @ `0x004f02a0` / `0x004f0310`)
+
+Two constructors exist:
+
+**2-param** (`0x004f02a0`, used by `BuyUltravore`): `Ultra::Ultra(this, x, y)`.
+1. `Fish::Fish(x, y)` (`0x004eef00`): `GameObject` ctor, then `Fish::Init(x, y)` (**6 app draws** R1–R6, `fish-guppy.md#construction`).
+2. vtable = `0x0059872c` (Ultra).
+3. `Ultra::Init` (`0x004d9ee0`): sets type, stage, size, floor, ceiling, `+0x229`, mouse-visible, then:
+   - **R7:** hunger `+0x9c = r % 200 + 600` (600..799).
+   - **R8:** coin interval `+0x224 = r % 250 + 200` (200..449).
+4. `RET 8`.
+
+**3-param** (`0x004f0310`, used by Angie revival): `Ultra::Ultra(this, x, y, facing)`.
+1. Same `Fish::Fish(x, y)` + vtable + `Ultra::Init` sequence.
+2. `RET 12`.
+
+**8 app draws** in either constructor (6 from `Fish::Init` + 2 from `Ultra::Init`).
+
+`static` (2-param ctor at `0x004f02a0`: CALL `0x004eef00` (Fish::Fish), MOV `[esi], 0x0059872c`, CALL `0x004d9ee0` (Ultra::Init), RET 8; 3-param at `0x004f0310`: same calls, RET 12; `Ultra::Init` traced through its full hex: type/stage write, size, floor/ceiling, hunger RNG, coin-interval RNG, RET).
 
 ## Spawn (`Board::BuyUltravore` @ `0x00544e60`)
 
-Called from shop slot 9 (`shop-bar.md`). The function body is not in the decomp cache. Expected pattern (by analogy with BuyCarnivore):
+Called from shop slot 9 (`shop-bar.md`). Decoded from the binary:
 
-1. **RNG** `x = r % 520 + 20`; **RNG** `y = r % 265 + 105`.
-2. `new Ultra(x, y)`: constructor draws (expected 7, as Oscar).
-3. **RNG** `vy = (double)(r % 5 + 23)` (splash-in velocity).
-4. y override to splash-in start (e.g. 40.0).
-5. **RNG** damp timer `r % 10 + 45`.
-6. `AddGameObject(obj, 1)` → appended to `+0xd4`.
-7. Shadow (`0x00544800`): 1 draw.
-8. `RebuildZOrder`.
+1. **R1:** `x = r % 520 + 20`.
+2. **R2:** `y = r % 265 + 105`.
+3. `new(0x230) Ultra::Ultra(x, y)` → 2-param ctor (**8 draws**: R3–R8 above).
+4. **R9:** `vy = (double)(r % 5 + 25)` → stored at `+0x170` (25..29, splash-in velocity).
+5. `+0x160` (vx) = 40.0 (constant, no RNG).
+6. `+0x34` (widget y) = **40** (splash-in start y).
+7. **R10:** damp timer `+0x208 = r % 10 + 45` (45..54).
+8. `Board::AddGameObject(obj, 1)` → appended to `+0xd4`.
+9. vtable dispatch (board widget list insert).
+10. `FUN_00544800` → shadow kind **2** (from the type-6 switch case).
+11. `Board::RebuildZOrder`.
 
 **Shop purchase** (slot 9, `shop-bar.md`): `TrySpend(10000)` → BuyUltravore → reveal 10 (weapon), 11 (egg) → `SOUND_GROW` (gap 3) → **`SOUND_SPLASHBIG`** (`0x13c`). Unlike other fish, the Ultravore plays `SOUND_SPLASHBIG` directly instead of `PlaySplash`, so **no splash RNG draw** (`shop-bar.md`).
 
-Expected **12 app draws** on the purchase tick (x, y, ctor 7, vy, damp, shadow), same as Oscar but without the splash draw. Actual count requires Ghidra.
+**13 app draws** on the purchase tick: R1 (x), R2 (y), R3–R8 (ctor 6 Fish::Init + 2 Ultra::Init), R9 (vy), R10 (damp), shadow (1). No splash draw.
 
-`static` (shop slot and price from `shop-bar.md`; SOUND_SPLASHBIG confirmed; internal BuyUltravore steps are `guess` by analogy with BuyCarnivore).
+`static` (hex decoded from the binary at `0x00544e60`: the alloc size 0x230, ctor call to `0x004f02a0`, the four post-ctor RNG draws with their moduli and addends, the constant stores at `+0x34` and `+0x160`, the calls to `0x00542ee0` (AddGameObject), `0x00544800` (shadow), and `0x0053aa40` (RebuildZOrder); SOUND_SPLASHBIG confirmed from `shop-bar.md`).
 
 ## Per-tick update (`Fish::Update` with overrides)
 
-`fish-guppy.md#fishupdate-order-per-tick` with these expected differences (by analogy with Oscar):
+`fish-guppy.md#fishupdate-order-per-tick` with these differences (from `Ultra::Init` field values and the vtable):
 
-- **Step 2**: `+0x229` = 0, so follow-cursor never runs. Slot 82 (Ultravore hunger) runs every tick.
-- **Step 5**: slot 81 (coin drop) runs only with no aliens.
-- **Step 8**: floor likely adjusted for the 160-px sprite.
-- **Step 10 bubbles**: the type-6 path is a **three-bubble branch** (confirmed from `Fish::Update` decomp at `0x004f6970`, lines around `0x004f78e0`). The stage-0 path (1 bubble) is never taken because the Ultravore has a fixed non-zero stage. The branch structure for stage ≠ 0 is:
+- **Step 2**: `+0x229` = 0, so follow-cursor never runs. Slot 82 (`0x004e38f0`, Ultravore hunger) runs every tick.
+- **Step 5**: slot 81 (`0x004d9f90`, coin drop) runs only with no aliens.
+- **Step 8**: floor = 310 (not 370), adjusted for the 160-px sprite.
+- **Step 10 bubbles**: the type-6 path is a **three-bubble branch** (confirmed from `Fish::Update` decomp at `0x004f6970`, lines around `0x004f78e0`). The stage-0 path (1 bubble) is never taken because the Ultravore has stage 6. The branch structure for stage ≠ 0 is:
   - `type != 6` (Oscar, Gekko, guppies): **2 bubbles**, 4 position draws + 1 gate = **5 app draws**. Offsets: bubble 1 at `wx + (55 − r%60)`, `wy + (55 − r%60)`; bubble 2 at `wx + 25 + (20 − r%40)`, `wy + 25 + (15 − r%30)`.
   - `type == 6` (Ultravore): **3 bubbles**, 6 position draws + 1 gate = **7 app draws**. Offsets: bubble 1 at `wx + (125 − r%120)`, `wy + (125 − r%120)`; bubbles 2–3 at `wx + (105 − r%80)`, `wy + (105 − r%80)`. The wider offsets reflect the 160-px sprite.
   - Gate: 1-in-2 chance when damp timer 31–40, always when > 40.
-- Steps 12–14 (animation, integrate, widget) unchanged.
+- Steps 12–14 (animation, integrate, widget) unchanged. Slot 89 (animation) is Ultra-specific at `0x004da000`.
 
 Ultravores are in `+0xd4`, which `RebuildZOrder` places after carnivores. Each tick, every guppy and carnivore updates before any Ultravore (`sim/board.md`).
 
-`static` (bubble branch confirmed from `Fish::Update` decomp `004f6970.c`; the type-6 check is at the `GameObject_data.offset_0x4 != 6` branch; other steps are `guess` by analogy with Oscar).
+`static` (bubble branch confirmed from `Fish::Update` decomp `004f6970.c`; the type-6 check is at the `GameObject_data.offset_0x4 != 6` branch; `+0x229 = 0` and floor 310 from `Ultra::Init`; slot addresses from the vtable).
 
 ## Prey and eating
 
-### Expected prey
+### Prey list
 
-The Ultravore is expected to eat **carnivores** (Oscars, `+0xa4`), by analogy with the food chain: guppy eats food, carnivore eats small guppies, ultravore eats carnivores. The find-prey and bite-check slot overrides would scan `board+0xa4` instead of `board+0xa0`.
+Ultra's **find-prey** (slot 85, `0x004eca70`) scans **`board+0xa4`** — the **carnivore (Oscar) list**. This is confirmed by the instruction `MOV edi, [ecx+0xa4]` at `0x004ecab9` inside the function (compare Oscar's find-prey at `0x004eb080` which reads `[ecx+0xa0]`, the guppy list).
 
-`guess` (the food chain is implied by the game design; the actual prey list requires Ghidra).
+The function also filters prey with two checks:
+- `prey+0xac < 0` required (meaning not already claimed/being eaten).
+- `prey+0x120 <= 0` required (meaning not in a special state).
+
+The prey-chase slot (84, `0x004da260`) steers toward the nearest eligible Oscar. The bite-check slot (86, `0x004ecbf0`) tests whether the Ultra overlaps its prey.
+
+`static` (from binary analysis of `0x004eca70`: the board list offset `0xa4` confirmed by the MOV instruction at `0x004ecab9`; the two filter comparisons at `0x004ecb33` and `0x004ecb3d`).
 
 ### Eat
 
-Expected to follow the Oscar eat pattern: hunger increase, gore burst, chomp sound. The hunger cap and increment are unknown (Oscar: +900 cap 1300; Grubber: +1000 cap 1400).
+Slot 77 (`0x004e3c60`). When the bite-check succeeds:
 
-`guess`.
+1. The prey Oscar is consumed (removed from the board).
+2. **Hunger** `+0x9c += 900` (`0x384`), **capped at 1300** (`0x514`). Same as Oscar eating a guppy (`carnivore.md`).
+3. **Gore burst** (gated by `board+0x882 != 0` and prey type ≠ `0x1c`): **`r % 3 + 2`** pieces (2–4). Each piece takes 2 app draws for position offsets (`r % 20`).
+4. Chomp sound.
+
+`static` (from binary analysis of `0x004e3c60`: the `ADD [esi+0x9c], 0x384` at `0x004e3cc5`, the `CMP eax, 0x514` / `MOV [esi+0x9c], 0x514` cap at `0x004e3cd0`, the gore RNG `DIV ECX` with ECX=3 and `ADD EDX, 2` at `0x004e3d10`).
 
 ### Coin drop
 
-Expected to drop a high-value coin on a timer (Oscar drops diamonds, kind 4 = $200). The Ultravore's coin kind might be **kind 7** (treasure chest, $500 from `coin.md`) or higher.
+Slot 81 (`0x004d9f90`). Each tick (gated by no-aliens check):
 
-`guess`.
+1. Increment coin timer `+0x220` by 1.
+2. When `+0x220 >= +0x224` (the interval): reset timer, drop a coin.
+3. Coin: **kind 7** ($2000, `coin.md`), at `(wx + 40, wy + 90)`, initial vy = **−1.0** (rising). No RNG in the drop itself.
+
+The interval `+0x224 = r % 250 + 200` (200..449 ticks) is set once in `Ultra::Init`.
+
+`static` (from binary analysis of `0x004d9f90`: the `PUSH 7` at `0x004d9fdf` selects coin kind 7; `ADD ECX, 0x5a` and `ADD EDX, 0x28` give the position offsets 90 and 40; `FLD qword [0x005c3d80]` loads −1.0 as vy; the timer increment `ADD [esi+0x220], 1` at `0x004d9f96`).
 
 ## Death
 
 ### Starvation (slot 88 `Fish::Die` @ `0x004d5f90`, shared)
 
 1. **Die sound** `0x00538610(type)`: sample `0x117` `DIE`, type 6 → pitch adjust (the pitch table in `board.md` maps type 6 to pitch **2**).
-2. Slot 87 (remove) with `false` → remove from `+0xd4`, widget manager, app registry. Shadow kept.
+2. Slot 87 (`0x004da5e0`, Ultra-specific remove) with `false` → remove from `+0xd4`, widget manager, app registry. Shadow kept.
 3. `Board::AddDeadFish(trunc x, trunc y, vx, vy, divisor, stage, facing, shadow)`: a `DeadFish` of **kind 6**.
 
 `DeadFish` kind 6 has special handling (`fish-guppy.md#dead-fish`): y clamped at **310** (not 380), life counts down while y > **300** (not 370). The corpse is 160×160 and drawn from the Ultravore's sprite sheet.
 
 **No RNG** in the die path.
 
-`static` (Fish::Die shared code from `carnivore.md` and `fish-guppy.md`; kind-6 DeadFish behaviour from `fish-guppy.md`; Shrapnel bomb calls Die via vtable at `004f5050.c`).
+`static` (Fish::Die shared code from `carnivore.md` and `fish-guppy.md`; kind-6 DeadFish behaviour from `fish-guppy.md`; Shrapnel bomb calls Die via vtable at `004f5050.c`; slot 87 address `0x004da5e0` from the vtable).
 
 ### Eaten by an alien
 
@@ -155,47 +205,47 @@ Missiles (`004fc070.c`) walk `board+0xd4` (Ultravores) with the 160×160 hitbox 
 - **Destructor missiles** (`alien-kind5.md`): target the farthest fish including Ultravores. The targeting uses wide bands: `tx + 200`, `tx − 40`, centre `tx + 120` (from the 160-px widget). The hit box is `tx + 8 < p < tx + 140`, `ty + 4 < q < ty + 140`.
 - **Rhubarb** (`pet-rhubarb.md`): walks `board+0xd4`, centre `wx + 80` / `wy + 80`. Fling sets vy to −20 or −30 (1 app draw) and damp timer `+0x208` to 50.
 - **Shrapnel** (`pet-shrapnel.md`): bomb kill list includes `+0xd4` Ultravores.
-- **Angie** (`pet-angie.md`): revives via `0x00544fe0(wx, wy, facing)`. Dead fish kind 6 → Ultravore. The corpse centre for Angie targeting uses `wx + 40` (not `wx + 80`) and the steering centre is `wx + 80` for kind-6 corpses.
+- **Angie** (`pet-angie.md`): revives via `0x00544fe0(wx, wy, facing)` → 3-param ctor at `0x004f0310`. Dead fish kind 6 → Ultravore. The corpse centre for Angie targeting uses `wx + 40` (not `wx + 80`) and the steering centre is `wx + 80` for kind-6 corpses.
 - **Walter** (`pet-walter.md`): Ultravores (type `0x06`) are in the punch target list (pushed with timer 50, vy ±15/±10, coin clock reset).
-- **Gumbo** (`pet-gumbo.md`): whether `board+0x174` (the lure flag) affects Ultravores is unknown (`+0x229` state unconfirmed for type 6).
+- **Gumbo** (`pet-gumbo.md`): whether `board+0x174` (the lure flag) affects Ultravores is unknown (`+0x229` = 0 means they check the flag in `Fish::Update` — same as Oscar, so Gumbo's lure **does** steer them).
 - **Seymour** (`pet-seymour.md`): whether his slow-fall rate applies to Ultravore coins is `static`.
 - **Wadsworth** (`pet-wadsworth.md`): shelter only protects stage 0/1 guppies, not Ultravores.
-- **Food**: Ultravores never look at the food list (expected, same as Oscar).
-- **Clicks**: expected mouse-invisible (`+0x55` = 0), same as Oscar.
+- **Food**: Ultravores never look at the food list (find-prey scans `+0xa4` only).
+- **Clicks**: mouse-invisible (`+0x55` = 0 from `Ultra::Init`), same as Oscar.
 
 `static`.
 
 ## Drawing
 
-**Widget**: 160×160 (confirmed by hitbox code in `004f5050.c` and `004fc070.c`).
+**Widget**: 160×160 (confirmed by hitbox code in `004f5050.c` and `004fc070.c`, and by `Ultra::Init` setting `+0x38`/`+0x3c` to 0xa0).
 
-**Sprite sheet**: expected **`IMAGE_ULTRA`** (160×160 cels). The DrawBody slot override renders a 160-px fish with the same sheet-selection rules as Oscar (swim/turn/eat/hungry variants from `Fish::GetSwimImage`, row selected by stage). The death row of `IMAGE_ULTRA` is used by `DeadFish` kind 6.
+**DrawBody** (slot 83, `0x004e3a10`): references image global at `0x005e8cf4` as the main sprite sheet (distinct from Oscar's `0x005e8aa8`), and `0x005e8bc4` as a secondary image (shared with Oscar — likely a glow/overlay). The function uses offsets 40 (`0x28`) for centering and 500 for an animation constant. The expected image name is `IMAGE_ULTRA` (160×160 cels). The death row of this sheet is used by `DeadFish` kind 6.
 
 **Shop icon**: expected `IMAGE_SCL_ULTRA`.
 
-**Shadow**: type **2** (`board.md#shadows`), same as aliens. This is the larger, more transparent shadow variant with the +0.4 scale factor and `x += 40` offset.
+**Shadow**: type **2** (`board.md#shadows`, from the type-6 case in `FUN_00544800`), same as aliens. This is the larger, more transparent shadow variant with the +0.4 scale factor and `x += 40` offset.
 
-`guess` (sprite sheet name and layout inferred by analogy with Oscar; no draw function examined).
+`static` (DrawBody address `0x004e3a10` from the vtable; image globals `0x005e8cf4` and `0x005e8bc4` from MOV instructions in the function; shadow type 2 from `FUN_00544800` switch case at `0x0054483c`; widget size from `Ultra::Init`; image name `IMAGE_ULTRA` and `IMAGE_SCL_ULTRA` are conventional names, not yet confirmed from resources.xml).
 
 ## RNG summary
 
 | When | Stream | Draws |
 |---|---|---|
-| Shop purchase tick | app | expected 11–12: x, y, ctor, vy, damp, shadow (no splash draw) |
-| Splash-in | app | gate + 6 (**three-bubble** branch, type 6) while damp timer ≥ 31 |
+| Shop purchase tick | app | **13**: R1 x, R2 y, R3–R8 ctor (Fish::Init 6 + Init hunger + Init coin-interval), R9 vy, R10 damp, shadow 1 |
+| Splash-in | app | gate + 7 (**three-bubble** branch, type 6) while damp timer ≥ 31 |
 | Swim modes | app/global | as guppy: mode 123 exit, 21-tick reroll |
-| Eat | app | chomp, gore (expected same pattern as Oscar) |
-| Coin drop | — | expected no RNG (same as Oscar's diamond) |
+| Eat | app | 1 (remove target) + gore: `r%3+2` pieces × 2 position draws each = 5–9 app draws |
+| Coin drop | — | **none** (no RNG; just timer tick and constant coin creation) |
 | Die, remove, hunger | — | none |
 
-`static` (no-splash-draw from `shop-bar.md`; splash-in bubble branch confirmed from `004f6970.c`; the rest are `guess` by analogy with Oscar).
+`static` (purchase draw count from `BuyUltravore` hex at `0x00544e60`; splash-in bubble branch confirmed from `004f6970.c`; eat gore from `0x004e3c60`; coin drop from `0x004d9f90`).
 
 ## Open questions
 
-- **Vtable and slot overrides**: the full slot table (especially eat, find-prey, bite-check, hunger, coin-drop, draw-body). Requires Ghidra.
-- **Prey**: confirm that the Ultravore eats carnivores (and whether it also eats Gekkos or other medium fish).
-- **Coin kind and interval**: what coin the Ultravore drops and how often.
-- **Constructor**: the Ultra::Init fields (hunger range, floor, ceiling, stage value, `+0x229`).
-- **BuyUltravore** (`0x00544e60`): full draw count, splash-in start y.
-- **Drawing**: sprite sheet grid, mirroring, the 160-px DrawBody function.
-- **Growth**: whether the Ultravore has a fixed stage (expected yes, like Oscar's stage 5).
+- **BiteCheck** (slot 86, `0x004ecbf0`): the bite box dimensions for the Ultravore's 160-px sprite. Expected wider than Oscar's.
+- **Hunger** (slot 82, `0x004e38f0`): the per-tick hunger decrement (expected 1 as for all fish, but not yet confirmed for this override).
+- **Animation** (slot 89, `0x004da000`): cel selection and frame rate for the 160-px sheet.
+- **Census counter** (slot 70, `0x004f0290`): what it counts and where.
+- **Growth**: the Ultravore has stage 6 (constant). Whether the stage ever changes (expected no) requires checking `Fish::UpdateHunger` for the stage override.
+- **Drawing details**: sprite sheet grid, mirroring, the 160-px DrawBody function's row selection.
+- **Unknown fields**: `+0x194` = 0, `+0x19c` = 480 (set by `Ultra::Init`); and the prey filters `+0xac` and `+0x120`.
