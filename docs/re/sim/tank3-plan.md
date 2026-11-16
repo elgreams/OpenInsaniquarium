@@ -121,7 +121,7 @@ After steps 2–6, remaining `static` claims from the pet specs that mention tan
 - ~~**Blip reticle** (`pet-blip.md`): first capture should be tank 3-5+ with Blip, checking the shop at tick 201 and the alien spawn y (280).~~ Done: `tank_3_blip` replays 3-4 with Blip; shop reveal and spawn y 280 both match.
 - ~~**Wadsworth shelter vs. kind-1 missiles**: the hit check on kind-1 missiles tests shelter, unlike kind-0. A recording with Wadsworth on a kind-6 level would confirm.~~ Done: `tank_3_4_wadsworth` replays 3-4 with Wadsworth (Stinky, Niko, Wadsworth); kind-6 alien fires kind-1 missiles, shelter blocks the hit on stage-0/1 guppies, large guppies are killed. `alien-kind6.md` §6.2 now `traced`.
 - ~~**Gumbo lure** with Gekkos/Grubbers: whether `board+0x174` affects fish types beyond guppies.~~ Done: `tank_3_gumbo_nonfish` replays 3-2 with Gumbo and two Beetlemunchers; Gekkos (`+0x229 = 0`) and Grubbers (not Fish) are **not** lured. `pet-gumbo.md` updated.
-- **Angie revival** of Gekkos, Grubbers, Breeders (`pet-angie.md`): the re-creation functions at `0x005451c0` (Gekko), `0x005454f0` (Grubber) are listed but not traced.
+- ~~**Angie revival** of Gekkos, Grubbers, Breeders (`pet-angie.md`): the re-creation functions at `0x005451c0` (Gekko), `0x005454f0` (Grubber) are listed but not traced.~~ Done (Grubber): `tank_3_angie_revivals` replays 3-1 with Shrapnel, Stinky and Angie; a bomb kills a Grubber, Angie revives it (kind 9 corpse → fresh Grubber). Gekko and Breeder revival still `static`.
 
 These can be batched into one or two focused recordings on 3-5 (or a zoo) and folded into the step that first records that level.
 

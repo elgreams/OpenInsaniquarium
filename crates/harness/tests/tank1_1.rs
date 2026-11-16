@@ -1055,6 +1055,19 @@ fn tank_3_gumbo_nonfish() {
     }
 }
 
+/// Angie revival of a Grubber on tank 3-1 (`tank3-1_angie_grubber_01`):
+/// Stinky, Shrapnel and Angie; money pushed to 3000, countdown to 9000.
+/// Two Guppycrunchers bought; Shrapnel's bomb kills a Grubber (kind 9
+/// corpse at clock ~3502), Angie homes on it and sets counter 100→10 at
+/// clock ~3601, the corpse counts down 10→0 and a fresh Grubber appears
+/// at clock ~3611 (pet-angie.md §The revival, Grubber re-creation).
+#[test]
+fn tank_3_angie_revivals() {
+    if captured("tank3-1_angie_grubber_01") {
+        replay_level_tank("tank3-1_angie_grubber_01", 3, 1);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
@@ -1313,6 +1326,7 @@ fn needs_global(name: &str) -> bool {
 fn needs_app_resync(name: &str) -> bool {
     name.starts_with("tank3-2_rhubarb_gekko")
         || name.starts_with("tank3-1_shrapnel_grubber")
+        || name.starts_with("tank3-1_angie_grubber")
         || name.starts_with("tank3-2_gumbo_gekko")
 }
 

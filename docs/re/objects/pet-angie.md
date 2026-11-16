@@ -10,7 +10,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-18 differen
 - Re-creation: guppy `0x00546fc0` (→ 4-argument `Fish::Fish` @ `0x004eef90`), Oscar `0x00544d80`, Ultravore `0x00544fe0`, Gekko `0x005451c0`, Penta `0x00545360`, Grubber `0x005454f0`, Breeder `0x00547270`
 - Animation (slot 89) @ `0x004dfc50`, id-0x12 branch; draw body `0x004f8610` case 0x12 → `0x004df590`
 
-Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Shrapnel, Gash and Angie from the game's own demo (`zoo_e_01`, its first ~8,600 ticks: Shrapnel's bombs kill guppies and Angie revives them, 4 revivals) and compares the pets, guppies, corpses, sounds and the app RNG every tick. Drawing and the non-guppy revivals stay `static`.
+Confidence per section. `zoo_e_shrapnel_gash_angie` (`tank1_1.rs`) replays 1-2 with Shrapnel, Gash and Angie from the game's own demo (`zoo_e_01`, its first ~8,600 ticks: Shrapnel's bombs kill guppies and Angie revives them, 4 revivals) and compares the pets, guppies, corpses, sounds and the app RNG every tick. `tank_3_angie_revivals` replays 3-1 with Shrapnel, Stinky and Angie; a bomb kills a Grubber and Angie revives it (kind 9 → fresh Grubber). Drawing and Gekko/Oscar/Ultravore/Penta/Breeder revivals stay `static`.
 
 ## Fields used by id 18
 
@@ -89,14 +89,14 @@ The corpse's update (`fish-guppy.md#dead-fish`) has a branch for a counter in 0.
 | 6 | Ultravore | `0x00544fe0(wx, wy, facing)` |
 | 7 | Gekko (beetlemuncher) | `0x005451c0(wx, wy, facing)` |
 | 8 | Penta (starcatcher) | `0x00545360(wx)` (x only) |
-| 9 | Grubber (Guppycruncher) | `0x005454f0(wx)` (x only) |
+| 9 | Grubber (Guppycruncher) | `0x005454f0(wx)` (x only) — `traced` (`tank_3_angie_revivals`) |
 | 10..12 | Breeder, sub-kind = kind − 10 | `0x00547270(wx, wy, kind − 10, facing)` |
 
 The corpse's update returns right after.
 
 **Timing.** Corpses sit before the pets in the update order (`sim/board.md#tick-order`), so if Angie touches a corpse on tick t, its next updates take the counter 10 → 9 (t + 1) … → 0 (t + 10), and the fish comes back on **tick t + 10**. The new fish joins the end of the widget list and **updates in that same tick** (`sim/board.md`), with its own per-tick draws.
 
-**The revived guppy** (`0x00546fc0`): `Fish::Fish(x, y, stage, facing)` (`0x004eef90`) → `Fish::Init(x, y)`: **6 app draws** (facing, divisor, hunger `% 200 + 400`, growth `% 3 + 4`, mode, coin interval), so it comes back with full fresh hunger and new timers; then stage `+0x1a0 = kind`, and **vx = +1.0 if facing right, else −1.0** (also the facing scale `+0x188`), overriding the draw. It is added to `+0xa0`, the "most guppies" record `board+0x48c` is raised if exceeded, and it gets a **type-0 shadow (1 draw)**. So a guppy revival costs **7 app draws** before its first update. The other kinds' ctors weren't read (their draw counts are open).
+**The revived guppy** (`0x00546fc0`): `Fish::Fish(x, y, stage, facing)` (`0x004eef90`) → `Fish::Init(x, y)`: **6 app draws** (facing, divisor, hunger `% 200 + 400`, growth `% 3 + 4`, mode, coin interval), so it comes back with full fresh hunger and new timers; then stage `+0x1a0 = kind`, and **vx = +1.0 if facing right, else −1.0** (also the facing scale `+0x188`), overriding the draw. It is added to `+0xa0`, the "most guppies" record `board+0x48c` is raised if exceeded, and it gets a **type-0 shadow (1 draw)**. So a guppy revival costs **7 app draws** before its first update. The revived Grubber (`0x005454f0(wx)`) is `traced` (`tank_3_angie_revivals`): a Shrapnel bomb kills a Grubber on tank 3-1, Angie revives it, and the fresh Grubber appears at the corpse's position. The Gekko and other kinds' ctors weren't read (their draw counts are open).
 
 RNG in Angie's own code: none (only the re-roll).
 
@@ -128,6 +128,6 @@ Then, in additive mode with colourised images, `IMAGE_HALO` (`0x005e8c7c`, 10 ×
 
 ## Open questions
 
-- Everything is static. Capture a starving guppy with Angie in the tank: the touch tick, the 10-tick countdown, the HEAL stamp and the 7 draws.
 - Whether the corpse's removal (slot 82) deletes the shadow it inherited from the dead fish, or the shadow lingers (the new fish gets its own).
-- Draw counts of the Oscar/Ultravore/Gekko/Penta/Grubber/Breeder ctors on revival.
+- Draw counts of the Oscar/Ultravore/Gekko/Penta/Breeder ctors on revival. The Grubber revival is now traced (`tank_3_angie_revivals`: Shrapnel bomb kills a Grubber, Angie revives it, fresh Grubber appears at the corpse's position).
+- The Gekko (beetlemuncher) re-creation function at `0x005451c0` is listed but not yet traced: needs a recording with Angie and a Beetlemuncher killed.
