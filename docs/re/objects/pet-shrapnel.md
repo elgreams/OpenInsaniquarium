@@ -82,7 +82,9 @@ Stinky's and Clyde's coin search skips kinds 0x11/0x12 (`pet-stinky.md#coin-chas
 4. **Collected** (`+0x198` set by a click): the normal glide to (550, 30), 1/7 of the remaining distance per tick, then remove and bank once `widget_y < 40` (`coin.md#coin-update-0x004f5050-normal-game-basic-kinds`). It never explodes or hits anything while collected.
 5. **Falling** (not collected): `y += 1.5`, or **`y += 0.8` while Seymour is in the tank** (`board+0x16c ≠ 0`, `pet-seymour.md`). When `y ≥ 370`: `y = 370`, `floor_time (+0x19c) += 1`; once `floor_time ≥ limit` (20; 150 on the 1-1 tutorial `0x00537b80`; 108 in the Virtual Tank `app+0x880`; 200 with Seymour), the bomb is **removed at once** (no 5-tick fade) through `0x004d5510`, which **explodes** it (below), and the update returns.
 6. Widget position = `trunc(x), trunc(y)`.
-7. **Contact**, every falling or resting tick from `age ≥ 31` (the first 30 ticks after the drop are safe). With `cx = x + 36`, `cy = y + 36` (doubles, the bomb's centre) and each fish's widget `fx, fy` (ints), a fish is hit when its `+0xac < 0` (normal alive state) and
+### Contact
+
+   Every falling or resting tick from `age ≥ 31` (the first 30 ticks after the drop are safe). With `cx = x + 36`, `cy = y + 36` (doubles, the bomb's centre) and each fish's widget `fx, fy` (ints), a fish is hit when its `+0xac < 0` (normal alive state) and
    `fx + 10 < cx < fx + 70` and `fy + 10 < cy < fy + 70` (all strict),
    with 150 instead of 70 for Ultravores (160-px widget). The lists are walked in this order, each in list order, and the **first** hit ends the search:
    1. guppies `+0xa0` → slot 88 (`Fish::Die`, argument 1)
@@ -90,14 +92,14 @@ Stinky's and Clyde's coin search skips kinds 0x11/0x12 (`pet-stinky.md#coin-chas
    3. Ultravores `+0xd4` → slot 88 (1)
    4. Gekkos (beetlemunchers) `+0xcc` → slot 88 (1)
    5. Pentas (starcatchers) `+0xd0` → `0x004f3c60(1)`
-   6. Grubbers (Guppycrunchers) `+0xc4` → `0x004f2890(1)`
+   6. Grubbers (Guppycrunchers) `+0xc4` → `0x004f2890(1)` — `traced` (`tank_3_shrapnel_grubbers`)
    7. Breeders `+0xc0` → `0x004dd5d0(1)`
 
    Pets (`+0xb0`, `+0xb4`), aliens and the `+0xf8` fish are never hit. The victim dies through its own death routine with argument 1: for a guppy or carnivore that is the starvation death (`fish-guppy.md#dead-fish`, `carnivore.md#starvation-slot-88-fishdie-0x004d5f90-shared`: `DIE` sample `0x117` gap 3, a `DeadFish` corpse, no RNG); the Penta/Grubber/Breeder routines also play `DIE` and add a corpse (`0x004f3c60` read; the other two assumed alike). Then, still in the bomb's update:
    - remove the bomb (`0x004d5510`) → **explosion** (below);
    - **one more effect shot**: `s = r % 3 + 3`, then `EffectShot(trunc x, trunc y, s)` (`0x005436f0`) at the bomb's top-left.
 
-`traced` (`zoo_c_seymour_shrapnel_gumbo`).
+`traced` (`zoo_c_seymour_shrapnel_gumbo`; Grubber kill `traced` via `tank_3_shrapnel_grubbers`).
 
 ### Explosion (`0x004d5510`, coin removal)
 
@@ -152,7 +154,7 @@ Then, **while `+0x220 > +0x224 − 50`** (the last 49 ticks before a drop), the 
 ## Open questions
 
 - Check the 31-tick arming, the contact box and the list order against a capture (any level with Shrapnel and a bomb landing on a guppy).
-- `0x004f2890` (Grubber) and `0x004dd5d0` (Breeder) death routines weren't read; assumed to be their die-with-corpse paths.
+- `0x004f2890` (Grubber) death routine confirmed to produce a corpse and `DIE` sample via `tank_3_shrapnel_grubbers`. `0x004dd5d0` (Breeder) death routine not yet read; assumed to be its die-with-corpse path.
 - Effect-shot kinds 3–5 (the explosion sizes): only their RNG cost is described here.
 - `coin.md` step 5 calls kind 0x11 a "star coin"; it is this bomb.
 - Whether the `+0x258` ramp hits exactly 1.0 after 20 steps (float accumulation) only changes the pulse phase by a tick.
