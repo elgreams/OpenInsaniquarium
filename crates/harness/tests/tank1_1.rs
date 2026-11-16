@@ -1042,6 +1042,19 @@ fn tank_3_4_wadsworth() {
     }
 }
 
+/// Gumbo lure with Beetlemunchers on tank 3-2 (`tank3-2_gumbo_gekko_01`):
+/// Stinky, Niko and Gumbo; money pushed to 50000, countdown held at 9000,
+/// a Guppycruncher and two Beetlemunchers bought, then countdown pushed to 200.
+/// The alien spawns while both Gekkos are alive (900 ticks overlap). Validates
+/// that the lure (`board+0x174`) does not affect Gekkos (`+0x229 = 0`): guppies
+/// steer toward Gumbo's lantern but Gekkos swim normally (pet-gumbo.md §Effect).
+#[test]
+fn tank_3_gumbo_nonfish() {
+    if captured("tank3-2_gumbo_gekko_01") {
+        replay_level_tank("tank3-2_gumbo_gekko_01", 3, 2);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank
@@ -1300,6 +1313,7 @@ fn needs_global(name: &str) -> bool {
 fn needs_app_resync(name: &str) -> bool {
     name.starts_with("tank3-2_rhubarb_gekko")
         || name.starts_with("tank3-1_shrapnel_grubber")
+        || name.starts_with("tank3-2_gumbo_gekko")
 }
 
 fn captured(name: &str) -> bool {
@@ -1561,6 +1575,20 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
             // the unmodelled Grubber, so it continues past and creates
             // explosion effects at a different position/tick.
             s.state.remove("shots");
+            // The alien's prey selection includes unmodelled Gekkos: its
+            // velocity, target and eat timing diverge. Mask aliens,
+            // their death debris and wave timing (alien dies at different
+            // ticks, shifting lockout and countdown).
+            s.state.remove("aliens");
+            s.state.remove("dead_aliens");
+            s.state.remove("waves");
+            s.state.remove("warps");
+            s.state.remove("missiles");
+            // Gus eats unmodelled Gekkos in the original but guppies in the
+            // sim, changing the fish and pet lists after the eat. Fish_pets
+            // (Gumbo) flees toward the alien's position which also diverges.
+            s.state.remove("fish");
+            s.state.remove("fish_pets");
             // Money diverges because coin/pearl collection timing shifts
             // when unmodelled objects change Stinky's path.
             s.state.remove("board");
