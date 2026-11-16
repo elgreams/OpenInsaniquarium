@@ -1007,6 +1007,17 @@ fn tank_3_wadsworth() {
     }
 }
 
+/// Wadsworth on tank 3-4 (`tank3-4_wadsworth_01`): Stinky, Niko and Wadsworth;
+/// money pushed to 2000, countdown to 400. Kind-6 alien fires kind-1 missiles;
+/// Wadsworth's shelter blocks the missile hit on stage-0/1 guppies
+/// (`pet-wadsworth.md` §6.2, `alien-kind6.md` §6.2).
+#[test]
+fn tank_3_4_wadsworth() {
+    if captured("tank3-4_wadsworth_01") {
+        replay_level_tank("tank3-4_wadsworth_01", 3, 4);
+    }
+}
+
 /// Gus, alien kind 4 (`tank2-3_gus_01`): 2-3, the wave countdown pushed
 /// to 400, clicks drop free pellets just above him (`--feed-gus`): he eats
 /// ten pellets (4 HP each) and three guppies (15 HP each), and the tank

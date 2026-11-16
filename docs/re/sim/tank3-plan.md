@@ -119,7 +119,7 @@ After steps 2–6, remaining `static` claims from the pet specs that mention tan
 - **Rhubarb flings** Gekkos and Ultravores (`pet-rhubarb.md`): the snap box checks `board+0xcc` (Gekkos). Needs a tank 3+ recording with Rhubarb chosen and a Beetlemuncher near the floor.
 - **Shrapnel bombs** kill Grubbers and Breeders (`pet-shrapnel.md`): `+0xc4` Grubbers → `0x004f2890(1)`. Needs a recording with Shrapnel and a Guppycruncher.
 - ~~**Blip reticle** (`pet-blip.md`): first capture should be tank 3-5+ with Blip, checking the shop at tick 201 and the alien spawn y (280).~~ Done: `tank_3_blip` replays 3-4 with Blip; shop reveal and spawn y 280 both match.
-- **Wadsworth shelter vs. kind-1 missiles**: the hit check on kind-1 missiles tests shelter, unlike kind-0. A recording with Wadsworth on a kind-6 level would confirm. (`tank_3_wadsworth` is on 3-1 with a kind-3 alien, so kind-1 missiles are not exercised.)
+- ~~**Wadsworth shelter vs. kind-1 missiles**: the hit check on kind-1 missiles tests shelter, unlike kind-0. A recording with Wadsworth on a kind-6 level would confirm.~~ Done: `tank_3_4_wadsworth` replays 3-4 with Wadsworth (Stinky, Niko, Wadsworth); kind-6 alien fires kind-1 missiles, shelter blocks the hit on stage-0/1 guppies, large guppies are killed. `alien-kind6.md` §6.2 now `traced`.
 - **Gumbo lure** with Gekkos/Grubbers: whether `board+0x174` affects fish types beyond guppies.
 - **Angie revival** of Gekkos, Grubbers, Breeders (`pet-angie.md`): the re-creation functions at `0x005451c0` (Gekko), `0x005454f0` (Grubber) are listed but not traced.
 

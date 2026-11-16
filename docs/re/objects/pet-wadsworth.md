@@ -11,7 +11,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`). Only the id-9 differenc
 - Readers: `Fish::Update` @ `0x004f6970` (`0x004f69a2`), `Fish::Draw` @ `0x004e4a90`, the prey filter `0x00500ff0`, the alien-missile hit `0x004fc070` (`0x004fc8b6`)
 - Draw body `0x004f8610` case 9 → `0x004e4e40`
 
-Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, three waves, 270 sheltering ticks) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. `tank_3_wadsworth` (`tank1_1.rs`) replays 3-1 with Stinky, Niko and Wadsworth (`tank3-1_wadsworth_01`, a Balrog wave) and confirms the sheltering/release cycle works on tank 3 with a kind-3 alien. Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
+Confidence per section. `zoo_b_zorf_meryl_wadsworth` (`tank1_1.rs`) replays 1-2 with Zorf, Meryl and Wadsworth from the game's own demo (`zoo_b_01`, 10,400 ticks, three waves, 270 sheltering ticks) and compares the pets, guppies, food, coins, sounds and the app RNG every tick. `tank_3_wadsworth` (`tank1_1.rs`) replays 3-1 with Stinky, Niko and Wadsworth (`tank3-1_wadsworth_01`, a Balrog wave) and confirms the sheltering/release cycle works on tank 3 with a kind-3 alien. `tank_3_4_wadsworth` (`tank1_1.rs`) replays 3-4 with Stinky, Niko and Wadsworth (`tank3-4_wadsworth_01`, a kind-6 alien wave with kind-1 missiles): confirms the shelter blocks kind-1 missile hits on stage-0/1 guppies (`alien-kind6.md` §6.2). Sections marked `static` (drawing, the Virtual Tank, Brinkley, Challenge) aren't covered.
 
 ## Fields used by id 9
 
@@ -91,7 +91,7 @@ The shared prey filter **`0x00500ff0`** returns "protected" for an object of typ
 
 The protection depends only on the global count, **not** on the guppy's distance to Wadsworth. Aliens then pick from what's left (large guppies, carnivores and other fish, or pets while a boss is present); with nothing left they have no prey.
 
-`traced` (`zoo_b_zorf_meryl_wadsworth`).
+`traced` (`zoo_b_zorf_meryl_wadsworth`; missile hit path `0x004fc8b6` traced via `tank_3_4_wadsworth`).
 
 ## Count bookkeeping
 

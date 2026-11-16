@@ -6,7 +6,7 @@ Kind 6 is the new tank 3 alien. It shares the `Alien` class and most behaviour w
 
 In short: kind 6 is a **slow floor walker** (divisor 3.5, y = 280) that fires **kind-1 missiles** at fish. Kind-1 missiles differ from the Destructor's kind-0 missiles: a click **redirects** them (changes their heading) instead of destroying them. Once redirected, the missile flies straight, unclamped, until it leaves the tank. Stanley shoots both kinds down the same way.
 
-Confidence: most sections `traced` via `tank_3_4`; drawing/sound sections `confirmed` from Ghidra decompilation (`Alien::DrawSprite` @ `0x004dae20`, `Alien::Update` @ `0x004fd560`); Wadsworth hit check (§6.2) `confirmed` by cross-referencing traced specs and the decompiled prey filter; click redirect (§6.4) remains `static`.
+Confidence: most sections `traced` via `tank_3_4`; Wadsworth hit check (§6.2) `traced` via `tank_3_4_wadsworth`; drawing/sound sections `confirmed` from Ghidra decompilation (`Alien::DrawSprite` @ `0x004dae20`, `Alien::Update` @ `0x004fd560`); click redirect (§6.4) remains `static`.
 
 ## 1. Wave timing
 
@@ -171,7 +171,7 @@ Same as kind 5 (`alien-kind5.md` §6.1): `PickTarget` picks the farthest eligibl
 
 ### 6.2 Hit test, kind 1
 
-`confirmed` (cross-referenced: `alien-kind5.md` §6.2 traced, `pet-wadsworth.md` traced, prey filter `FUN_00500ff0` @ `0x00500ff0` decompiled)
+`traced` (`tank_3_4_wadsworth`; previously `confirmed` by cross-referencing `alien-kind5.md` §6.2, `pet-wadsworth.md` and the decompiled prey filter)
 
 Same box as kind 0 (alien-kind5.md §6.2), but with the **Wadsworth shelter check** at `0x004fc8b6` (`pet-wadsworth.md`): if `0x005e89d0 ≠ 0` (Wadsworth is sheltering) and the target guppy's stage `+0x1a0 < 2`, the hit is blocked. The missile keeps flying past the fish. (Kind 0 has no such check: a sheltered guppy that was targeted before Wadsworth started is still hit by kind 0.)
 
@@ -284,7 +284,7 @@ Same as kind 5: PickTarget ties by heap address (sim uses list order, replay can
 - ~~**Firing interval**: confirmed `rand(50) + 150` via `tank_3_4`.~~
 - **Redirect mechanic**: assumed velocity reversal (`vx = −vx, vy = −vy`). May use click position instead — not yet individually confirmed by a recording that exercises redirect.
 - **Redirect re-clickable**: assumed only one redirect per missile. Not yet individually confirmed.
-- ~~**Hit with Wadsworth**: confirmed via cross-referencing traced `alien-kind5.md` §6.2, traced `pet-wadsworth.md`, and decompiled prey filter `FUN_00500ff0`. Shelter blocks the hit; the missile keeps flying.~~
+- ~~**Hit with Wadsworth**: `traced` via `tank_3_4_wadsworth` (3-4 with Wadsworth; kind-1 missiles fire at sheltered guppies, hits blocked, large guppies killed). Previously `confirmed` via cross-referencing traced specs and the decompiled prey filter.~~
 - ~~**Kind-6 image global**: confirmed `DAT_005e8e58` (`IMAGE_KIND6`) from `DrawSprite`.~~
 - ~~**Sound `0x143`**: confirmed as the volley sound from the `Alien::Update` firing code.~~
 - **Sound `0x11f`**: played before EXPLODE on kind-1 removal. Identify (also used by kind `0x14` death).
@@ -295,4 +295,6 @@ Same as kind 5: PickTarget ties by heap address (sim uses list order, replay can
 
 `tank_3_4` (`tank3-4_full_01`): full level 3-4 playthrough. Exercised kind-6 spawn, firing (volleys of 2 kind-1 missiles), pre-fire animation, vx manipulation, death with missile retention, laser combat. The replay matches tick-by-tick.
 
-Still not exercised: click-to-redirect, Wadsworth shelter check, Stanley vs kind-1 missile.
+Still not exercised: click-to-redirect, Stanley vs kind-1 missile.
+
+`tank_3_4_wadsworth` (`tank3-4_wadsworth_01`): 3-4 with Stinky, Niko and Wadsworth. Exercised: kind-6 alien firing kind-1 missiles while Wadsworth shelters — shelter blocks hits on stage-0/1 guppies, large guppies killed normally. 205 missile ticks, all with shelter active. The replay matches tick-by-tick.
