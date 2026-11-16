@@ -10,7 +10,7 @@ Same class, update and fields as Itchy (`pet-itchy.md`); only the id-12 differen
 - Guppy side: `Fish::Update` @ `0x004f6970`, lure branch `0x004f6b72`..`0x004f6fbb`, reading the pet counter **`board+0x174`** (`board+0x144 + 4·12`)
 - Animation (slot 89) @ `0x004dfc50`, id-12 branch; draw body `0x004f8610` case 12 → `0x004df470`
 
-Confidence per section. `zoo_c_seymour_shrapnel_gumbo` (`tank1_1.rs`) replays 1-2 with Seymour, Shrapnel and Gumbo from the game's own demo (`zoo_c_01`, about 3,000 ticks: one wave of luring) and compares the pets, guppies, coins, corpses, sounds and the app RNG every tick. Drawing, the Virtual Tank and fish lists not on tank 1 (Ultravores, Gekkos, Pentas, Grubbers, Breeders) stay `static`.
+Confidence per section. `zoo_c_seymour_shrapnel_gumbo` (`tank1_1.rs`) replays 1-2 with Seymour, Shrapnel and Gumbo from the game's own demo (`zoo_c_01`, about 3,000 ticks: one wave of luring) and compares the pets, guppies, coins, corpses, sounds and the app RNG every tick. `tank_3_gumbo_nonfish` replays 3-2 with Gumbo, two Beetlemunchers, a Guppycruncher and a Gus wave (7000+ ticks): confirms Gekkos (`+0x229 = 0`) and Grubbers (not Fish) are **not** lured. Drawing, the Virtual Tank and other non-guppy fish (Ultravores, Pentas, Breeders) stay `static`.
 
 ## Fields used by id 12
 
@@ -66,7 +66,9 @@ In `Fish::Update` step 2 (`fish-guppy.md#fishupdate-order-per-tick`), when the f
 
 The lure runs every tick, has **no RNG** and skips mode 123's draws (the swim modes don't run). A hungry guppy that has food to chase chases it first (`food.md`: with aliens, slot 83 still chases food when hunger < 500 and the first alien isn't kind 4). Gumbo updates after the guppies (`+0xb4` comes later in the z-order), so guppies steer toward his position from the previous tick.
 
-`traced` (`zoo_c_seymour_shrapnel_gumbo`).
+**Non-guppy fish:** Gekkos (type 7, `+0x229 = 0`) are **not** lured — their `+0x229` byte is clear from `Fish::Init`. Grubbers (type 9) inherit from `GameObject`, not `Fish`, so they never enter the `Fish::Update` lure branch. `traced` (`tank_3_gumbo_nonfish`: 900+ ticks of alien+Gekko+Gumbo overlap on 3-2 with the sim matching the original).
+
+`traced` (`zoo_c_seymour_shrapnel_gumbo`, `tank_3_gumbo_nonfish`).
 
 ## Effect on aliens
 
@@ -101,5 +103,5 @@ Then, **while an alien (`+0xb8`) or Bilaterus (`+0xf4`) exists**, the same cel a
 ## Open questions
 
 - Other readers of `board+0x174`: only the files already decompiled were searched (Fish::Update, the alien prey routines). Breeders, Oscars or other alien kinds (`0x004e95f0`, `0x004e9470`, `0x004e8df0`) might read it too.
-- Which `Fish::Update` users besides guppies keep `+0x229` set (Ultravore, Gekko, the `+0xf8` fish)?
+- ~~Which `Fish::Update` users besides guppies keep `+0x229` set?~~ Gekkos have `+0x229 = 0` (`traced`, `tank_3_gumbo_nonfish`); Grubbers are not Fish. Ultravores, Pentas and Breeders remain `static`.
 - The flee rules use the alien's absolute position, not Gumbo's: confirm against a capture (any wave with Gumbo).
