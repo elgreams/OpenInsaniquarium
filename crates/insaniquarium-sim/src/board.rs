@@ -2143,6 +2143,7 @@ impl Board {
             Slot::StarPotion => self.buy_star_potion(price),
             Slot::Starcatcher => self.buy_starcatcher(price),
             Slot::Guppycruncher => self.buy_guppycruncher(price),
+            Slot::Beetlemuncher => self.buy_beetlemuncher(price),
             // TODO(spec): other slots.
             _ => return ClickResult::Ignored,
         };
@@ -2247,6 +2248,35 @@ impl Board {
         } else {
             self.shop.reveal(Slot::Beetlemuncher, true);
         }
+        true
+    }
+
+    /// Slot 8 (`0x00549380` case 8): spend, `BuyBeetlemuncher` (x, y,
+    /// `Gekko` ctor (7 draws), vy, damp, shadow), reveal 10 and 11,
+    /// `SOUND_GROW`, splash draw. beetlemuncher.md#spawn.
+    fn buy_beetlemuncher(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        // BuyBeetlemuncher @ 0x00545080
+        let x = self.rng.next_range(520) as i32 + 20;
+        let y = self.rng.next_range(265) as i32 + 105;
+        let mut f = Fish::new_beetlemuncher(x, y, &mut self.rng); // 7 draws
+        // Splash-in: vy from r%5+23 (23..27), start at y=40.
+        f.vy = f64::from(self.rng.next_range(5) + 23);
+        let t = self.rng.next_range(10);
+        f.y = 40.0;
+        f.widget_y = 40;
+        f.vy_damp_timer = t as i32 + 45;
+        self.beetlemunchers.push(f);
+        // Shadow (type 0): y = 410 + r%5.
+        self.rng.next_range(5);
+        // Reveal weapon and egg piece slots.
+        self.shop.reveal(Slot::Weapon, true);
+        self.shop.reveal(Slot::EggPiece, true);
+        self.play(0x122, Sound::Grow);
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r).into());
         true
     }
 
@@ -2467,6 +2497,7 @@ impl Board {
             self.guppies
                 .iter()
                 .chain(&self.carnivores)
+                .chain(&self.beetlemunchers)
                 .map(|f| (f.widget_x, f.widget_y))
                 .collect()
         } else {
@@ -2481,12 +2512,15 @@ impl Board {
             &mut out,
         );
         // Rhubarb's flings (`0x004e7e5a`): vy and the damp timer.
-        let n = self.guppies.len();
+        let ng = self.guppies.len();
+        let nc = self.carnivores.len();
         for &(f, vy) in &out.flings {
-            let fish = if f < n {
+            let fish = if f < ng {
                 &mut self.guppies[f]
+            } else if f < ng + nc {
+                &mut self.carnivores[f - ng]
             } else {
-                &mut self.carnivores[f - n]
+                &mut self.beetlemunchers[f - ng - nc]
             };
             fish.vy = vy;
             fish.vy_damp_timer = 50;

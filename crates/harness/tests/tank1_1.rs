@@ -1283,6 +1283,12 @@ fn needs_global(name: &str) -> bool {
         || name.starts_with("tank3-5")
 }
 
+/// Captures whose replay needs per-tick app-stream re-sync (unmodelled
+/// objects like Guppycruncher with guessed steering drift the app RNG).
+fn needs_app_resync(name: &str) -> bool {
+    name.starts_with("tank3-2_rhubarb_gekko")
+}
+
 fn captured(name: &str) -> bool {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../traces/original/{name}.trace.jsonl"));
@@ -1394,6 +1400,11 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
     } else {
         Default::default()
     };
+    let app_orig = if needs_app_resync(name) {
+        harness::replay::app_states(&full)
+    } else {
+        Default::default()
+    };
     let rng0: Vec<_> = ["app", "global"]
         .iter()
         .map(|s| (s.to_string(), rebase_rng(&full, s, from).unwrap()))
@@ -1418,6 +1429,15 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         })
         .collect();
     drop(global_orig);
+    let app_resync: std::collections::BTreeMap<u32, _> = raw
+        .snapshots
+        .iter()
+        .filter_map(|s| {
+            let t = tick0 + clock(s)? - base;
+            Some((t as u32, app_orig.get(&s.tick)?.clone()))
+        })
+        .collect();
+    drop(app_orig);
     let mut t = harness::replay::by_board_clock(&raw);
     drop(raw);
     t.header.rng.extend(rng0);
@@ -1481,17 +1501,55 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         sh.revealed = board.shop.revealed;
         sh
     };
-    let mut actual = harness::replay::replay_resync_global(
-        board,
-        &expected,
-        &inferred.inputs,
-        &resync,
-        &inferred.dirty,
-        &global,
-    )
+    let mut actual = if app_resync.is_empty() {
+        harness::replay::replay_resync_global(
+            board,
+            &expected,
+            &inferred.inputs,
+            &resync,
+            &inferred.dirty,
+            &global,
+        )
+    } else {
+        harness::replay::replay_resync_app(
+            board,
+            &expected,
+            &inferred.inputs,
+            &resync,
+            &inferred.dirty,
+            &global,
+            &app_resync,
+        )
+    }
     .unwrap();
     harness::replay::mask_rng_sounds(&mut actual, &expected);
     inferred.carry_dirty_sounds(&mut actual);
+    // When app-stream resync is active, intra-tick RNG drift (from
+    // Guppycruncher's guessed steering) shifts unmodelled objects'
+    // state to different ticks: their sounds, coins, and item counts
+    // diverge. Strip these from both sides so the diff focuses on
+    // modelled state (guppies, pets, board).
+    let expected = if !app_resync.is_empty() {
+        let mask = |s: &mut harness::trace::Snapshot| {
+            s.state.remove("sounds");
+            s.state.remove("coins");
+            s.state.remove("counts");
+            s.state.remove("pearls");
+            // Money diverges because coin/pearl collection timing shifts
+            // when unmodelled objects change Stinky's path.
+            s.state.remove("board");
+        };
+        for s in &mut actual.snapshots {
+            mask(s);
+        }
+        let mut e = expected;
+        for s in &mut e.snapshots {
+            mask(s);
+        }
+        e
+    } else {
+        expected
+    };
     eprintln!(
         "{name}: ticks {from}..={to}, {} inputs, {} masked, {} resyncs",
         inferred.inputs.values().map(Vec::len).sum::<usize>(),

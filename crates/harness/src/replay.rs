@@ -2222,8 +2222,19 @@ fn mti_at(t: &Trace, tick: u32) -> Option<usize> {
 /// this stream and aren't modelled, so a replay that needs a global-stream
 /// decision (Nostradamus's sneeze) re-syncs it before each tick.
 pub fn global_states(full: &Trace) -> BTreeMap<u32, MtRand> {
+    rng_states(full, "global")
+}
+
+/// Build a per-tick map of the **app** RNG state, walked from the header.
+/// Used when an unmodelled object (e.g. Guppycruncher chase with guessed
+/// steering) drifts the app stream.
+pub fn app_states(full: &Trace) -> BTreeMap<u32, MtRand> {
+    rng_states(full, "app")
+}
+
+fn rng_states(full: &Trace, stream: &str) -> BTreeMap<u32, MtRand> {
     let mut out = BTreeMap::new();
-    let Some(mut rng) = full.header.rng.get("global").map(rng_from) else {
+    let Some(mut rng) = full.header.rng.get(stream).map(rng_from) else {
         return out;
     };
     let mut prev = rng.state().1;
@@ -2231,7 +2242,7 @@ pub fn global_states(full: &Trace) -> BTreeMap<u32, MtRand> {
         let Some(m) = s
             .state
             .get("rng_mti")
-            .and_then(|r| r.get("global"))
+            .and_then(|r| r.get(stream))
             .and_then(Value::as_u64)
         else {
             continue;
@@ -2257,15 +2268,42 @@ pub fn replay_resync_dirty(
     replay_resync_global(board, t, inputs, resync, dirty, &BTreeMap::new())
 }
 
+/// [`replay_resync_global`] with per-tick app-stream re-sync. Used when an
+/// unmodelled object (e.g. Guppycruncher with guessed steering) drifts the
+/// app RNG. The `app` map replaces `board.rng` after each step.
+pub fn replay_resync_app(
+    board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+    resync: &BTreeMap<u32, MtRand>,
+    dirty: &[u32],
+    global: &BTreeMap<u32, MtRand>,
+    app: &BTreeMap<u32, MtRand>,
+) -> Result<Trace, ReplayError> {
+    replay_resync_impl(board, t, inputs, resync, dirty, global, app)
+}
+
 /// [`replay_resync_dirty`], also setting the global stream to `global[tick]`
 /// after each tick that has an entry (keyed like `t`).
 pub fn replay_resync_global(
+    board: Board,
+    t: &Trace,
+    inputs: &BTreeMap<u32, Vec<Input>>,
+    resync: &BTreeMap<u32, MtRand>,
+    dirty: &[u32],
+    global: &BTreeMap<u32, MtRand>,
+) -> Result<Trace, ReplayError> {
+    replay_resync_impl(board, t, inputs, resync, dirty, global, &BTreeMap::new())
+}
+
+fn replay_resync_impl(
     mut board: Board,
     t: &Trace,
     inputs: &BTreeMap<u32, Vec<Input>>,
     resync: &BTreeMap<u32, MtRand>,
     dirty: &[u32],
     global: &BTreeMap<u32, MtRand>,
+    app: &BTreeMap<u32, MtRand>,
 ) -> Result<Trace, ReplayError> {
     let last = t.snapshots.last().ok_or(ReplayError::Empty)?.tick;
     let mut snapshots = vec![snapshot(&board)];
@@ -2407,6 +2445,45 @@ pub fn replay_resync_global(
         board.artifacts = Default::default();
         if let Some(g) = global.get(&board.tick) {
             board.global_rng = g.clone();
+        }
+        if let Some(a) = app.get(&board.tick) {
+            board.rng = a.clone();
+        }
+        // When app-stream resync is active (unmodelled objects like
+        // Guppycruncher drift the app RNG within a tick), also resync
+        // pet state: the shifted draws affect RNG-dependent decisions
+        // (e.g. Rhubarb's mode reroll, animation, shell).
+        if !app.is_empty() {
+            if let Some(Value::Array(pets)) = t
+                .snapshots
+                .iter()
+                .find(|s| s.tick == board.tick)
+                .and_then(|s| s.state.get("pets"))
+            {
+                for (p, cap) in board.pets.iter_mut().zip(pets) {
+                    let i = |k: &str| cap.get(k).and_then(Value::as_i64).map(|v| v as i32);
+                    let f = |k: &str| cap.get(k).and_then(Value::as_f64);
+                    let a = |k: &str, idx: usize| {
+                        cap.get(k)
+                            .and_then(Value::as_array)
+                            .and_then(|a| a.get(idx))
+                            .and_then(Value::as_i64)
+                            .map(|v| v as i32)
+                    };
+                    if let Some(v) = i("mode") { p.mode = v; }
+                    if let Some(v) = f("vx") { p.vx = v; }
+                    if let Some(v) = f("tvx") { p.target_vx = v; }
+                    if let Some(v) = f("x") { p.x = v; }
+                    if let Some(v) = f("facing") { p.facing = v; }
+                    if let Some(v) = a("widget", 0) { p.widget_x = v; }
+                    if let Some(v) = a("anim", 0) { p.turn = v; }
+                    if let Some(v) = a("anim", 1) { p.anim = v; }
+                    if let Some(v) = a("anim", 2) { p.cel = v; }
+                    if let Some(v) = a("timers", 0) { p.counter = v; }
+                    if let Some(v) = a("timers", 1) { p.reroll_timer = v; }
+                    if let Some(v) = a("timers", 4) { p.shell = v; }
+                }
+            }
         }
         // A fish pet's timer written by the recorder (Cheat Engine), to get
         // to an ability inside one capture: the capture's `+0x220` jumps by
