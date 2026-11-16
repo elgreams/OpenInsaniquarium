@@ -98,6 +98,10 @@ STAR_DELAY = float(sys.argv[sys.argv.index("--star-delay") + 1]) if "--star-dela
 GUS_STAR = int(sys.argv[sys.argv.index("--gus-star") + 1]) if "--gus-star" in sys.argv else 0
 # Click Nostradamus's potions (food kind 2) for $1 (`--potion-click`).
 POTION_CLICK = "--potion-click" in sys.argv
+# Tank 3 (`--grubber N`): buy N Guppycrunchers (slot 7, position 3, $750)
+# once revealed and affordable.
+MAX_GRUBBER = int(sys.argv[sys.argv.index("--grubber") + 1]) if "--grubber" in sys.argv else 0
+GRUBBER_BTN = (BTN_X[3] + 29, 33)
 
 
 def window():
@@ -171,6 +175,7 @@ def main():
     bought_guppies = 0
     bought_quality = False
     bought_carnivore = False
+    bought_grubber = 0
     bought_weapon = 0
     bought_quantity = 0
     picks = list(PRESTO)
@@ -317,6 +322,11 @@ def main():
             # First: on 1-3+ the carnivore reveals the weapon and egg buttons.
             click(win, *CARNIVORE_BTN)
             bought_carnivore = True
+        elif (MAX_GRUBBER and bought_grubber < MAX_GRUBBER and st["revealed"][7]
+              and st["money"] >= 800):
+            click(win, *GRUBBER_BTN)
+            bought_grubber += 1
+            print(f"grubber bought ({bought_grubber})", flush=True)
         elif (KEEP_GUPPIES and st["rev_guppy"] and len(st["guppies"]) < KEEP_GUPPIES
               and st["money"] >= 120):
             # Replace guppies lost to aliens.

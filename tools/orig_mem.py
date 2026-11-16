@@ -67,6 +67,15 @@ for a in args:
             wrd(o + 0x1F0, hp)
             print(f"alien @ 0x{o:08x} hp -> {hp}")
             break  # first alien only
+if "bomb" in args:
+    # Push Shrapnel's (pet 11) bomb counter to interval - 5 for a quick drop.
+    for p in vec(ptr(b + 0xB4)):
+        o = ptr(p)
+        if rd(o + 0x234) == 11:
+            iv = rd(o + 0x224)
+            wr(o + 0x220, iv - 5)
+            print(f"shrapnel bomb counter -> {iv - 5}/{iv}")
+            break
 if "quiet" in args:
     sys.exit(0)
 print("clock", rd(b + 0x28), "countdown", rd(b + 0x2C0), "money", rd(b + 0x3F0))
