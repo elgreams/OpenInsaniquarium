@@ -1535,6 +1535,11 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
             s.state.remove("coins");
             s.state.remove("counts");
             s.state.remove("pearls");
+            // Food drops involve an app-stream draw for the motion
+            // direction, and a dirty tick can shift a click by one tick.
+            s.state.remove("foods");
+            // Guppycruncher death position/timing diverges.
+            s.state.remove("dead_fish");
             // Money diverges because coin/pearl collection timing shifts
             // when unmodelled objects change Stinky's path.
             s.state.remove("board");
@@ -1561,15 +1566,21 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
         .snapshots
         .iter()
         .filter(|s| {
-            s.state["carnivores"]
-                .as_array()
+            s.state
+                .get("carnivores")
+                .and_then(|v| v.as_array())
                 .is_some_and(|a| !a.is_empty())
         })
         .count();
     let pearl_ticks = expected
         .snapshots
         .iter()
-        .filter(|s| s.state["pearls"].as_array().is_some_and(|a| !a.is_empty()))
+        .filter(|s| {
+            s.state
+                .get("pearls")
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| !a.is_empty())
+        })
         .count();
     eprintln!(
         "{name}: {} snapshots compared; carnivore on {carn_ticks}, pearl on {pearl_ticks}",

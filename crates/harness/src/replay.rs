@@ -2484,6 +2484,56 @@ fn replay_resync_impl(
                     if let Some(v) = a("timers", 4) { p.shell = v; }
                 }
             }
+            // Also resync guppy state: the shifted intra-tick draws
+            // change swim mode rerolls, velocities and animation.
+            if let Some(Value::Array(fish)) = t
+                .snapshots
+                .iter()
+                .find(|s| s.tick == board.tick)
+                .and_then(|s| s.state.get("fish"))
+            {
+                for (g, cap) in board.guppies.iter_mut().zip(fish) {
+                    let i = |k: &str| cap.get(k).and_then(Value::as_i64).map(|v| v as i32);
+                    let f = |k: &str| cap.get(k).and_then(Value::as_f64);
+                    let a = |k: &str, idx: usize| {
+                        cap.get(k)
+                            .and_then(Value::as_array)
+                            .and_then(|a| a.get(idx))
+                            .and_then(Value::as_i64)
+                            .map(|v| v as i32)
+                    };
+                    if let Some(v) = i("mode") { g.mode = v; }
+                    if let Some(v) = i("mode_t") { g.mode_timer = v; }
+                    if let Some(v) = i("reroll_t") { g.reroll_timer = v; }
+                    if let Some(v) = f("vx") { g.vx = v; }
+                    if let Some(v) = f("vy") { g.vy = v; }
+                    if let Some(v) = f("x") { g.x = v; }
+                    if let Some(v) = f("y") { g.y = v; }
+                    if let Some(v) = f("facing") { g.facing = v; }
+                    if let Some(v) = a("widget", 0) { g.widget_x = v; }
+                    if let Some(v) = a("widget", 1) { g.widget_y = v; }
+                    if let Some(v) = a("anim", 0) { g.anim_frame = v; }
+                    if let Some(v) = a("anim", 1) { g.swim_cycle = v; }
+                    if let Some(v) = a("anim", 2) { g.cel = v; }
+                    if let Some(v) = a("anim", 3) { g.turn_timer = v; }
+                    if let Some(v) = a("anim", 4) { g.eat_timer = v; }
+                    if let Some(v) = a("anim", 5) { g.pulse_timer = v; }
+                    if let Some(v) = i("hunger") { g.hunger = v; }
+                    if let Some(v) = i("coin_t") { g.coin_timer = v; }
+                    if let Some(v) = a("timers", 0) { g.timer_108 = v; }
+                    if let Some(v) = a("timers", 1) { g.timer_10c = v; }
+                    if let Some(v) = a("timers", 2) { g.timer_f8 = v; }
+                    if let Some(v) = a("timers", 3) { g.fade = v; }
+                    if let Some(v) = a("timers", 4) { g.vy_damp_timer = v; }
+                    if let Some(v) = a("timers", 5) { g.push_timer = v; }
+                    if let Some(v) = a("timers", 6) { g.misc_timer = v; }
+                    if let Some(v) = f("push") { g.push = v; }
+                    if let Some(v) = i("patrol_dir") { g.patrol_dir = v; }
+                    if let Some(v) = i("stage") { g.stage = v; }
+                    if let Some(v) = i("coin_iv") { g.coin_interval = v; }
+                    if let Some(v) = a("growth", 0) { g.growth = v; }
+                }
+            }
         }
         // A fish pet's timer written by the recorder (Cheat Engine), to get
         // to an ability inside one capture: the capture's `+0x220` jumps by

@@ -71,6 +71,8 @@ RNG per tick, in order: the snap's launch draws in step 3 (one per flung fish, s
 
 ## Snap
 
+`traced` (`zoo_d_blip_rhubarb_nimbus`, `tank_3_rhubarb_gekkos` for Gekko fling).
+
 The chase `0x004ebc80` (id 14), every non-tank-5 tick:
 
 1. **Target** (`0x004e7270`, id 14). Threshold `T` = **250** if any alien (`board+0xb8`) or Bilaterus (`board+0xf4`) exists, else **260** (`0x004da780`). Best = 100 000 000, strict `<` (first minimum wins). Scan, in this order, each list in list order:
@@ -91,8 +93,6 @@ The chase `0x004ebc80` (id 14), every non-tank-5 tick:
 
 Note the two thresholds differ: the target needs `wy > 260` (250), the snap `wy > 270` (260). A fish with `260 < wy ≤ 270` is chased but never snapped at.
 
-`traced` (`zoo_d_blip_rhubarb_nimbus`).
-
 ## Effects on other objects
 
 Applied in `0x004e7c30` (id-14 branch, from `0x004e7e5a`):
@@ -101,7 +101,7 @@ Applied in `0x004e7c30` (id-14 branch, from `0x004e7e5a`):
 - **Breeders** (`+0xc0`): vy `+0x170` = −20 / −30, and **`+0x1d8`** = 50 (the breeder's own layout; assumed to be its damp timer, unconfirmed).
 - **Aliens, Bilaterus, coins, food:** none. Rhubarb does no damage.
 
-`traced` (`zoo_d_blip_rhubarb_nimbus`).
+`traced` (`zoo_d_blip_rhubarb_nimbus`, `tank_3_rhubarb_gekkos` for Gekko fling).
 
 ## Animation
 
