@@ -1,8 +1,8 @@
 # Alien kind 8: Bilaterus (`Sexy::Bilaterus`, type `0x17`, board list `+0xf4`)
 
-Status: `draft` (static analysis only). Bilaterus is not a `Sexy::Alien`; it inherits directly from `GameObject` → `Widget`. Addresses are inner-PE VAs; offsets are raw `this`-relative. See `board.md` for the type code and list, `tank4-plan.md` for context.
+Status: `static` (from cached Ghidra decompilation and raw binary analysis; no dynamic verification yet). Bilaterus is not a `Sexy::Alien`; it inherits directly from `GameObject` → `Widget`. Addresses are inner-PE VAs; offsets are raw `this`-relative. See `board.md` for the type code and list, `tank4-plan.md` for context.
 
-Notation: same as `alien-sylvester.md` — `rand(n)` = app MTRand `% n`; "tick" = one 28 ms logic tick.
+Notation: same as `alien-sylvester.md` — `rand(n)` = app MTRand `% n`; "tick" = one 10 ms logic tick.
 
 ## 1. Class hierarchy and sub-objects
 
@@ -15,9 +15,10 @@ Widget → GameObject → Bilaterus
 ```
 
 Sub-object classes (also Widget → GameObject):
-- **`BilaterusHead`** (type descriptor `.?AVBilaterusHead@Sexy@@`): the two "mouths" of the worm. Each is a full GameObject (0x208 bytes). Board list: none (owned by the parent, not in a typed vector).
-- **`BilaterusBone`** (type descriptor `.?AVBilaterusBone@Sexy@@`): the body segments. Each is a full GameObject (0x1f0 bytes). Board list: none.
+- **`BilaterusHead`** (type descriptor `.?AVBilaterusHead@Sexy@@`): the two "mouths" of the worm. Each is a full GameObject. Board list: none (owned by the parent, not in a typed vector). Vtable at `0x005976cc` (120 slots; dual-vtable layout suggests a secondary interface).
+- **`BilaterusBone`** (type descriptor `.?AVBilaterusBone@Sexy@@`): the body segments. Each is a full GameObject. Board list: none. Vtable at `0x0059757c` (81 slots).
 - **`BiFish`** (type `0x24`, board list `+0xf8`): the digested-fish display inside the worm. Separate from the Bilaterus itself.
+- **`BoxingGlove`** (type descriptor `.?AVBoxingGlove@Sexy@@`): the attack projectile created by each head. Vtable at `0x00598034` (120 slots; dual-vtable). See §5a.
 
 The board stores Bilaterus **segments** (heads + bones) in list `+0xf4`, not the owner. Each segment's `+0x158` points back to the owning Bilaterus.
 
@@ -40,17 +41,17 @@ The "FOURTEEN" is flavour — the actual number of segments is 8 (2 heads + 6 bo
 
 `static` (from raw hex decoding of the binary at the vtable-write sites).
 
-The Bilaterus vtable is at `0x00598b94`. Three call sites write this vtable pointer:
+The Bilaterus vtable is at `0x00598b94` (81 slots). Three call sites write this vtable pointer:
 - `0x004f06ef` — destructor.
 - `0x004f98ea` — simple constructor (default init).
 - `0x004fe03e` — parameterised constructor (used by AddAlien).
 
 The parameterised constructor:
 1. Calls the base `GameObject` constructor.
-2. Creates **2 `BilaterusHead`** objects (each 0x208 bytes).
-3. Creates **6 `BilaterusBone`** objects (each 0x1f0 bytes).
+2. Creates **2 `BilaterusHead`** objects.
+3. Creates **6 `BilaterusBone`** objects.
 4. Sets the warp-in counter to **15** (same as Alien's warp-in).
-5. Consumes **1 app RNG draw** (direction or layout; exact use TBD with Ghidra).
+5. Consumes **1 app RNG draw** (direction or layout; exact use TBD).
 
 Total segments: 8 (2 heads + 6 bones). All are added to board list `+0xf4`. Each segment's `+0x158` → owning Bilaterus.
 
@@ -58,55 +59,114 @@ Segment widgets are **80×80** (from `pet-rufus.md`, `pet-itchy.md`), with centr
 
 ## 4. Health
 
-`static` (cross-referenced from multiple traced pet specs).
+`static` (cross-referenced from multiple traced pet specs and cached Ghidra decompilation of missile hit function at `0x004fc070`).
 
-Health is stored at the **first head's `+0x1d8`** (a `double`), not on the owner Bilaterus directly.
+Health is stored at the **first head's `+0x1d8`** (a `double`), not on the owner Bilaterus directly. Both heads share a **single health pool** — all damage paths write to `owner+0x1d8` (via `segment+0x158`).
 
-| Fact | Source | Confidence |
+| Fact | Value | Source | Confidence |
+|---|---|---|---|
+| Max health | **100.0** | `pet-blip.md`: health bar draws `health / 100`; missile hit: death at ≤ 0 from 100 | `static` |
+| Hit flash timer | **10 ticks** | `owner+0x1d0 = 10` on missile/pet hit | `static` |
+| Dead flag | `owner+0x164` | Set to 1 when health ≤ 0; prevents double-death | `static` |
+
+## 5. Damage formulas (divisor equivalent)
+
+`static` (from cached Ghidra decompilation of missile collision `0x004fc070` and pet attack `0x004fe740`).
+
+Bilaterus is **not** an `Alien` and does **not** use the Alien laser-damage formula (`health -= 3*laser` for kinds 1–3, `health -= 2*laser+2` for kinds 5–6). Instead:
+
+### 5.1 Player laser/click — no direct damage
+
+Clicking or holding the laser on a Bilaterus segment does **not** reduce health. Instead:
+- **Laser hold** (`param_4 < 0` in `0x004fb680`): draws a spark effect at the click position (`FUN_0053bfb0`), returns. No damage.
+- **Click** (`param_4 >= 0`, type `0x17`): triggers a **BoxingGlove** attack (§5a). The head punches a nearby fish; the Bilaterus itself takes no damage from the click.
+
+This means the player cannot directly damage Bilaterus with the mouse — only pets and the weapon (Stanley missiles) deal damage.
+
+### 5.2 Stanley missiles (from `0x004fc070`)
+
+| Missile path | Damage | Notes |
 |---|---|---|
-| Max health = **100.0** | `pet-blip.md`: health bar draws `health / 100` | `static` (Blip spec is `traced` but the Bilaterus path in it is `static`) |
-| Rufus deals **2.0 HP/tick** per overlapping segment | `pet-rufus.md` §3 | `traced` (Rufus spec) |
-| Gash deals **3.0 HP/hit** per segment, kills at ≤ 0 via `0x004fb4c0` | `pet-gash.md` §3 | `traced` (Gash spec) |
-| Itchy deals **1.0 HP/tick** (default rate) | `pet-itchy.md` §3 | `traced` (Itchy spec) |
-| Death function: `0x004fb4c0` called on `seg+0x158` (the owner) | `pet-gash.md` §3 | `static` |
+| **Direct hit (type 1)** on a `+0xf4` segment | **30.0 HP** (`_DAT_005966b0`) | Checks segment bounding box; damages `owner+0x1d8` |
+| **Bounceback (type 2)**, weapon level < 4 | **15.0 HP** (literal `0xf` → `double`) | Missile reverses velocity (bounces off); animation frame count 15 |
+| **Bounceback (type 2)**, weapon level ≥ 4 | **55.0 HP** (literal `0x37` → `double`) | Stronger bounce; animation frame count 55 |
 
-The divisor for laser/click damage is not yet known from cross-references alone. The Alien class uses `health -= 3 * laser` for kinds 1–3 and `health -= 2 * laser + 2` for kinds 5–6 (`alien-sylvester.md` §4.2, `alien-kind5.md`). Bilaterus likely has its own formula since it is a different class. **Needs Ghidra** to read the Hit function.
+Bounceback missile bounce speed: **1.5** (level < 4, `_DAT_005c3d58`) or **0.6** (level ≥ 4, `_DAT_005965c8`).
 
-## 5. `Bilaterus::Update` (vtable slot 22 @ `0x004fe250`)
+### 5.3 Pet damage (confirmed by traced pet specs and decompiled `0x004fe740`)
 
-`static` (from raw hex decoding of the function at `0x004fe250`).
+| Pet | Damage | Proximity check | Source |
+|---|---|---|---|
+| **Itchy** (2) | **1.0 HP/tick** (`_DAT_005965a8`) | Centre offset 40 (`+0x28` = 0x28) | `pet-itchy.md` (`traced`) + `0x004fe740` |
+| **Rufus** (7) | **2.0 HP/tick** per overlapping segment | Centre offset 40 | `pet-rufus.md` (`traced`) |
+| **Gash** (17) | **3.0 HP/hit** (`_DAT_005965a0`) | Centre offset 40; chase within 30.0 radius | `pet-gash.md` (`traced`) + `0x004fe740` |
 
-The Update function:
-1. Returns if no board or board is paused.
-2. **Warp-in** (`+0x158`, starts at 15): decrements each tick; while non-zero, the segments are not fully active. Same 15-tick mechanic as `Alien` (§3.1 of `alien-sylvester.md`).
-3. Updates all **heads** (calls each head's update function, §6).
-4. Updates all **bones** (calls each bone's update function, §7).
-5. Manages an **attack timer** (~1000 ticks observed in the hex; exact threshold TBD). This likely gates the worm's attacks (eating fish or firing projectiles).
-6. **Health check**: if the first head's health (`+0x1d8`) ≤ 0, calls the death function `0x004fb4c0`.
+### 5.4 Effective TTK (time to kill, 100 HP)
 
-## 6. Head update (`BilaterusHead`, function near `0x004f0ea2`)
+| Source | Hits/ticks to kill |
+|---|---|
+| Stanley direct (30 HP) | ~4 hits |
+| Bounceback normal (15 HP) | ~7 hits |
+| Bounceback strong (55 HP) | ~2 hits |
+| Itchy alone (1 HP/tick) | 100 ticks (~1s) |
+| Rufus alone (2 HP/tick/seg) | 50 ticks per segment overlap |
+| Gash alone (3 HP/hit) | ~34 hits |
 
-`static` (from partial hex decoding; the function uses FPU comparisons and velocity adjustments).
+## 5a. Attack mechanism: BoxingGlove
 
-Each BilaterusHead is a steered endpoint of the worm. The update function:
-- Reads and writes position doubles at offsets `+0x78`, `+0x80` (or similar; exact mapping needs Ghidra).
-- Applies velocity adjustments (`+0x88`, `+0x90`, `+0x98`) with FPU compare-and-branch patterns.
-- The head likely steers toward prey (fish) using a chase mechanic, then the bones follow.
+`static` (from cached Ghidra decompilation at `0x004fb680`).
+
+Bilaterus attacks fish by **punching** them with a `Sexy::BoxingGlove` projectile. This is entirely different from how regular Aliens eat fish.
+
+**BoxingGlove creation** (from the Bilaterus head's click handler at `0x004fb680`, type `0x17` branch):
+
+Preconditions (all must be true):
+- `segment+0x234` == `0x17` (Bilaterus head type)
+- `segment+0x1C8` == 0 (idle — no active state)
+- `segment+0x24C` == 0 (no active boxing glove)
+- `segment+0x264` == 0 (no cooldown timer)
+- `segment+0x1C4` == 0 (not in another state)
+
+Direction selection (from velocity):
+- If `segment+0x168` (x-velocity double) < 0: glove direction = **left** (param `0`)
+- Else: direction = **right** (param `1`)
+- More complex: also checks `segment+0x188` (y-velocity) via FPU comparison
+
+After creating the glove:
+- `segment+0x24C` = pointer to the new BoxingGlove
+- `segment+0x1C0` = 0 (reset state)
+- `segment+0x1C8` = `0x28` (40 ticks cooldown before the head can act again)
+- Sound `0x136` played at volume 1.0
+- Z-order rebuild triggered
+
+**Punch counter** (non-Virtual-Tank only):
+- `segment+0x260` increments on each successful punch
+- After **5 punches** (`> 4`): head enters cooldown (`segment+0x264` = `DAT_005df034`), counter resets, some cleanup occurs (virtual function call at `vtable+0x98`).
+
+## 6. Head update (`BilaterusHead`, called from `Bilaterus::Update` via `0x004f0ea0`)
+
+`static` (from raw binary analysis of the Update function and partial hex decoding).
+
+Each BilaterusHead is a steered endpoint of the worm. The owning Bilaterus calls the head update function **twice** per tick (once per head).
+
+The head likely steers toward prey (fish) using a chase mechanic, then the bones follow. Movement constants observed in the Update function:
+- Velocity increments: **±3.5**, **±4.0**
+- Position thresholds: **80.0** (segment size), **30.0**, **50.0**
 - **Visibility byte `+0x15e`**: controls whether the head is drawn (`pet-blip.md`).
 
-The two heads are the "mouths" — the worm's attack points. The movement pattern appears to be a slithering motion where the heads lead and the bones trail behind, forming the segmented body.
+The two heads are the "mouths" — the worm's attack points. The movement pattern appears to be a slithering motion where the heads lead and the bones trail behind.
 
 ## 7. Bone update (`BilaterusBone`)
 
 `static` (inferred from structure; not yet decoded).
 
-Each bone follows the head or the preceding bone, maintaining the worm's body shape. Bones are 80×80 segments that form the body between the two heads.
+Each bone follows the head or the preceding bone, maintaining the worm's body shape. Bones are 80×80 segments that form the body between the two heads. BilaterusBone has an 81-slot vtable at `0x0059757c`; slot 22 is the base `Widget::Update` (`0x0046e310`), meaning bones use the default update (no custom override — they are likely positioned by the owner's Update function).
 
 ## 8. Drawing
 
 `static` (from `pet-blip.md` and board.md z-order).
 
-### 8.1 BilaterusHead draw (vtable slot 27 @ `0x004e50b0`)
+### 8.1 BilaterusHead draw (vtable slot 26 @ `0x004e50b0`)
 
 From `pet-blip.md`:
 - The health bar is drawn at **(-20, h-3)** relative to the head widget, where `h` = widget height.
@@ -120,17 +180,66 @@ From `board.md`: Bilaterus segments in `+0xf4` are drawn in the z-order rebuild 
 
 ## 9. Death (`0x004fb4c0`)
 
-`static` (address from `pet-gash.md`; behaviour not yet decoded).
+`static` (from cached Ghidra decompilation).
 
-Called on the **owner Bilaterus** (via `seg+0x158`) when health drops to ≤ 0. Expected to:
-1. Remove all segments from `+0xf4`.
-2. Drop a reward (diamond or similar).
-3. Trigger death effects (debris, sound).
-4. Allow the wave countdown to resume (since `+0xf4` becomes empty).
+Called on a **segment** (head) when health drops to ≤ 0 (via `owner+0x1d8`). The function accesses the owner via `segment+0x158`.
 
-The exact RNG draws, debris pattern, and reward kind need Ghidra analysis.
+```
+FUN_004fb4c0(segment):
+    owner = *(segment + 0x158)
+    if owner+0x164 != 0:          // already dead
+        FUN_004dbfb0()            // alternate cleanup
+        return
+    
+    coin_type = 4                 // gold
+    if *(segment + 0x160) != 0:
+        coin_type = 5             // diamond
+    
+    AddCoin(segment.x, segment.y, 0, coin_type)
+    FUN_004fb1c0()                // segment cleanup / removal from lists
+    
+    // remove from widget tree and board lists
+    vtable_call(segment+0x10, slot 4)   // widget removal
+    vtable_call(segment+0x88, slot 34)  // board list removal
+    
+    owner+0x164 = 1               // set dead flag
+    owner+0x15c = 0               // clear state
+    
+    if segment.shadow != NULL:
+        Shadow::vfunction76(segment.shadow)
+    
+    PlaySound(0x11d, 3, 1.0)     // death sound 1
+    PlaySound(0x11e, 3, 1.0)     // death sound 2
+```
 
-## 10. Pet interactions
+The `segment+0x160` field likely distinguishes the two heads (0 for head 0, non-zero for head 1). Only the **first** head to trigger death drops a coin; the second finds `owner+0x164 == 1` and takes the alternate cleanup path.
+
+## 10. `Bilaterus::Update` (vtable slot 22 @ `0x004fe250`)
+
+`static` (from raw binary analysis; call targets and constant references extracted from bytes).
+
+The Update function manages the entire worm each tick:
+
+1. **Null/pause check**: if no board or board paused (`+0x94`), return.
+2. **Virtual Tank lifespan**: if mode == 5 (Virtual Tank) AND tick counter (`+0x28`) > **4320** (~43.2s): triggers death/removal via `FUN_00543640` and death function.
+3. **Timer update**: calls `FUN_004f22c0` — decrements timers, manages music/animation cues.
+4. **Head updates**: calls `FUN_004f0ea0` **twice** (once per head). This function dispatches the head's chase/movement logic.
+5. **Bone positioning**: updates bone segment positions using velocity constants **±3.5** and **±4.0**, with position clamp at **80.0** spacing.
+6. **Health check**: if `owner+0x1d8 ≤ 0`, calls death function `0x004fb4c0`.
+
+Call targets from the Update function:
+| Address | Purpose |
+|---|---|
+| `0x00543640` (×3) | Position lookup / closest-fish search |
+| `0x00538230` (×2) | Sound play |
+| `0x004d6830` | Screen shake or visual effect |
+| `0x004f22c0` | Timer/state tick (music, counters) |
+| `0x004fb1c0` | Segment cleanup |
+| `0x004f0ea0` (×2) | Head update (once per head) |
+| `0x004edea0` | Bone/segment update |
+| `0x004fb4c0` (×2) | Death function (two health-check sites) |
+
+## 11. Pet interactions
 
 `static` unless the pet spec section is `traced` (noted per row).
 
@@ -144,13 +253,13 @@ The exact RNG draws, debris pattern, and reward kind need Ghidra analysis.
 | **Gumbo** (12) | Flees from Bilaterus; targets centre offset 40 | `pet-gumbo.md` (`traced`) |
 | **Stinky** (0) | Shells while Bilaterus is present (`+0xf4` non-empty counts as "alien exists") | `pet-stinky.md` (`traced`) |
 
-## 11. Wave freeze
+## 12. Wave freeze
 
 `traced` (via `alien-sylvester.md` §1 step 2, confirmed in multiple tank-1 replays for the `+0xb8`/`+0xf4`/`+0xdc` check).
 
 The wave countdown (`board+0x2c0`) is frozen while **any** of `+0xb8` (aliens), `+0xf4` (Bilaterus segments), or `+0xdc` (missiles) is non-empty. This means the Bilaterus must be fully killed (all segments removed from `+0xf4`) before the next wave can begin counting down.
 
-## 12. Levels
+## 13. Levels
 
 `static` (from `shop-bar.md` and `tank4-plan.md`).
 
@@ -160,15 +269,13 @@ Bilaterus (kind 8) appears on:
 - **4-5**: re-rolls `r % 5` → pair kind 10 (40%), pair kind 11 (40%), kind 8 (20%).
 - **Pair kind 12** (Balrog + Bilaterus): only in mode 4 on 4-5 when `waves_spawned ≥ 5` and the re-roll gave kind 8.
 
-## 13. Key unknowns (need Ghidra)
+## 14. Key unknowns (reduced from initial draft)
 
-`static` — these are gaps that require deeper binary analysis:
+`static` — gaps requiring deeper analysis or dynamic verification:
 
-- **Bilaterus constructor full RNG order**: only 1 draw confirmed; there may be more for sub-object placement.
-- **Movement mechanics**: how the worm slithers (head-leads-bones chain, exact velocity formulas, bounce/clamp).
-- **Attack pattern**: whether the worm eats fish directly (like Alien kinds 1–3) or uses a different attack.
-- **Laser/click damage formula**: the Hit function on Bilaterus (not `Alien::Hit`).
-- **Death details**: debris RNG, reward coin kind, DeadAlien equivalent (or lack of one).
-- **Exact field layout**: the offsets on the Bilaterus owner itself (beyond health at `+0x1d8` via first head).
-- **BilaterusBone update function address** and its following-chain logic.
-- **BiFish** (`+0xf8`): what digested fish look like inside the worm and how they're created.
+- **Head movement/steering**: exact velocity formulas, fish-chase targeting, bounce/clamp at tank edges. Constants ±3.5, ±4.0, 80.0, 30.0, 50.0 are identified but their roles in the chase algorithm are not yet decoded.
+- **BoxingGlove detailed behavior**: what happens to the target fish (killed? eaten? damaged?), glove animation, lifetime, speed. The BoxingGlove Update is at vtable slot 22 = `0x004e9a60`, Draw at slot 26 = `0x004e1000`.
+- **BiFish** (`+0xf8`): when and how digested fish appear inside the worm body, their lifecycle.
+- **Constructor full RNG**: only 1 draw confirmed; there may be more for sub-object placement or initial head direction.
+- **Exact coin types**: types 4 and 5 from the death function need verification against the coin type enum.
+- **Head field `+0x160`**: assumed to be head index (0 or 1) determining coin type at death; needs confirmation.
