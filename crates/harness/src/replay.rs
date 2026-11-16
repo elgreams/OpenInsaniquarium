@@ -2439,7 +2439,10 @@ pub fn replay_resync_global(
         }
         // Money written by the recorder (Cheat Engine), not by the game: the
         // capture's money jumps by 500 or more to a round hundreds value,
-        // more than any coin pays. Adopt it so the replay can carry on (RE tooling only).
+        // more than any coin pays. Also catches a downward push (the recorder
+        // overwrites money with a round-thousands value that's below the sim's
+        // money, e.g. coins collected between two pushes). Adopt it so the
+        // replay can carry on (RE tooling only).
         if let Some(m) = t
             .snapshots
             .iter()
@@ -2448,7 +2451,8 @@ pub fn replay_resync_global(
             .and_then(|b| b.get("money"))
             .and_then(Value::as_i64)
             && m % 100 == 0
-            && m - i64::from(board.money) >= 500
+            && (m - i64::from(board.money) >= 500
+                || (m % 1000 == 0 && i64::from(board.money) - m > 50))
         {
             board.money = m as i32;
         }

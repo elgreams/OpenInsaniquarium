@@ -987,6 +987,18 @@ fn tank_3_rhubarb() {
     }
 }
 
+/// Rhubarb with a Beetlemuncher on tank 3-2 (`tank3-2_rhubarb_gekko_01`):
+/// Stinky, Niko and Rhubarb; money pushed to 50000, countdown to 9000.
+/// A Guppycruncher and Beetlemuncher are bought; the Beetlemuncher swims near
+/// the floor and Rhubarb's snap claw flings it (vy −20, damp 50). Validates
+/// the Gekko entry in the snap target/fling lists (pet-rhubarb.md §Snap).
+#[test]
+fn tank_3_rhubarb_gekkos() {
+    if captured("tank3-2_rhubarb_gekko_01") {
+        replay_level_tank("tank3-2_rhubarb_gekko_01", 3, 2);
+    }
+}
+
 /// Blip on tank 3-4 (`tank3-4_blip_01`): Stinky, Niko and Blip; money pushed
 /// to 1500, countdown to 400. Validates the shop reveal at tick 201 (SONAR)
 /// and the alien spawn y pinned to 280 during the reticle (pet-blip.md).

@@ -1149,7 +1149,8 @@ impl Board {
                 // TODO(spec): eat sound.
             }
             if let Some((lx, ly)) = out.drop_larva {
-                // TODO(spec): Beetle ctor draws and full update.
+                // Larva ctor: 1 phantom app draw (larva.md#spawn).
+                self.rng.next_u31();
                 self.larvae.push(crate::larva::Larva::new(lx, ly));
             }
             if out.died {
