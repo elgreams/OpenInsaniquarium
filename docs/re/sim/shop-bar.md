@@ -131,6 +131,8 @@ Initial countdown `+0x2c0` is not overridden for tank 3: stays at the InitLevel 
 
 Tank 4 (`0x00541200`, the tank-4 branch). `static`.
 
+Tank 4 replaces the guppy slot with **breeder** (slot 1) and adds the **ultravore** (slot 9, $10 000) and a $5 000 weapon. No star potion, no Starcatcher, no Guppycruncher/Beetlemuncher. The first wave kind on 4-2 through 4-5 is **kind 8** (Bilaterus, `Sexy::Bilaterus`, type `0x17`, board list `+0xf4`) — the tank-4 boss alien.
+
 | Slot | Pos | Price |
 |---|---|---|
 | 1 breeder | 0 | 200 |
@@ -143,14 +145,39 @@ Tank 4 (`0x00541200`, the tank-4 branch). `static`.
 
 | Level | Egg price | Wave kind `+0x2bc` | Slots set back to −1 | RNG |
 |---|---|---|---|---|
-| 4-1 | 3000 | 3 | 9, 10 | – |
-| 4-2 | 25000 | 8 | – | – |
-| 4-3 | 50000 | 4 | – | – |
-| 4-4 | 75000 | 8 | – | – |
-| 4-5 | 99999 | 8 | – | – |
+| 4-1 | 3000 | 3 (Balrog) | 9, 10 | – |
+| 4-2 | 25000 | 8 (Bilaterus) | – | – |
+| 4-3 | 50000 | 4 (Gus) | – | – |
+| 4-4 | 75000 | 8 (Bilaterus) | – | – |
+| 4-5 | 99999 | 8 (Bilaterus) | – | – |
+
+Initial countdown `+0x2c0` is not overridden for tank 4: stays at the InitLevel default of **3000**. `static`.
+
+**Post-spawn re-roll** (`0x548d35`–`0x548df4`): after each wave spawns, the kind for the next wave is re-drawn. Levels 4-1 and 4-2 have no re-roll (every wave is the same kind). Levels 4-3, 4-4 and 4-5 introduce **pair kinds** — a single wave that spawns two different aliens. `confirmed` from the binary (alien-sylvester.md §1); the x86 PUSH immediates for each pair's component kinds were decoded at `AddAlien` (`0x00545620`).
+
+| Level | Re-roll formula | Possible kinds | Draws |
+|---|---|---|---|
+| 4-1 | none | 3 (Balrog) | – |
+| 4-2 | none | 8 (Bilaterus) | – |
+| 4-3 | `(r & 1) ? 4 : 10` | 4 (Gus, 50 %) or **pair kind 10** (kind 7 + Balrog, 50 %) | 1 app |
+| 4-4 | `(r & 1) ? 8 : 11` | 8 (Bilaterus, 50 %) or **pair kind 11** (kind 5 + kind 6, 50 %) | 1 app |
+| 4-5 | `r % 5` | **pair kind 10** (40 %), **pair kind 11** (40 %), kind 8 (Bilaterus, 20 %) | 1 app |
+
+**Pair kind 12** (Balrog + Bilaterus) appears only in **mode 4** (Challenge) on 4-5 when `waves_spawned ≥ 5` and the re-roll result is kind 8 (`0x548dea`). It never occurs in Adventure. `confirmed` from binary.
+
+The pair-kind table in `AddAlien` (`0x00545620`):
+
+| Pair kind | Component A (pos A) | Component B (pos B) | First Adventure appearance |
+|---|---|---|---|
+| 9 | 1 (Sylvester) | 3 (Balrog) | 1-5 (`traced`) |
+| 10 | 7 (kind 7) | 3 (Balrog) | 4-3 |
+| 11 | 5 (Destructor) | 6 (kind 6) | 4-4 |
+| 12 | 3 (Balrog) | 8 (Bilaterus) | mode 4 only |
+
+`confirmed` — component kinds verified from x86 PUSH immediates at `0x54569c` (kind 10: push 7/push 3), `0x5456d0` (kind 11: push 5/push 6), `0x545704` (kind 12: push 3/push 8). `traced` for kind 9 (`tank_1_5_won`); kinds 10–12 are `static` until a tank 4 recording.
 
 RNG in `SetupShop`:
-- **Tank 1 makes no RNG draws.**
+- **Tanks 1 and 4 make no RNG draws.**
 - Levels 2-5, 3-2 and 3-5 each make **one app-`MTRand` draw** to set `+0x2bc`.
 - With `app+0x880 != 0`, a different price table is used, every mapped slot is revealed immediately, and `0x00537c20` makes one `Sexy::Rand` draw. This path is never taken in normal Adventure.
 
