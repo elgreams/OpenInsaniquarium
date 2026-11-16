@@ -146,6 +146,9 @@ def read_state():
         elif p[0] == "C":
             if NO_STARS and len(p) > 4 and int(p[4]) in (3, 10):
                 continue
+            # Never collect bombs (kind 17 = 0x11): they need to fall and kill.
+            if len(p) > 4 and int(p[4]) == 17:
+                continue
             st["coins"].append(tuple(map(int, p[1:4])))
         elif p[0] == "P":
             st.setdefault("pets", []).append(tuple(map(int, p[1:6])))
