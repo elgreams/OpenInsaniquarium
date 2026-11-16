@@ -174,7 +174,7 @@ The pair-kind table in `AddAlien` (`0x00545620`):
 | 11 | 5 (Destructor) | 6 (kind 6) | 4-4 |
 | 12 | 3 (Balrog) | 8 (Bilaterus) | mode 4 only |
 
-`confirmed` — component kinds verified from x86 PUSH immediates at `0x54569c` (kind 10: push 7/push 3), `0x5456d0` (kind 11: push 5/push 6), `0x545704` (kind 12: push 3/push 8). `traced` for kind 9 (`tank_1_5_won`); kinds 10–12 are `static` until a tank 4 recording.
+`confirmed` — component kinds verified from x86 PUSH immediates at `0x54569c` (kind 10: push 7/push 3), `0x5456d0` (kind 11: push 5/push 6), `0x545704` (kind 12: push 3/push 8). `traced` for kind 9 (`tank_1_5_won`); kinds 10–12 are `static` until a tank 4 recording. Full pair-kind spawn mechanics (recursive `AddAlien`, list insertion/update order, RNG cost) in `objects/alien-pairs.md`.
 
 RNG in `SetupShop`:
 - **Tanks 1 and 4 make no RNG draws.**

@@ -71,17 +71,13 @@ The Bilaterus (`Sexy::Bilaterus`, type `0x17`) is the tank-4 boss alien. It has 
 
 **Test:** `tank_4_bilaterus` replays exactly.
 
-### 5. Pair wave kinds (10, 11)
+### 5. Pair wave kinds (10, 11, 12)
 
-`static` (a plan).
+**Done** (`static`/`confirmed`).
 
-Pair kinds 10 and 11 spawn two aliens per wave. Kind 10 (kind 7 + Balrog) first appears on 4-3; kind 11 (Destructor + kind 6) on 4-4. The `AddAlien` pair paths are `confirmed` from binary; the re-roll formulas are `confirmed`.
+Pair-kind mechanics fully analyzed from Ghidra: recursive `AddAlien` spawn sequence, pair dispatch table (`confirmed` from PUSH immediates), list insertion and update order, RNG cost per pair, warning messages, and wave freeze behavior. Full spec in `objects/alien-pairs.md`. Re-roll formulas for 4-3/4-4/4-5 also recorded in `shop-bar.md`.
 
-**Build:** the re-roll code for tank 4 in `Board::Update` (the post-spawn re-roll at `0x548d35`).
-
-**Record:** a 4-3 session that gets a pair kind 10 wave (50 % chance per re-roll) and a 4-4 session with a pair kind 11 wave.
-
-**Test:** `tank_4_3_pair` and `tank_4_4_pair` replay exactly.
+Remaining for this step: recording a 4-3 or 4-4 session to turn `static` into `traced`.
 
 ### 6. 4-5 (re-roll, all wave kinds possible)
 
