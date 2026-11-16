@@ -142,6 +142,25 @@ The prey-chase slot (84, `0x004da260`) steers toward the nearest eligible Oscar.
 
 `static` (from binary analysis of `0x004eca70`: the board list offset `0xa4` confirmed by the MOV instruction at `0x004ecab9`; the two filter comparisons at `0x004ecb33` and `0x004ecb3d`).
 
+### Bite check (slot 86, `0x004ecbf0`)
+
+Tests whether the Ultra overlaps its target. Two paths depending on whether prey is currently assigned (`+0x11c`).
+
+**No-prey path** — scans `board+0xa4` (Oscar list) using double-precision positions (`+0x158` x, `+0x160` y):
+
+| Box | x range | y range | Size | On match |
+|---|---|---|---|---|
+| Inner (eat) | `pos_x − 40` to `pos_x + 120` | `pos_y + 10` to `pos_y + 90` | 160 × 80 | slot 77 (Eat) + slot 87 (remove); approach timer `+0x1c8 = 8` |
+| Outer (approach) | `pos_x − 70` to `pos_x + 150` | `pos_y − 10` to `pos_y + 110` | 220 × 120 | approach timer `+0x1c8 = 20` (only when `+0x1c8 == 0`) |
+
+The inner box is checked first; the outer box is only tested when the approach timer `+0x1c8` is already 0.
+
+**Prey-exists path** — computes the Ultra's centre as `(wx + 80, wy + 100)` (top-left + half-width, top-left + half-height + 20), then calls the shared collision function at `0x004ea2a0` (same function Oscar uses, `carnivore.md`). The centre formula is generic: `(wx + width/2, wy + height/2 + 20)` — Oscar (80×80) gets `(wx+40, wy+60)`, Ultra (160×160) gets `(wx+80, wy+100)`. Return value 1 (tight hit) sets `+0x1c8 = 8`; return value 2 (loose hit) sets `+0x1c8 = 20`.
+
+Double constants used: `[0x596740]` = 80.0 (half Ultra width), `[0x5972b8]` = 90.0 (half-height + 10, y-centre offset for bite area).
+
+`static` (from binary analysis of `0x004ecbf0`: the two box computations using double-precision arithmetic and the constants at `0x596740` and `0x5972b8`; the shared collision call to `0x004ea2a0`; approach timer field `+0x1c8` and its values 8/20 from the MOV instructions).
+
 ### Eat
 
 Slot 77 (`0x004e3c60`). When the bite-check succeeds:
@@ -164,6 +183,19 @@ Slot 81 (`0x004d9f90`). Each tick (gated by no-aliens check):
 The interval `+0x224 = r % 250 + 200` (200..449 ticks) is set once in `Ultra::Init`.
 
 `static` (from binary analysis of `0x004d9f90`: the `PUSH 7` at `0x004d9fdf` selects coin kind 7; `ADD ECX, 0x5a` and `ADD EDX, 0x28` give the position offsets 90 and 40; `FLD qword [0x005c3d80]` loads −1.0 as vy; the timer increment `ADD [esi+0x220], 1` at `0x004d9f96`).
+
+### Hunger (slot 82, `0x004e38f0`)
+
+Both Ultra's slot 82 (`0x004e38f0`) and the base Fish slot 82 (`0x004f15c0`) call the **same shared subroutine** at `0x004d6ef0`. Ultra does **not** override the decrement amount — the per-tick hunger logic is identical to all other fish:
+
+1. If prey is assigned (`+0x11c != -1`): **skip** — hunger does not decrement while chasing/eating.
+2. Otherwise: `+0x9c -= 1` (hunger decrements by exactly 1 per tick).
+3. Notification: when hunger equals `threshold + 4` (i.e. **304** for the standard warning threshold of 300 at `+0xa4`), a hunger warning is triggered via `0x004d6920`.
+4. Clamp: hunger is clamped to a minimum of **−1000** (`0xFFFFFC18` as signed int).
+
+The assembly at `0x004d6ef0` is: `OR EAX, -1; CMP [ECX+0x11c], EAX; JNZ skip; ADD [ECX+0x9c], EAX` — the `OR EAX, -1` sets EAX to `0xFFFFFFFF` (= −1 signed), which serves double duty as both the "no prey" sentinel comparison value and the decrement amount.
+
+`static` (from binary analysis of `0x004d6ef0`: the `OR EAX, -1` / `CMP` / `ADD` sequence; the threshold+4 notification check; the −1000 clamp; confirmed that both Ultra and Fish vtable entries for slot 82 call through to this same subroutine).
 
 ## Death
 
@@ -242,8 +274,6 @@ Missiles (`004fc070.c`) walk `board+0xd4` (Ultravores) with the 160×160 hitbox 
 
 ## Open questions
 
-- **BiteCheck** (slot 86, `0x004ecbf0`): the bite box dimensions for the Ultravore's 160-px sprite. Expected wider than Oscar's.
-- **Hunger** (slot 82, `0x004e38f0`): the per-tick hunger decrement (expected 1 as for all fish, but not yet confirmed for this override).
 - **Animation** (slot 89, `0x004da000`): cel selection and frame rate for the 160-px sheet.
 - **Census counter** (slot 70, `0x004f0290`): what it counts and where.
 - **Growth**: the Ultravore has stage 6 (constant). Whether the stage ever changes (expected no) requires checking `Fish::UpdateHunger` for the stage override.
