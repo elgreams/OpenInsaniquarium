@@ -10,7 +10,7 @@ In short: the Breeder is a tank-4 bought fish ($200, slot 1) that **eats food** 
 
 RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `Sexy::Rand` @ `0x0040f9e0`.
 
-`static` throughout; no Breeder has been recorded or traced.
+`static` throughout. Recorded in `tank4-1_full_01` (2026-11-17): breeder spawned 4 guppies, eaten by Balrog; replay test pending.
 
 ## Slot overrides
 

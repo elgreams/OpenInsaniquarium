@@ -42,7 +42,7 @@ SetupShop tank-4 branch: shop slots, egg prices, wave kinds, re-roll formulas al
 
 ### 2. Breeder and 4-1 baseline
 
-`static` (a plan).
+`static` (a plan). Recording done: `tank4-1_full_01` (2026-11-17).
 
 4-1 uses only the Balrog (kind 3, already built) and the new shop layout. The Breeder is the core new fish type.
 
@@ -50,7 +50,7 @@ SetupShop tank-4 branch: shop slots, egg prices, wave kinds, re-roll formulas al
 
 **Build:** Breeder type (spawn, food chase, hunger, death, guppy birth timer), the tank-4 shop layout (slot 1 replaces guppy), the reveal chain (buy carnivore → reveal ultravore → reveal weapon/egg; 4-1 skips weapon), and the level-start path (`0x005471e0`: one breeder with `+0x1a4 = 2`).
 
-**Record:** a 4-1 session (Stinky + 2 others) that buys a breeder and exercises the full reveal chain, plus a Balrog wave. The breeder must eat food and spawn at least one guppy to verify the birth mechanism.
+**Record:** ~~a 4-1 session (Stinky + 2 others) that buys a breeder and exercises the full reveal chain, plus a Balrog wave.~~ **Done.** `tank4-1_full_01` (Stinky, Itchy, Zorf; CD=5000, 8000 ticks). Exercises: breeder spawning 4 guppies, guppy growth to stage 2, reveal chain (food quality/quantity/carnivore → carnivore buy at tick 4778 → egg reveal), Balrog wave at tick 5268 (killed by Itchy). Breeder eaten by Balrog. Egg counter confirmed: InitLevel sets `+0x43c = 1`, completes at 4 (3 purchases at $3000 each on 4-1).
 
 **Test:** `tank_4_1` replays the recording exactly.
 
