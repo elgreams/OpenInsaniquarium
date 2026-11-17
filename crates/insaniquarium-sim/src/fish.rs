@@ -1639,6 +1639,27 @@ impl DeadFish {
         }
     }
 
+    /// A dead Breeder's corpse: kind = stage + 10. `static`.
+    pub fn breeder(br: &crate::breeder::Breeder) -> Self {
+        let (x, y) = (f64::from(br.x as i32), f64::from(br.y as i32));
+        let vy = if y >= 115.0 { -2.0 } else { -1.0 };
+        DeadFish {
+            x,
+            y,
+            vx: br.vx,
+            vy,
+            divisor: br.divisor,
+            kind: br.stage + 10,
+            facing_right: br.vx > 0.0,
+            cel: 0,
+            turn: 100,
+            alpha: 1.0,
+            life: 125,
+            widget_x: x as i32,
+            widget_y: y as i32,
+        }
+    }
+
     /// `DeadFish::Update` (`0x004f64e0`), unpaused ticks. Returns false
     /// when it's gone.
     pub fn update(&mut self) -> bool {

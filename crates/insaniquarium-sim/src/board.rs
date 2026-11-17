@@ -209,6 +209,8 @@ pub struct Board {
     pub larvae: Vec<crate::larva::Larva>,
     /// `board+0xcc`: Beetlemunchers (`Sexy::Gekko`, beetlemuncher.md).
     pub beetlemunchers: Vec<Fish>,
+    /// `board+0xc0`: Breeders (`Sexy::Breeder`, breeder.md).
+    pub breeders: Vec<crate::breeder::Breeder>,
     /// `board+0xd0`: Starcatchers (`Sexy::Penta`, starcatcher.md).
     pub starcatchers: Vec<crate::starcatcher::Starcatcher>,
     /// `board+0xdc`: missiles (Stanley's balls for now).
@@ -339,6 +341,7 @@ impl Board {
             guppycrunchers: Vec::new(),
             larvae: Vec::new(),
             beetlemunchers: Vec::new(),
+            breeders: Vec::new(),
             starcatchers: Vec::new(),
             next_missile_id: 1,
             light_x: [0.0; 3],
@@ -423,6 +426,17 @@ impl Board {
                 _ => (b.rng.next_u31() & 1) as i32 | 6,
             };
         }
+        // Tank 4 wave table (`0x00541200`, tank-4 branch). No RNG draws.
+        if tank == 4 {
+            b.wave_countdown = 3000;
+            b.wave_kind = match level {
+                1 => 3,
+                2 => 8,
+                3 => 4,
+                4 => 8,
+                _ => 8,
+            };
+        }
         // Start bubble burst: (r & 3) + 3 bubbles, two draws each.
         let n = (b.rng.next_u31() & 3) + 3;
         for _ in 0..n {
@@ -433,10 +447,17 @@ impl Board {
         for &id in pets {
             b.add_pet(id);
         }
-        for _ in 0..2 {
-            let x = b.rng.next_range(520) as i32 + 20;
-            let y = b.rng.next_range(265) as i32 + 105;
-            b.add_guppy_at(x, y);
+        // Tank 4: one breeder with growth=2 instead of two guppies
+        // (`0x005471e0`: Breeder::level_start, shadow draw).
+        if tank == 4 {
+            let br = crate::breeder::Breeder::level_start(&mut b.rng);
+            b.breeders.push(br);
+        } else {
+            for _ in 0..2 {
+                let x = b.rng.next_range(520) as i32 + 20;
+                let y = b.rng.next_range(265) as i32 + 105;
+                b.add_guppy_at(x, y);
+            }
         }
         for g in &mut b.guppies {
             g.growth = 2;
@@ -1134,6 +1155,33 @@ impl Board {
             self.show_message("Hint: Starcatchers need stars to stay alive!", false, 0x23);
         }
         self.show_message("Warning! Your starcatcher has died!", false, 0x22);
+    }
+
+    /// The Breeders (`+0xc0`, between Starcatchers and Guppycrunchers in
+    /// z-order; breeder.md#per-tick-update). `static`.
+    fn update_breeders(&mut self) {
+        let mut i = 0;
+        while i < self.breeders.len() {
+            let has_aliens = !self.aliens.is_empty();
+            let out = self.breeders[i].update(has_aliens, &self.foods, &mut self.rng);
+            if let Some(fi) = out.ate_food {
+                self.foods.remove(fi);
+            }
+            if let Some((gx, gy)) = out.spawn_guppy {
+                // The breeder spawns a baby guppy at its own widget
+                // position. The guppy ctor draws from the app RNG.
+                // `static` (spawn mechanism modelled on Prego).
+                self.add_guppy_at(gx, gy);
+            }
+            if out.died {
+                let br = self.breeders.remove(i);
+                self.play(0x117, Sound::Die);
+                let d = crate::fish::DeadFish::breeder(&br);
+                self.dead_fish.push(d);
+                continue;
+            }
+            i += 1;
+        }
     }
 
     /// The Guppycrunchers (`+0xc4`, after Starcatchers in z-order;
@@ -2135,6 +2183,7 @@ impl Board {
         let price = self.shop.price[i];
         let ok = match slot {
             Slot::Guppy => self.buy_guppy(price),
+            Slot::Breeder => self.buy_breeder(price),
             Slot::EggPiece => self.buy_egg_piece(price),
             Slot::FoodQuality => self.buy_food_quality(price),
             Slot::FoodQuantity => self.buy_food_quantity(price),
@@ -2177,13 +2226,33 @@ impl Board {
         true
     }
 
-    /// Slot 4 (`0x00549380` case 4): spend, `BuyCarnivore`, reveal 10 and
-    /// 11 (tank 1), `SOUND_GROW`, then the splash draw.
+    /// Slot 1 (`0x00549380` case 1, `BuyBreeder` @ `0x005470a0`): spend,
+    /// Breeder ctor (1 position draw + 5 ctor draws), shadow, GROW, splash.
+    /// `static`.
+    fn buy_breeder(&mut self, price: i32) -> bool {
+        if !self.try_spend(price) {
+            return false;
+        }
+        let mut br = crate::breeder::Breeder::bought(&mut self.rng);
+        br.shadow_y = self.rng.next_range(5) as i32 + 410;
+        self.breeders.push(br);
+        self.play(0x122, Sound::Grow);
+        let r = self.rng.next_range(3);
+        self.sounds.push(Sound::splash(r).into());
+        true
+    }
+
+    /// Slot 4 (`0x00549380` case 4): spend, `BuyCarnivore`, reveals,
+    /// `SOUND_GROW`, then the splash draw. Tank 4: reveal ultravore,
+    /// weapon, egg; on 4-1 weapon is unmapped so the reveal is a no-op.
     fn buy_carnivore(&mut self, price: i32) -> bool {
         if !self.try_spend(price) {
             return false;
         }
         self.add_carnivore();
+        if self.tank == 4 {
+            self.shop.reveal(Slot::Ultravore, true);
+        }
         self.shop.reveal(Slot::Weapon, true);
         self.shop.reveal(Slot::EggPiece, true);
         self.play(0x122, Sound::Grow);
@@ -2694,6 +2763,7 @@ impl Board {
         if self.guppies.is_empty()
             && self.carnivores.is_empty()
             && self.starcatchers.is_empty()
+            && self.breeders.is_empty()
             && self.dialog.is_none()
         {
             self.paused = true;
@@ -2763,6 +2833,7 @@ impl Board {
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
         self.update_starcatchers();
+        self.update_breeders();
         self.update_guppycrunchers();
         let mut potion_money = 0;
         let mut i = 0;
@@ -2946,7 +3017,7 @@ impl Board {
             // Wadsworth's shelter hides small and medium guppies from every
             // alien (`0x00500ff0`). Indices stay those of the full list.
             let sheltered = |f: &Fish| self.shelter.is_some() && !f.is_carnivore() && f.stage < 2;
-            // Starcatchers are prey too (types 5..10,
+            // Starcatchers and Breeders are prey too (types 5..10,
             // alien-sylvester.md#31-nearest-prey-0x004e8b60); the alien only
             // reads a prey's widget position, so they go in as stand-ins.
             let stand_ins: Vec<Fish> = self
@@ -2957,6 +3028,11 @@ impl Board {
                     (f.widget_x, f.widget_y, f.stage) = (s.widget_x, s.widget_y, 5);
                     f
                 })
+                .chain(self.breeders.iter().map(|b| {
+                    let mut f = Fish::new(b.widget_x, b.widget_y, &mut MtRand::new(0));
+                    (f.widget_x, f.widget_y, f.stage) = (b.widget_x, b.widget_y, 5);
+                    f
+                }))
                 .collect();
             let prey: Vec<&Fish> = self
                 .guppies
@@ -3030,21 +3106,32 @@ impl Board {
                 self.foods.remove(fi);
             }
             if let Some(g) = out.ate {
-                let (ng, nc) = (self.guppies.len(), self.carnivores.len());
+                let ng = self.guppies.len();
+                let nc = self.carnivores.len();
+                let nb = self.beetlemunchers.len();
+                let ns = self.starcatchers.len();
                 let victim = if g < ng {
                     self.guppies.remove(g)
                 } else if g < ng + nc {
                     let c = self.carnivores.remove(g - ng);
                     self.carnivore_died();
                     c
-                } else {
+                } else if g < ng + nc + nb {
+                    self.beetlemunchers.remove(g - ng - nc)
+                } else if g < ng + nc + nb + ns {
                     // A Starcatcher eaten (slot 75 → remove(true): no
                     // corpse; messages only if it was starving).
-                    let s = self.starcatchers.remove(g - ng - nc);
+                    let si = g - ng - nc - nb;
+                    let s = self.starcatchers.remove(si);
                     if s.hunger <= 0 && (self.tank, self.level) == (2, 2) {
                         self.starcatcher_died_messages();
                     }
-                    stand_ins[g - ng - nc].clone()
+                    stand_ins[si].clone()
+                } else {
+                    // A Breeder eaten.
+                    let bi = g - ng - nc - nb - ns;
+                    self.breeders.remove(bi);
+                    stand_ins[ns + bi].clone()
                 };
                 // Eat sound (`0x00538560`): one draw when not throttled.
                 if self.sample_ready(0x113, 3) {
@@ -3091,9 +3178,10 @@ impl Board {
             if self.paused {
                 break;
             }
-            // Zorf's hungry check (`0x004e5b8e`): guppies, then breeders
-            // (none yet), with hunger below 300.
-            let hungry = self.guppies.iter().any(|g| g.hunger < 300);
+            // Zorf's hungry check (`0x004e5b8e`): guppies, then breeders,
+            // with hunger below 300.
+            let hungry = self.guppies.iter().any(|g| g.hunger < 300)
+                || self.breeders.iter().any(|b| b.hunger < 300);
             let hidden = self
                 .shop
                 .position

@@ -148,6 +148,31 @@ impl Shop {
                 s.position[Slot::Beetlemuncher as usize] = None;
                 s.position[Slot::Weapon as usize] = None;
             }
+        } else if tank == 4 {
+            // `SetupShop` tank 4 (`0x00541200`, tank-4 branch).
+            let mut set = |slot: Slot, pos: usize, price: i32| {
+                s.position[slot as usize] = Some(pos);
+                s.price[slot as usize] = price;
+            };
+            set(Slot::Breeder, 0, 200);
+            set(Slot::FoodQuality, 1, 200);
+            set(Slot::FoodQuantity, 2, 300);
+            set(Slot::Carnivore, 3, 1000);
+            set(Slot::Ultravore, 4, 10000);
+            set(Slot::Weapon, 5, 5000);
+            let egg = match level {
+                1 => 3000,
+                2 => 5000,
+                3 => 7500,
+                4 => 10000,
+                _ => 15000,
+            };
+            set(Slot::EggPiece, 6, egg);
+            // 4-1: Ultravore and weapon unmapped.
+            if level == 1 {
+                s.position[Slot::Ultravore as usize] = None;
+                s.position[Slot::Weapon as usize] = None;
+            }
         }
         s
     }

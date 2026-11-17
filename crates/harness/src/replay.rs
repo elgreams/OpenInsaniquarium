@@ -438,6 +438,10 @@ pub fn board_from_capture(t: &Trace) -> Result<Board, ReplayError> {
         .iter()
         .map(|b| starcatcher_from_raw(b))
         .collect();
+    board.breeders = raw_list(first, "breeder")
+        .iter()
+        .map(|b| breeder_from_raw(b))
+        .collect();
     board.warps = raw_list(first, "warp")
         .iter()
         .map(|b| warp_from_raw(b))
@@ -727,6 +731,49 @@ fn starcatcher_json(s: &insaniquarium_sim::starcatcher::Starcatcher) -> Value {
     })
 }
 
+pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
+    insaniquarium_sim::breeder::Breeder {
+        x: rd_f64(b, 0x158),
+        y: rd_f64(b, 0x160),
+        vx: rd_f64(b, 0x168),
+        vy: rd_f64(b, 0x170),
+        divisor: rd_f64(b, 0x180),
+        hunger: rd_i32(b, 0x9c),
+        fade: rd_i32(b, 0xa0),
+        fade_to_hungry: b[0xa8] != 0,
+        splash: rd_i32(b, 0x178),
+        target_vx: rd_f64(b, 0x188),
+        mode: rd_i32(b, 0x190),
+        chase_timer: rd_i32(b, 0x194),
+        reroll_timer: rd_i32(b, 0x198),
+        anim: rd_i32(b, 0x19c),
+        stage: rd_i32(b, 0x1a0),
+        growth: rd_i32(b, 0x1a4),
+        spawned: rd_i32(b, 0x1a8),
+        spawn_counter: rd_i32(b, 0x1b4),
+        spawn_interval: rd_i32(b, 0x1d4),
+        damp_timer: rd_i32(b, 0x1d8),
+        anim_b: rd_i32(b, 0x1b8),
+        anim_c: rd_i32(b, 0x1bc),
+        cel: rd_i32(b, 0x1c4),
+        widget_x: rd_i32(b, 0x30),
+        widget_y: rd_i32(b, 0x34),
+        shadow_y: 410,
+    }
+}
+
+fn breeder_json(b: &insaniquarium_sim::breeder::Breeder) -> Value {
+    json!({
+        "x": b.x, "y": b.y, "vx": b.vx, "vy": b.vy, "div": b.divisor, "hunger": b.hunger,
+        "fade": [b.fade, b.fade_to_hungry], "splash": b.splash, "tvx": b.target_vx,
+        "mode": b.mode, "timers": [b.chase_timer, b.reroll_timer],
+        "anim": [b.anim, b.anim_b, b.anim_c, b.cel],
+        "stage": b.stage, "growth": b.growth, "spawned": b.spawned,
+        "spawn": [b.spawn_counter, b.spawn_interval], "damp": b.damp_timer,
+        "widget": [b.widget_x, b.widget_y],
+    })
+}
+
 fn missile_json(m: &insaniquarium_sim::missile::Missile) -> Value {
     json!({
         "x": m.x, "y": m.y, "vx": m.vx, "vy": m.vy, "launch": m.launch, "spin": m.spin,
@@ -823,6 +870,10 @@ pub fn snapshot(board: &Board) -> Snapshot {
     state.insert(
         "starcatchers".into(),
         Value::Array(board.starcatchers.iter().map(starcatcher_json).collect()),
+    );
+    state.insert(
+        "breeders".into(),
+        Value::Array(board.breeders.iter().map(breeder_json).collect()),
     );
     state.insert(
         "dead_aliens".into(),
@@ -923,6 +974,11 @@ pub fn decode_capture(t: &Trace) -> Trace {
                     .map(|b| starcatcher_json(&starcatcher_from_raw(b)))
                     .collect();
                 s.state.insert("starcatchers".into(), Value::Array(stars));
+                let brs: Vec<Value> = raw_list(&s, "breeder")
+                    .iter()
+                    .map(|b| breeder_json(&breeder_from_raw(b)))
+                    .collect();
+                s.state.insert("breeders".into(), Value::Array(brs));
                 let missiles = raw_list(&s, "missile")
                     .iter()
                     .map(|b| missile_json(&missile_from_raw(b)))

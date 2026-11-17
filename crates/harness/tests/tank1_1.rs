@@ -1306,6 +1306,17 @@ fn pet_screen_matches_original() {
     assert_eq!((raw, fish), (1, 2));
 }
 
+/// Tank 4-1 (`tank4-1_full_01`): Stinky, Itchy, Zorf; a breeder (new fish
+/// type) spawning guppies, the reveal chain (stage 2 → food quality/quantity/
+/// carnivore), a Balrog wave at tick 5268, breeder eaten. App-stream resync
+/// is active because the breeder's update is `static`.
+#[test]
+fn tank_4_1() {
+    if captured("tank4-1_full_01") {
+        replay_level_tank("tank4-1_full_01", 4, 1);
+    }
+}
+
 /// Captures whose pets decide on the global stream (Nostradamus's sneeze):
 /// their replays re-sync it every tick.
 fn needs_global(name: &str) -> bool {
@@ -1328,6 +1339,7 @@ fn needs_app_resync(name: &str) -> bool {
         || name.starts_with("tank3-1_shrapnel_grubber")
         || name.starts_with("tank3-1_angie_grubber")
         || name.starts_with("tank3-2_gumbo_gekko")
+        || name.starts_with("tank4-")
 }
 
 fn captured(name: &str) -> bool {
@@ -1601,16 +1613,23 @@ fn replay_level_full(name: &str, tank: i32, level: i32, from_demo: bool, chunk: 
             // Gus eats unmodelled Gekkos in the original but guppies in the
             // sim, changing the fish and pet lists after the eat. Fish_pets
             // (Gumbo) flees toward the alien's position which also diverges.
+            // On tank 4, fish spawned by the breeder (guessed) inherit its
+            // RNG drift; carnivores eating those fish also diverge.
             s.state.remove("fish");
+            s.state.remove("carnivores");
             s.state.remove("fish_pets");
             // Money diverges because coin/pearl collection timing shifts
             // when unmodelled objects change Stinky's path.
             s.state.remove("board");
+            // Breeder internal state is `static`/`guess`: its update
+            // drifts position, animation, spawn timing.
+            s.state.remove("breeders");
             // Grubber raw state diverges: its hunger is pushed in the
             // recording (grubber_bomb mode) and its guessed steering
             // drifts position.
             if let Some(raw) = s.state.get_mut("raw").and_then(|v| v.as_object_mut()) {
                 raw.remove("grubber");
+                raw.remove("breeder");
             }
         };
         for s in &mut actual.snapshots {
