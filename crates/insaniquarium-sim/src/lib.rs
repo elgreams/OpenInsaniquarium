@@ -4,6 +4,7 @@
 pub mod alien;
 pub mod board;
 pub mod bonus;
+pub mod breeder;
 pub mod coin;
 pub mod fish;
 pub mod food;
