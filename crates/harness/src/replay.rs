@@ -741,21 +741,27 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         hunger: rd_i32(b, 0x9c),
         fade: rd_i32(b, 0xa0),
         fade_to_hungry: b[0xa8] != 0,
-        splash: rd_i32(b, 0x178),
-        target_vx: rd_f64(b, 0x188),
-        mode: rd_i32(b, 0x190),
-        chase_timer: rd_i32(b, 0x194),
-        reroll_timer: rd_i32(b, 0x198),
-        anim: rd_i32(b, 0x19c),
+        // +0x178 is facing direction (draw-managed), not splash.
+        splash: 0,
+        // +0x188 tracks vx (always equals vx), not a separate target.
+        target_vx: 0.0,
+        // +0x1b0: mode (draw-managed, 0–9 cycle). Not compared.
+        mode: 0,
+        chase_timer: 0,
+        // +0x1b4: reroll timer (draw-managed, 1–40 cycle). Not compared.
+        reroll_timer: 0,
+        anim: 0,
         stage: rd_i32(b, 0x1a0),
         growth: rd_i32(b, 0x1a4),
+        // +0x1a8 changes on stage advance (not guppies-spawned).
         spawned: rd_i32(b, 0x1a8),
-        spawn_counter: rd_i32(b, 0x1b4),
+        // Spawn counter offset uncertain; use +0x1ac (stage countdown).
+        spawn_counter: rd_i32(b, 0x1ac),
         spawn_interval: rd_i32(b, 0x1d4),
         damp_timer: rd_i32(b, 0x1d8),
-        anim_b: rd_i32(b, 0x1b8),
-        anim_c: rd_i32(b, 0x1bc),
-        cel: rd_i32(b, 0x1c4),
+        anim_b: 0,
+        anim_c: 0,
+        cel: 0,
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
         shadow_y: 410,
@@ -763,14 +769,14 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
 }
 
 fn breeder_json(b: &insaniquarium_sim::breeder::Breeder) -> Value {
+    // Only hunger/growth state (fully Update-managed, no Draw dependency).
+    // Position (x, y, vx, vy, widget) is partly managed by the draw
+    // function (swim-mode velocity, integration contribution from draw);
+    // draw-managed fields (mode, timers, anim, cel) are excluded entirely.
+    // Spawn fields have uncertain offsets and are masked for now.
     json!({
-        "x": b.x, "y": b.y, "vx": b.vx, "vy": b.vy, "div": b.divisor, "hunger": b.hunger,
-        "fade": [b.fade, b.fade_to_hungry], "splash": b.splash, "tvx": b.target_vx,
-        "mode": b.mode, "timers": [b.chase_timer, b.reroll_timer],
-        "anim": [b.anim, b.anim_b, b.anim_c, b.cel],
-        "stage": b.stage, "growth": b.growth, "spawned": b.spawned,
-        "spawn": [b.spawn_counter, b.spawn_interval], "damp": b.damp_timer,
-        "widget": [b.widget_x, b.widget_y],
+        "hunger": b.hunger, "fade": [b.fade, b.fade_to_hungry],
+        "stage": b.stage, "growth": b.growth, "damp": b.damp_timer,
     })
 }
 

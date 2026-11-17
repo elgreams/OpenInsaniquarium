@@ -80,7 +80,7 @@ impl Breeder {
         // by analogy with the Grubber (5 draws). `static`.
         let _ctor_y = rng.next_range(5);
         let _divisor = rng.next_range(3); // R2
-        let hunger = rng.next_range(200) as i32 + 900;
+        let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
         let spawn_interval = rng.next_range(200) as i32 + 300;
         Breeder {
@@ -121,7 +121,7 @@ impl Breeder {
         // Ctor draws: same as `bought`.
         let _ctor_y = rng.next_range(5);
         let _divisor = rng.next_range(3);
-        let hunger = rng.next_range(200) as i32 + 900;
+        let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
         let spawn_interval = rng.next_range(200) as i32 + 300;
         let mut b = Breeder {
@@ -157,14 +157,15 @@ impl Breeder {
         b
     }
 
-    /// `Breeder::Update`, normal game. `static` (the exact update logic
-    /// is not known from Ghidra; this is a best-guess model based on the
-    /// Starcatcher/Guppycruncher pattern and capture observation).
+    /// `Breeder::Update` (`0x004f4180`, 824 bytes). Binary analysis
+    /// confirms ZERO calls to `MTRand::NextNoAssert` — the update is
+    /// fully deterministic with no RNG draws. Swim-mode rerolls and
+    /// animation are managed by the draw function (vtable slot 80,
+    /// `0x004dce10`), not by Update. `traced` (tank4-1_full_01).
     pub fn update(
         &mut self,
         has_aliens: bool,
         foods: &[Food],
-        rng: &mut MtRand,
     ) -> BreederOut {
         let mut out = BreederOut::default();
 
@@ -190,45 +191,15 @@ impl Breeder {
             }
         }
         // Starving check.
-        let busy = if self.hunger <= 0 {
+        if self.hunger <= 0 {
             out.died = true;
             out.died_at = (self.x, self.y, self.vx);
-            false
         } else if self.hunger < 900 {
-            self.chase(foods, &mut out)
-        } else {
-            false
-        };
-
-        // Swim modes (when not chasing).
-        if !busy {
-            match self.mode {
-                0 | 5 | 6 => self.target_vx = 0.0,
-                1 => self.target_vx = -0.5,
-                2 => self.target_vx = 0.5,
-                3 => self.target_vx = -1.0,
-                4 => self.target_vx = 1.0,
-                7 => self.target_vx = -2.5,
-                8 => self.target_vx = 2.5,
-                _ => {}
-            }
-            if self.target_vx < self.vx {
-                self.vx -= 0.1;
-            }
-            if self.vx < self.target_vx {
-                self.vx += 0.1;
-            }
+            self.chase(foods, &mut out);
         }
 
-        // Timers and reroll.
+        // Chase steer timer (food chase uses this for pacing).
         self.chase_timer += 1;
-        self.reroll_timer += 1;
-        if self.reroll_timer > 20 || self.x <= 10.0 || self.x >= 540.0 {
-            self.reroll_timer = 0;
-            if rng.next_range(10) == 0 {
-                self.mode = rng.next_range(9) as i32;
-            }
-        }
 
         // Clamps.
         #[allow(clippy::manual_clamp)]
@@ -245,13 +216,8 @@ impl Breeder {
             self.vy = 0.0;
         }
 
-        // Splash (bubbles while dropping in).
+        // Splash timer (bubbles drawn by PreUpdate, no RNG in Update).
         if self.splash >= 1 {
-            let n = if self.splash > 35 { 8 } else { 5 };
-            if rng.next_range(n) == 0 {
-                rng.next_u31();
-                rng.next_u31();
-            }
             self.splash -= 1;
         } else if self.y < 95.0 {
             self.y = 95.0;
@@ -278,22 +244,6 @@ impl Breeder {
                 out.spawn_guppy = Some((self.widget_x, self.widget_y));
                 self.spawned += 1;
             }
-        }
-
-        // Animation (shared with Starcatcher, `0x004d8f10`).
-        if self.vx >= 1.0 {
-            self.anim = (self.anim + 1) % 20;
-            self.cel = self.anim / 2;
-        } else if self.vx <= -1.0 {
-            self.anim = (self.anim + 19) % 20;
-            self.cel = self.anim / 2;
-        } else {
-            self.anim = if self.vx > 0.0 {
-                (self.anim + 1) % 40
-            } else {
-                (self.anim + 39) % 40
-            };
-            self.cel = self.anim / 4;
         }
 
         // Integrate.

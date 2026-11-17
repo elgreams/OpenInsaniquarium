@@ -1163,7 +1163,7 @@ impl Board {
         let mut i = 0;
         while i < self.breeders.len() {
             let has_aliens = !self.aliens.is_empty();
-            let out = self.breeders[i].update(has_aliens, &self.foods, &mut self.rng);
+            let out = self.breeders[i].update(has_aliens, &self.foods);
             if let Some(fi) = out.ate_food {
                 self.foods.remove(fi);
             }
