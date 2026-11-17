@@ -112,11 +112,11 @@ Bounceback missile bounce speed: **1.5** (level < 4, `_DAT_005c3d58`) or **0.6**
 | Rufus alone (2 HP/tick/seg) | 50 ticks per segment overlap |
 | Gash alone (3 HP/hit) | ~34 hits |
 
-## 5a. Attack mechanism: BoxingGlove
+## 5a. Attack mechanism: BoxingGlove creation
 
 `static` (from cached Ghidra decompilation at `0x004fb680`).
 
-Bilaterus attacks fish by **punching** them with a `Sexy::BoxingGlove` projectile. This is entirely different from how regular Aliens eat fish.
+Bilaterus attacks fish by **punching** them with a `Sexy::BoxingGlove` projectile. This is entirely different from how regular Aliens eat fish. The same `BoxingGlove` class is shared with Walter (`pet-walter.md`), which documents the full hit/push/draw behaviour from traced data; this section covers the Bilaterus-specific creation path.
 
 **BoxingGlove creation** (from the Bilaterus head's click handler at `0x004fb680`, type `0x17` branch):
 
@@ -142,6 +142,95 @@ After creating the glove:
 **Punch counter** (non-Virtual-Tank only):
 - `segment+0x260` increments on each successful punch
 - After **5 punches** (`> 4`): head enters cooldown (`segment+0x264` = `DAT_005df034`), counter resets, some cleanup occurs (virtual function call at `vtable+0x98`).
+
+## 5b. BoxingGlove constructor and lifetime
+
+`static` (from raw binary analysis of ctor @ `0x004ef7c0`).
+
+The constructor takes two arguments: `owner` (BilaterusHead pointer) and `direction` (byte: 0 = left, 1 = right). It calls `GameObject::GameObject()` and then:
+
+| Field | Value | Meaning |
+|---|---|---|
+| `+0x38, +0x3c` | **160, 80** (0xa0, 0x50) | Widget width × height |
+| `+0x30, +0x34` | −200, −200 | Initial off-screen position |
+| `+0x55` | 0 | Mouse invisible |
+| `+0x158` | owner | Owning BilaterusHead |
+| `+0x15c` | **30** | Countdown / duration (ticks) |
+| `+0x160` | direction | 0 = left, 1 = right |
+| `+0x164` | 0 | Sound gap timer |
+
+Object size: `0x168` bytes. The glove is **not** added to any board list, the master set, or the widget manager — the BilaterusHead owns, updates and draws it (same as Walter, `pet-walter.md`).
+
+**Total lifetime: 30 ticks.** The countdown at `+0x15c` decrements by 1 each tick in Update. When it reaches 0, the glove stops acting. The head's dtor or cleanup removes it.
+
+## 5c. BoxingGlove Update (`0x004e9a60`) — hit phases and targeting
+
+`static` (from raw binary analysis).
+
+Each tick the head calls the glove's Update (vtable slot 22). The function:
+
+1. **Null/pause check**: `app = [this+0x88]`, `board = [app+0x730]`; return if null or `board+0x94` (paused) is set.
+2. **Owner gate**: if `owner+0x1c8 > 35` (0x23): return without decrementing. The head's punch anim timer at `+0x1c8` starts at 40 and counts down, so the first 5 ticks after creation the timer is 40..36 (> 35), and the glove waits.
+3. **Positioning**: each tick, the glove tracks the head:
+   - Direction 0 (left): `this.x = head.x − 60`
+   - Direction 1 (right): `this.x = head.x − 20`
+   - `this.y = head.y`
+4. **Countdown**: `this+0x15c` decrements by 1. If ≤ 0: return (expired).
+5. **Sound gap**: `this+0x164` decrements by 1 if > 0.
+6. **Hit window** (by countdown value after decrement):
+
+| Countdown | Ticks | Reach (px) | Phase |
+|---|---|---|---|
+| 29–26 | 4 | 0 | Wind-up — no hits |
+| 25–21 | 5 | 30 | Narrow reach |
+| 20–13 | 8 | 60 | Full reach |
+| 12–1 | 12 | — | Retract — no hit logic |
+| 0 | 1 | — | Expire |
+
+7. **Fist position** (the collision point, not the widget):
+   - Left: `fist_x = widget.x − reach + 80`; Right: `fist_x = widget.x + reach + 80`
+   - `fist_y = widget.y + 40`
+8. **Target iteration**: walks the master object list at `board+0x104` (a linked list of all board objects). For each object whose `+0xf4` byte is set and that is not the BoxingGlove's own owner (`this+0x158`), dispatches on type code `+0x8c` via a lookup table at `0x004e9c68`:
+
+   | Type code(s) | Class(es) | Action |
+   |---|---|---|
+   | `0x00`, `0x05`–`0x07`, `0x22`–`0x24` | Guppy, Oscar, Ultra, Gekko, SylvesterFish, BallFish, BiFish | Hit test with `k = 5` |
+   | `0x15` | FishTypePet | Sub-dispatch by pet id (see below) |
+   | everything else | Alien, Bilaterus, OtherTypePet, coins, food, etc. | Skipped |
+
+   **FishTypePet sub-dispatch** (pet id at `+0x234`):
+
+   | Pet id | Pet | Strength `k` |
+   |---|---|---|
+   | 3 | **Prego** | **Skipped** (never hit) |
+   | 6, 11, 16 | Vert, Shrapnel, Amp | 5 |
+   | 21 | Nostradamus | 10 |
+   | all others | Itchy, Presto, Stanley, etc. | −1 (no clock change) |
+
+9. **Hit test** `0x004e0ed0(s, k)` per candidate — see §5d.
+10. **Sound**: if anything was hit this tick and `this+0x164 == 0`: play **PUNCH** (`0x00538340(3)`) and set `this+0x164 = 5` (cooldown before the next hit sound).
+
+The glove always passes `s = −1` (the push-direction sign) for every target, meaning Bilaterus punches always push fish **leftward**. Walter's glove passes `s = +1` or `−1` depending on the punch direction (`pet-walter.md`); the constant `−1` in BoxingGlove::Update appears to be a Bilaterus-specific quirk (the `xor ecx, ecx; lea ecx, [ecx+ecx−1]` sequence computes −1 regardless of the direction flag).
+
+## 5d. BoxingGlove hit test (`0x004e0ed0`)
+
+`static` (from raw binary analysis). Cross-referenced with `pet-walter.md` (the same function, `traced` there for Walter).
+
+The hit test receives: `ecx` = fist_x, `eax` = fist_y, stack `s` = push sign (−1 from Bilaterus), stack `k` = coin-clock strength.
+
+1. **Already pushed**: if `fish+0x20c > 0` (push timer active), skip. Each fish can only be hit once per glove lifetime (the 50-tick push timer outlasts the 30-tick glove).
+2. **Presto shield**: if the target is a FishTypePet with the Presto flag `+0x230` set and `+0x28 < 30` (fewer than 30 widget updates since creation), skip. This protects recently-transformed Presto pets.
+3. **Collision**: the fish's centre `(wx + w/2, wy + h/2)` must fall strictly inside the **±40 box** around the fist position: `fist_x − 40 < cx < fist_x + 40` and `fist_y − 40 < cy < fist_y + 40`.
+4. **On hit**, in order:
+   - If `k > 0`: **coin clock `+0x220 = +0x224 − k`**: the target's next coin/bomb/potion comes `k` ticks later (5 for most fish, 10 for Nostradamus). If `k ≤ 0`: no clock change.
+   - **Push timer `+0x20c = 50`**, misc timer `+0x210 = 180`.
+   - If `+0x11c ≠ −1`: enqueue a draw via `board+0x90` (1 global draw, the emote removal; `pet-walter.md` §hit).
+   - `0x004d6cc0`: if `+0xfc` is set, `+0x100 = 1` (or capped at 10) — the z-order visibility pair.
+   - **`grand()`** (global MTRand, 1 draw): even → **push `+0x218 = s · 15.0`**, odd → **`s · 10.0`**.
+
+For Bilaterus (`s = −1`): push velocity is **−15.0** or **−10.0** (always leftward, 50/50 via global RNG). For Walter (`s = ±1`): push direction matches the punch.
+
+**What a hit does to the target** (from `pet-walter.md`, `traced`): while `+0x20c > 0`, the target's own update applies `push *= 0.9; x += push` each tick (damped slide of ~134 px for 15, ~90 px for 10). **No damage, no death.** The fish is pushed but continues swimming normally. A Presto-flagged pet that has been pushed for 10 ticks (`+0x20c` drops below 41) **reverts to Presto** (`pet-presto.md`).
 
 ## 6. Head update (`BilaterusHead`, called from `Bilaterus::Update` via `0x004f0ea0`)
 
@@ -269,13 +358,44 @@ Bilaterus (kind 8) appears on:
 - **4-5**: re-rolls `r % 5` → pair kind 10 (40%), pair kind 11 (40%), kind 8 (20%).
 - **Pair kind 12** (Balrog + Bilaterus): only in mode 4 on 4-5 when `waves_spawned ≥ 5` and the re-roll gave kind 8.
 
-## 14. Key unknowns (reduced from initial draft)
+## 14. BoxingGlove Draw (`0x004e1000`)
+
+`static` (from raw binary analysis).
+
+The draw function is called by the BilaterusHead (or Walter) as part of the owner's draw, **behind** the owner's body. It uses `IMAGE_FIST` (at global `0x005e8e50`; for Walter, this is `IMAGE_WALTER`; for Bilaterus, the image pointer may differ — needs confirmation).
+
+**Animation frame**: `d = |countdown − 15|`, creating a ping-pong. `d = 0` at full extension (countdown 15), `d = 14` at start/end.
+
+**Visibility**: `a = 9 − d`; if `a < 1` (d ≥ 9, i.e. countdown ≤ 6 or ≥ 24): not drawn. If `a ≤ 5`: `a = 6` (capped). The arm cel is `max(a, 6)`, ranging 6–9.
+
+| Countdown | d | a | Drawn? | Cel |
+|---|---|---|---|---|
+| 29–24 | 14–9 | ≤ 0 | No | — |
+| 23 | 8 | 1 → 6 | Yes | 6 |
+| 22–16 | 7–1 | 2 → 6 | Yes | 6 |
+| 15 | 0 | 9 | Yes | 9 |
+| 14 | 1 | 8 | Yes | 8 |
+| 13 | 2 | 7 | Yes | 7 |
+| 12–8 | 3–7 | 2–6 | Yes | 6 |
+| 7 | 8 | 1 → 6 | Yes | 6 |
+| 6–1 | 9–14 | ≤ 0 | No | — |
+
+Visible for **17 ticks** (countdown 7–23).
+
+**Two draws per frame**:
+1. **Arm/body**: source rect `(cel·80, 160, 80, 80)` from the spritesheet, at dest `(−3, 2)` for left or `(83, 2)` mirrored for right.
+2. **Fist overlay**: source rect `(400, 160, 80, 80)` (a fixed frame at row 5), at dest `(6d − 20, 0)` for left or `(100 − 6d, 0)` mirrored for right. This slides with the animation: at full extension (d = 0) the fist is at x = −20 (left) or x = 100 (right); as d increases it retracts toward the centre.
+
+The first 5 ticks after creation the glove is at (−200, −200) off-screen (the owner gate in Update prevents positioning), so nothing is visible even though some of those frames compute a visible `a`.
+
+## 15. Key unknowns (reduced)
 
 `static` — gaps requiring deeper analysis or dynamic verification:
 
 - **Head movement/steering**: exact velocity formulas, fish-chase targeting, bounce/clamp at tank edges. Constants ±3.5, ±4.0, 80.0, 30.0, 50.0 are identified but their roles in the chase algorithm are not yet decoded.
-- **BoxingGlove detailed behavior**: what happens to the target fish (killed? eaten? damaged?), glove animation, lifetime, speed. The BoxingGlove Update is at vtable slot 22 = `0x004e9a60`, Draw at slot 26 = `0x004e1000`.
 - **BiFish** (`+0xf8`): when and how digested fish appear inside the worm body, their lifecycle.
 - **Constructor full RNG**: only 1 draw confirmed; there may be more for sub-object placement or initial head direction.
 - **Exact coin types**: types 4 and 5 from the death function need verification against the coin type enum.
 - **Head field `+0x160`**: assumed to be head index (0 or 1) determining coin type at death; needs confirmation.
+- **BoxingGlove push sign for Bilaterus**: the code always passes `s = −1` (leftward push). If the original Bilaterus can punch rightward and the push should follow the direction, this is a subtle bug in the analysis. Needs dynamic verification.
+- **IMAGE_FIST for Bilaterus**: the draw reads from global `0x005e8e50`; for Walter this is `IMAGE_WALTER`. Needs confirmation that the Bilaterus head's draw sets up the correct image before calling the glove's draw.
