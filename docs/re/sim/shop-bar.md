@@ -129,7 +129,7 @@ Tank 3 (`0x00541200`, the tank-3 branch). All values `static` (read from cached 
 
 Initial countdown `+0x2c0` is not overridden for tank 3: stays at the InitLevel default of **3000**. Backdrop index: `FUN_00538a10(4)`.
 
-Tank 4 (`0x00541200`, the tank-4 branch). `static`.
+Tank 4 (`0x00541200`, the tank-4 branch). Egg prices and wave kinds `confirmed` (independent binary read of `MOV [ESI+0x340]` at `0x5416FE`–`0x541761`); slots and other prices `static`.
 
 Tank 4 replaces the guppy slot with **breeder** (slot 1) and adds the **ultravore** (slot 9, $10 000) and a $5 000 weapon. No star potion, no Starcatcher, no Guppycruncher/Beetlemuncher. The first wave kind on 4-2 through 4-5 is **kind 8** (Bilaterus, `Sexy::Bilaterus`, type `0x17`, board list `+0xf4`) — the tank-4 boss alien.
 

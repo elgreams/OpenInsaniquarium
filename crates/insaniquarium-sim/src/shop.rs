@@ -162,10 +162,10 @@ impl Shop {
             set(Slot::Weapon, 5, 5000);
             let egg = match level {
                 1 => 3000,
-                2 => 5000,
-                3 => 7500,
-                4 => 10000,
-                _ => 15000,
+                2 => 25000,
+                3 => 50000,
+                4 => 75000,
+                _ => 99999,
             };
             set(Slot::EggPiece, 6, egg);
             // 4-1: Ultravore and weapon unmapped.
