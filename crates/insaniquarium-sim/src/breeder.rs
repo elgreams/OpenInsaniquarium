@@ -434,14 +434,18 @@ impl Breeder {
     /// but the integer centre (318) does not.
     /// `traced` (tank4-1_full_01).
     fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut, rng: &mut MtRand) {
-        let cx = self.widget_x + 40;
-        let cy = self.widget_y + 40;
+        // Float centre (same as the guppy's eat_check): sub-pixel
+        // precision matters when food has just fallen past the
+        // boundary (tick 2298: wy+5 == cy as ints, but cy_float =
+        // 333.5 so the strict `<` still passes).
+        let cx = self.x + 40.0;
+        let cy = self.y + 40.0;
         let bite_idx = foods.iter().position(|f| {
             if f.delay > 0 || f.kind == 2 {
                 return false;
             }
-            let (wx, wy) = (f.widget_x, f.widget_y);
-            wx < cx && cx < wx + 40 && wy + 5 < cy && cy < wy + 40
+            let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
+            wx < cx && cx < wx + 40.0 && wy + 5.0 < cy && cy < wy + 42.0
         });
         if let Some(i) = bite_idx {
             let was_hungry = self.hunger < 301 && self.fade == 0;

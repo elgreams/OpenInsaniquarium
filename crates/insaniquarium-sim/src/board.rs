@@ -2857,7 +2857,6 @@ impl Board {
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
         self.update_starcatchers();
-        self.update_breeders();
         self.update_guppycrunchers();
         let mut potion_money = 0;
         let mut i = 0;
@@ -2997,6 +2996,17 @@ impl Board {
         for s in stage_ups {
             self.on_stage_up(s);
         }
+        // Breeders (`+0xc0`) after beetlemunchers/ultravores in z-order.
+        // The breeder's eat_check uses float position (like guppy), so it
+        // must run after food.update() has moved food to its current-tick
+        // position.  Z-order confirmed: tick 2298's eat (wy+5 == cy as
+        // ints) only passes with the sub-pixel centre, and the guppy
+        // approach at tick 2732 also needs post-update food.
+        let n_pre_breeder = self.guppies.len();
+        self.update_breeders();
+        // Guppies born from the breeder this tick: they join the end of the
+        // widget list and update in the same pass, like Prego-born guppies.
+        let breeder_born: Vec<usize> = (n_pre_breeder..self.guppies.len()).collect();
         // Noses made from guppies join `+0xb4` and update in this pass
         // (pet-nostradamus.md#the-potion-food-kind-2). If no fish is left,
         // a random guppy is added (`0x005392a0`).
@@ -3436,9 +3446,15 @@ impl Board {
         }
         self.update_missiles();
         // Revived guppies are the last ones before this tick's births.
+        // Breeder-spawned guppies sit between revived and Prego-born.
         let n_rev = std::mem::take(&mut self.revived).len();
-        let first_born = born.first().copied().unwrap_or(self.guppies.len());
-        let mut late: Vec<usize> = (first_born.saturating_sub(n_rev)..first_born).collect();
+        let first_new = breeder_born
+            .first()
+            .or(born.first())
+            .copied()
+            .unwrap_or(self.guppies.len());
+        let mut late: Vec<usize> = (first_new.saturating_sub(n_rev)..first_new).collect();
+        late.extend(breeder_born);
         late.extend(born);
         if !late.is_empty() {
             self.update_newborns(&late);
