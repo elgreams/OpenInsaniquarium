@@ -752,11 +752,12 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         anim: rd_i32(b, 0x1c0),
         stage: rd_i32(b, 0x1a0),
         growth: rd_i32(b, 0x1a4),
-        // +0x1a8 changes on stage advance (not guppies-spawned).
-        spawned: rd_i32(b, 0x1a8),
-        // Spawn counter offset uncertain; use +0x1ac (stage countdown).
-        spawn_counter: rd_i32(b, 0x1ac),
+        // +0x1a8: growth threshold, re-drawn on stage advance.
+        growth_needed: rd_i32(b, 0x1a8),
+        // +0x1ac: pulse timer (cosmetic, 9→0 after stage advance).
+        pulse_timer: rd_i32(b, 0x1ac),
         spawn_interval: rd_i32(b, 0x1d4),
+        spawn_counter: 0, // Offset uncertain; not compared.
         damp_timer: rd_i32(b, 0x1d8),
         // +0x1b4: mode timer (0→40 cycle, now sim-managed in Update).
         mode_timer: rd_i32(b, 0x1b4),

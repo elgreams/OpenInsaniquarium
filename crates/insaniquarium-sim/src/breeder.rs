@@ -39,12 +39,15 @@ pub struct Breeder {
     pub stage: i32,
     /// `+0x1a4`: growth counter (preset to 2 at level start).
     pub growth: i32,
-    /// `+0x1a8`: changes on stage advance.
-    pub spawned: i32,
-    /// `+0x1ac`: countdown timer (stage advance).
-    pub spawn_counter: i32,
-    /// `+0x1d4`: spawn interval.
+    /// `+0x1a8`: growth threshold (pellets needed per stage, [4..8]).
+    /// Re-drawn from app RNG on each stage advance.
+    pub growth_needed: i32,
+    /// `+0x1ac`: stage-advance pulse timer (cosmetic, 9→0).
+    pub pulse_timer: i32,
+    /// Spawn interval (offset uncertain, `static`).
     pub spawn_interval: i32,
+    /// Spawn counter (offset uncertain, `static`).
+    pub spawn_counter: i32,
     /// `+0x1d8`: vy-damp timer (Rhubarb sets to 50).
     pub damp_timer: i32,
     /// `+0x1b4`: mode timer (0→40 cycle, resets in swim_modes).
@@ -70,6 +73,8 @@ pub struct BreederOut {
     pub died: bool,
     /// Position and vx when it died.
     pub died_at: (f64, f64, f64),
+    /// Stage advance happened; value is the new stage (1 or 2).
+    pub stage_up: Option<i32>,
 }
 
 impl Breeder {
@@ -77,9 +82,9 @@ impl Breeder {
     /// y overwritten to 65 (drop from top). `static`.
     pub fn bought(rng: &mut MtRand) -> Self {
         let x = rng.next_range(520) as i32 + 20;
-        // Ctor draws: y, divisor (unused?), hunger, mode, interval —
-        // by analogy with the Grubber (5 draws). `static`.
-        let _ctor_y = rng.next_range(5);
+        // Ctor draws (5): growth_needed, divisor (unused), hunger, mode,
+        // interval — by analogy with the Grubber. `static`.
+        let growth_needed = rng.next_range(5) as i32 + 4; // R1: [4..8]
         let _divisor = rng.next_range(3); // R2
         let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
@@ -100,9 +105,10 @@ impl Breeder {
             anim: 0,
             stage: 0,
             growth: 0,
-            spawned: 0,
-            spawn_counter: 0,
+            growth_needed,
+            pulse_timer: 0,
             spawn_interval,
+            spawn_counter: 0,
             damp_timer: 0,
             mode_timer: 0,
             anim_c: 0,
@@ -119,7 +125,7 @@ impl Breeder {
         let x = rng.next_range(520) as i32 + 20;
         let y = rng.next_range(265) as i32 + 105;
         // Ctor draws: same as `bought`.
-        let _ctor_y = rng.next_range(5);
+        let growth_needed = rng.next_range(5) as i32 + 4; // R1: [4..8]
         let _divisor = rng.next_range(3);
         let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
@@ -140,9 +146,10 @@ impl Breeder {
             anim: 0,
             stage: 0,
             growth: 2,
-            spawned: 0,
-            spawn_counter: 0,
+            growth_needed,
+            pulse_timer: 0,
             spawn_interval,
+            spawn_counter: 0,
             damp_timer: 0,
             mode_timer: 0,
             anim_c: 0,
@@ -210,12 +217,16 @@ impl Breeder {
         if self.splash >= 1 {
             self.splash -= 1;
         }
+        // Pulse timer (cosmetic, +0x1ac): 9→0 after a stage advance.
+        if self.pulse_timer > 0 {
+            self.pulse_timer -= 1;
+        }
 
         // Food chase or swim modes (mutually exclusive, like guppy).
         // With Gus first in the alien list, breeders leave food to him
         // (`0x004f13e5`, same gate as guppies). `traced` (tank4-1_full_01).
         let chasing = if self.hunger < 500 && !gus_first {
-            self.chase_food(foods, &mut out)
+            self.chase_food(foods, &mut out, rng)
         } else {
             false
         };
@@ -241,7 +252,6 @@ impl Breeder {
             if self.spawn_counter >= self.spawn_interval {
                 self.spawn_counter = 0;
                 out.spawn_guppy = Some((self.widget_x, self.widget_y));
-                self.spawned += 1;
             }
         }
 
@@ -304,7 +314,12 @@ impl Breeder {
     /// Food chase (same structure as `Fish::chase_food`): steer toward the
     /// nearest edible food every 3 ticks, eat check every tick. Returns
     /// true when a food target exists. `traced` (tank4-1_full_01).
-    fn chase_food(&mut self, foods: &[Food], out: &mut BreederOut) -> bool {
+    fn chase_food(
+        &mut self,
+        foods: &[Food],
+        out: &mut BreederOut,
+        rng: &mut MtRand,
+    ) -> bool {
         let target = self.find_food(foods);
         if target.is_none() {
             return false;
@@ -317,7 +332,7 @@ impl Breeder {
             let (tx, ty) = (f.widget_x + 20, f.widget_y + 20);
             self.steer_to(fx, fy, tx, ty);
         }
-        self.eat_check(foods, out);
+        self.eat_check(foods, out, rng);
         true
     }
 
@@ -397,7 +412,7 @@ impl Breeder {
     /// centre y (318.2) passes the food's adjusted top edge (318+5=323)
     /// but the integer centre (318) does not.
     /// `traced` (tank4-1_full_01).
-    fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut) {
+    fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut, rng: &mut MtRand) {
         let cx = self.widget_x + 40;
         let cy = self.widget_y + 40;
         let bite_idx = foods.iter().position(|f| {
@@ -419,6 +434,17 @@ impl Breeder {
             };
             self.hunger = (self.hunger + gain).min(cap);
             self.growth += growth;
+            // Stage advance: when growth meets the threshold and stage
+            // is below max (2), the breeder grows to the next stage.
+            // The threshold (`+0x1a8`) is re-drawn from app RNG.
+            // `traced` (tank4-1_full_01, ticks 2299 and 5409).
+            if self.growth >= self.growth_needed && self.stage < 2 {
+                self.stage += 1;
+                self.growth = 0;
+                self.pulse_timer = 9;
+                self.growth_needed = rng.next_range(5) as i32 + 4;
+                out.stage_up = Some(self.stage);
+            }
             if was_hungry && !(self.hunger < 301 && self.fade == 0) {
                 self.fade_to_hungry = false;
                 self.fade = 5;

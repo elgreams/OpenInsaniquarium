@@ -1172,6 +1172,12 @@ impl Board {
                 }
                 self.foods.remove(fi);
             }
+            if let Some(stage) = out.stage_up {
+                // Stage advance: no GROW sound (confirmed by capture,
+                // only slurp plays). Shop reveals via on_stage_up.
+                // `traced` (tank4-1_full_01, tick 2299).
+                self.on_stage_up(stage);
+            }
             if let Some((gx, gy)) = out.spawn_guppy {
                 // The breeder spawns a baby guppy at its own widget
                 // position. The guppy ctor draws from the app RNG.
@@ -2431,10 +2437,15 @@ impl Board {
         true
     }
 
-    /// `Fish::OnStageUp` (`0x004f1840`) shop reveals for tank 1-1.
+    /// `Fish::OnStageUp` (`0x004f1840`) shop reveals.
     fn on_stage_up(&mut self, stage: i32) {
         let first_level = self.tank == 1 && self.level == 1;
         match stage {
+            // Tank 4: stage 1 reveals Breeder (the guppy-buy replacement).
+            // `traced` (tank4-1_full_01, tick 2299: revealed[1] = 1).
+            1 if self.tank == 4 && !self.shop.revealed[Slot::Breeder as usize] => {
+                self.shop.reveal(Slot::Breeder, true);
+            }
             1 if !self.shop.revealed[Slot::Guppy as usize] => {
                 self.shop.reveal(Slot::Guppy, true);
                 if self.tutorial {
