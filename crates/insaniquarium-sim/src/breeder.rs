@@ -274,6 +274,7 @@ impl Breeder {
         }
 
         // Integrate (`0x4f4fda`).
+        let x_pre = self.x;
         self.x += self.vx / self.divisor;
         self.y += self.vy / self.divisor;
         self.widget_x = self.x as i32;
@@ -282,18 +283,19 @@ impl Breeder {
         // Wall deceleration (Draw-side): after Update integrates, Draw
         // checks the integer position `widget_x + (vx as i32)` against
         // the x boundaries. When the projected integer position overshoots
-        // a wall and vx is heading toward it, ease vx by 0.1 and correct
-        // x by 0.1/divisor. Uses truncated integer vx (`vx as i32`), so
-        // |vx| < 1 gives ivx=0 and naturally stops the deceleration.
+        // a wall and vx is heading toward it, ease vx by 0.1 and re-
+        // integrate from the pre-integration x with the new vx. Uses
+        // truncated integer vx (`vx as i32`), so |vx| < 1 gives ivx=0
+        // and naturally stops the deceleration.
         // `confirmed` (tank4-1_full_01, ticks 1960–1985).
         let ivx = self.vx as i32;
         if self.widget_x + ivx < 10 && self.vx < 0.0 {
             self.vx += 0.1;
-            self.x += 0.1 / self.divisor;
+            self.x = x_pre + self.vx / self.divisor;
             self.widget_x = self.x as i32;
         } else if self.widget_x + ivx > 550 && self.vx > 0.0 {
             self.vx -= 0.1;
-            self.x -= 0.1 / self.divisor;
+            self.x = x_pre + self.vx / self.divisor;
             self.widget_x = self.x as i32;
         }
         out
@@ -387,18 +389,23 @@ impl Breeder {
         }
     }
 
-    /// Eat check: eat the first edible food in the breeder's 40×40
-    /// bite box. The box is the food widget rectangle (breeder center
-    /// must be inside). `traced` (tank4-1_full_01).
+    /// Eat check: eat the first edible food whose bite box contains the
+    /// breeder's integer centre (`widget_x + 40`, `widget_y + 40`).
+    /// The box is `(wx, wy+5)` to `(wx+40, wy+40)` — the food widget
+    /// rect with a 5-pixel top margin.  Using integer coordinates is
+    /// load-bearing: at tick 2292 of the tank-4-1 trace, the float
+    /// centre y (318.2) passes the food's adjusted top edge (318+5=323)
+    /// but the integer centre (318) does not.
+    /// `traced` (tank4-1_full_01).
     fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut) {
-        let cx = self.x + 40.0;
-        let cy = self.y + 40.0;
+        let cx = self.widget_x + 40;
+        let cy = self.widget_y + 40;
         let bite_idx = foods.iter().position(|f| {
             if f.delay > 0 || f.kind == 2 {
                 return false;
             }
-            let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
-            wx < cx && cx < wx + 40.0 && wy < cy && cy < wy + 40.0
+            let (wx, wy) = (f.widget_x, f.widget_y);
+            wx < cx && cx < wx + 40 && wy + 5 < cy && cy < wy + 40
         });
         if let Some(i) = bite_idx {
             let was_hungry = self.hunger < 301 && self.fade == 0;
