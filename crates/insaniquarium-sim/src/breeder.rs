@@ -28,29 +28,31 @@ pub struct Breeder {
     pub splash: i32,
     /// `+0x188`: the swim mode's target vx.
     pub target_vx: f64,
-    /// `+0x190`: swim mode / chase state.
+    /// `+0x1b0`: swim mode (0–9, draw-managed).
     pub mode: i32,
-    /// `+0x194`: chase-steer timer; `+0x198`: reroll timer.
+    /// `+0x194`: chase-steer timer (draw-managed).
     pub chase_timer: i32,
+    /// `+0x1b8`: mode-reroll timer (fires when > 20, 21-tick cycle).
     pub reroll_timer: i32,
-    /// `+0x19c`: animation counter.
+    /// `+0x19c`: animation counter (draw-managed).
     pub anim: i32,
     /// `+0x1a0`: stage (dead fish kind = stage + 10).
     pub stage: i32,
     /// `+0x1a4`: growth counter (preset to 2 at level start).
     pub growth: i32,
-    /// `+0x1a8`: guppies spawned.
+    /// `+0x1a8`: changes on stage advance.
     pub spawned: i32,
-    /// `+0x1b4`: spawn counter (ticks since last spawn or start).
+    /// `+0x1ac`: countdown timer (stage advance).
     pub spawn_counter: i32,
     /// `+0x1d4`: spawn interval.
     pub spawn_interval: i32,
     /// `+0x1d8`: vy-damp timer (Rhubarb sets to 50).
     pub damp_timer: i32,
-    /// Animation sub-counters (`+0x1b8`, `+0x1bc`).
-    pub anim_b: i32,
+    /// `+0x1b4`: mode timer (1→40 cycle, draw-managed).
+    pub mode_timer: i32,
+    /// `+0x1bc`: animation sub-counter (draw-managed).
     pub anim_c: i32,
-    /// Animation cel (`+0x1c4`).
+    /// `+0x1c4`: animation cel (draw-managed).
     pub cel: i32,
     pub widget_x: i32,
     pub widget_y: i32,
@@ -104,7 +106,7 @@ impl Breeder {
             spawn_counter: 0,
             spawn_interval,
             damp_timer: 0,
-            anim_b: 0,
+            mode_timer: 0,
             anim_c: 0,
             cel: 0,
             widget_x: x,
@@ -145,7 +147,7 @@ impl Breeder {
             spawn_counter: 0,
             spawn_interval,
             damp_timer: 0,
-            anim_b: 0,
+            mode_timer: 0,
             anim_c: 0,
             cel: 0,
             widget_x: x,
@@ -252,6 +254,22 @@ impl Breeder {
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
         out
+    }
+
+    /// `Breeder::Draw` (`0x004dce10`): the breeder's swim-mode reroll is
+    /// in the draw function, not in Update. It fires every 21 ticks (same
+    /// cycle as the other entities' rerolls in their Update functions).
+    /// Draws 1 app RNG value (r%10 reroll check), and if the check passes
+    /// (10% chance), 1 more (r%9+1 for the new mode 1–9).
+    /// `traced` (tank4-1_full_01).
+    pub fn draw_reroll(&mut self, rng: &mut MtRand) {
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
     }
 
     /// Food chase: steer toward the nearest food pellet, eat the first

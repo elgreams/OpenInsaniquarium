@@ -748,8 +748,9 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         // +0x1b0: mode (draw-managed, 0–9 cycle). Not compared.
         mode: 0,
         chase_timer: 0,
-        // +0x1b4: reroll timer (draw-managed, 1–40 cycle). Not compared.
-        reroll_timer: 0,
+        // +0x1b8: reroll timer (21-tick cycle, same as fish/pet reroll).
+        // Read from the capture so the sim fires at the right tick.
+        reroll_timer: rd_i32(b, 0x1b8),
         anim: 0,
         stage: rd_i32(b, 0x1a0),
         growth: rd_i32(b, 0x1a4),
@@ -759,7 +760,8 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         spawn_counter: rd_i32(b, 0x1ac),
         spawn_interval: rd_i32(b, 0x1d4),
         damp_timer: rd_i32(b, 0x1d8),
-        anim_b: 0,
+        // +0x1b4: mode timer (1→40 cycle, draw-managed). Not compared.
+        mode_timer: 0,
         anim_c: 0,
         cel: 0,
         widget_x: rd_i32(b, 0x30),
