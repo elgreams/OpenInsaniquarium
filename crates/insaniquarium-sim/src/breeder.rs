@@ -88,7 +88,7 @@ impl Breeder {
         let _divisor = rng.next_range(3); // R2
         let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
-        let spawn_interval = rng.next_range(200) as i32 + 300;
+        let spawn_interval = rng.next_range(200) as i32 + 1200;
         Breeder {
             x: f64::from(x),
             y: 65.0,
@@ -129,7 +129,7 @@ impl Breeder {
         let _divisor = rng.next_range(3);
         let hunger = rng.next_range(200) as i32 + 300;
         let mode = rng.next_range(10) as i32;
-        let spawn_interval = rng.next_range(200) as i32 + 300;
+        let spawn_interval = rng.next_range(200) as i32 + 1200;
         let mut b = Breeder {
             x: f64::from(x),
             y: f64::from(y),
@@ -236,22 +236,18 @@ impl Breeder {
 
         // Timer increments (binary at `0x4f4c5f`).
         self.mode_timer += 1;
-        self.reroll_timer += 1;
+        // Note: reroll_timer increment and check are in Breeder::Draw
+        // (`0x004dce10`), not here. See `draw_reroll()`.
 
-        // Reroll check (binary at `0x4f4c6e`). Draws from app RNG.
-        if self.reroll_timer > 20 {
-            self.reroll_timer = 0;
-            if rng.next_range(10) == 0 || self.mode == -1 {
-                self.mode = rng.next_range(9) as i32 + 1;
-            }
-        }
-
-        // Guppy spawn timer (Prego-like, `static`).
-        if !has_aliens {
+        // Guppy spawn timer (`static`). During stage 0 the counter stays
+        // at 0. At stage 0→1 the board sets it to `board_clock − 35` (the
+        // number of non-alien ticks minus a 35-tick offset; see
+        // `update_breeders`). After that it increments each non-alien tick.
+        if !has_aliens && self.stage >= 1 {
             self.spawn_counter += 1;
             if self.spawn_counter >= self.spawn_interval {
                 self.spawn_counter = 0;
-                out.spawn_guppy = Some((self.widget_x, self.widget_y));
+                out.spawn_guppy = Some((self.widget_x + 5, self.widget_y + 10));
             }
         }
 
@@ -309,6 +305,22 @@ impl Breeder {
             self.widget_x = self.x as i32;
         }
         out
+    }
+
+    /// `Breeder::Draw` (`0x004dce10`): the breeder's swim-mode reroll is
+    /// in the draw function, not in Update. It fires every 21 ticks (same
+    /// cycle as the other entities' rerolls in their Update functions).
+    /// Draws 1 app RNG value (r%10 reroll check), and if the check passes
+    /// or mode is -1, 1 more (r%9+1 for the new mode 1–9).
+    /// `traced` (tank4-1_full_01).
+    pub fn draw_reroll(&mut self, rng: &mut MtRand) {
+        self.reroll_timer += 1;
+        if self.reroll_timer > 20 {
+            self.reroll_timer = 0;
+            if rng.next_range(10) == 0 || self.mode == -1 {
+                self.mode = rng.next_range(9) as i32 + 1;
+            }
+        }
     }
 
     /// Food chase (same structure as `Fish::chase_food`): steer toward the
@@ -443,6 +455,11 @@ impl Breeder {
                 self.growth = 0;
                 self.pulse_timer = 9;
                 self.growth_needed = rng.next_range(5) as i32 + 4;
+                // At stage 2, spawn interval changes deterministically
+                // (no RNG draw). `static` — only one data point: 1320→563.
+                if self.stage == 2 {
+                    self.spawn_interval = 563;
+                }
                 out.stage_up = Some(self.stage);
             }
             if was_hungry && !(self.hunger < 301 && self.fade == 0) {

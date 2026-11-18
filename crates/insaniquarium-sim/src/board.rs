@@ -1177,12 +1177,20 @@ impl Board {
                 // only slurp plays). Shop reveals via on_stage_up.
                 // `traced` (tank4-1_full_01, tick 2299).
                 self.on_stage_up(stage);
+                // At stage 0→1 the spawn counter jumps to
+                // `board_clock − 35`, catching up to the number of
+                // ticks that have elapsed minus a 35-tick offset.
+                // `static` — single data point (901 = 936 − 35).
+                if stage == 1 {
+                    self.breeders[i].spawn_counter = self.clock - 35;
+                }
             }
             if let Some((gx, gy)) = out.spawn_guppy {
                 // The breeder spawns a baby guppy at its own widget
                 // position. The guppy ctor draws from the app RNG.
                 // `static` (spawn mechanism modelled on Prego).
                 self.add_guppy_at(gx, gy);
+                self.play(0x136, Sound::Sfx);
             }
             if out.died {
                 let br = self.breeders.remove(i);
@@ -3177,6 +3185,13 @@ impl Board {
                 continue;
             }
             i += 1;
+        }
+        // Breeder draw-phase reroll: in the original, the swim-mode reroll
+        // lives in `Breeder::Draw` (vtable slot 80, `0x004dce10`), which runs
+        // after all entity Updates but before pet/fish-pet rerolls in z-order.
+        // `traced` (tank4-1_full_01).
+        for b in &mut self.breeders {
+            b.draw_reroll(&mut self.rng);
         }
         // Pets (`+0xb0`) update after aliens and before coins (z-order).
         for i in 0..self.pets.len() {
