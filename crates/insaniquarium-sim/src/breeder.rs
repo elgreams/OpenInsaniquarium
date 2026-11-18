@@ -367,12 +367,21 @@ impl Breeder {
         found
     }
 
-    /// Steer toward (tx, ty). Same constants as `Fish::steer_to` (hungry
-    /// branch) but the Y far/near threshold is **1** (not 6).
+    /// Steer toward (tx, ty). Same hunger-dependent constants as
+    /// `Fish::steer_to` but the Y far/near threshold is **1** (not 6).
     /// `traced` (tank4-1_full_01).
     fn steer_to(&mut self, fx: i32, fy: i32, tx: i32, ty: i32) {
-        let (big, mid, cap) = (1.3, 0.2, 4.0);
-        let (fd, nd, dcap, fu, nu, ucap) = (1.0, 0.5, -3.0, 1.3, 0.7, 4.0);
+        let hungry = self.hunger <= 300;
+        let (big, mid, cap) = if hungry {
+            (1.3, 0.2, 4.0)
+        } else {
+            (1.0, 0.1, 3.0)
+        };
+        let (fd, nd, dcap, fu, nu, ucap) = if hungry {
+            (1.0, 0.5, -3.0, 1.3, 0.7, 4.0)
+        } else {
+            (0.6, 0.3, -2.0, 1.0, 0.5, 3.0)
+        };
         let (dec, inc) = if fx > tx + 8 {
             (Some(big), None)
         } else if fx < tx - 8 {
