@@ -1163,8 +1163,13 @@ impl Board {
         let mut i = 0;
         while i < self.breeders.len() {
             let has_aliens = !self.aliens.is_empty();
-            let out = self.breeders[i].update(has_aliens, &self.foods);
+            let gus_first = self.aliens.first().is_some_and(|a| a.kind == 4);
+            let out = self.breeders[i].update(has_aliens, gus_first, &self.foods, &mut self.rng);
             if let Some(fi) = out.ate_food {
+                if self.sample_ready(0x138, 3) {
+                    let s = Sound::slurp(self.rng.next_range(5));
+                    self.sounds.push(s.into());
+                }
                 self.foods.remove(fi);
             }
             if let Some((gx, gy)) = out.spawn_guppy {
@@ -2726,17 +2731,6 @@ impl Board {
         // two draws (`0x00538a50`: x `150 + r % 22`, y `400 + r % 6`).
         // TODO(spec): the emitter skips a bubble when it already holds ≥ 50
         // (the bubble system isn't modelled; tank 1-1 never gets close).
-        if self.tick == 1403 {
-            // Dump the next 10 RNG values without consuming them
-            let mut probe = self.rng.clone();
-            let vals: Vec<u32> = (0..10).map(|_| probe.next_range(10)).collect();
-            eprintln!("T1404 RNG preview (r%10 for next 10): {:?}", vals);
-            // Also check what r%9+1 gives at position 5 (mti 102)
-            let mut probe2 = self.rng.clone();
-            for _ in 0..5 { probe2.next_u31(); }
-            eprintln!("T1404 val at pos5: r%%9+1={}, r%%10={}", probe2.next_range(9) + 1, { let mut p3 = self.rng.clone(); for _ in 0..5 { p3.next_u31(); } p3.next_range(10) });
-            eprintln!("T1404 before_bubbles: mti={} clock={}", self.rng.state().1, self.clock);
-        }
         if self.rng.next_range(1000) == 0 {
             let n = (self.rng.next_u31() & 3) + 3;
             for _ in 0..n {
@@ -2745,7 +2739,6 @@ impl Board {
             }
             self.play(0x110, Sound::Bubbles);
         }
-        if self.tick == 1403 { eprintln!("T1404 after_bubbles: mti={}", self.rng.state().1); }
         // After the ambient check: `+0x2c4`, then the wave countdown.
         self.update_waves();
         // Blip's reticle (pet-blip.md, board draw `0x0053ffaa`): while the
@@ -2844,13 +2837,9 @@ impl Board {
         self.update_dead_aliens();
         // Warps sit between the coin sub-list and food in z-order.
         self.warps.retain_mut(Warp::update);
-        if self.tick == 1403 { eprintln!("T1404 after_dead_aliens: mti={}", self.rng.state().1); }
         self.update_starcatchers();
-        if self.tick == 1403 { eprintln!("T1404 after_starcatchers: mti={}", self.rng.state().1); }
         self.update_breeders();
-        if self.tick == 1403 { eprintln!("T1404 after_breeders: mti={}", self.rng.state().1); }
         self.update_guppycrunchers();
-        if self.tick == 1403 { eprintln!("T1404 after_guppycrunchers: mti={}", self.rng.state().1); }
         let mut potion_money = 0;
         let mut i = 0;
         while i < self.foods.len() {
@@ -2915,11 +2904,9 @@ impl Board {
         // Guppies Angie revived this tick sit at the end of the widget
         // list: they update after the pets (with the newborns).
         let n_old = self.guppies.len() - self.revived.len();
-        if self.tick == 1403 { eprintln!("T1404 before_guppies({}): mti={}", n_old, world.rng.state().1); }
         for f in &mut self.guppies[..n_old] {
             f.update(env, &mut world);
         }
-        if self.tick == 1403 { eprintln!("T1404 after_guppies: mti={}", world.rng.state().1); }
         // Carnivores (`+0xa4`) right after the guppies. They read the guppy
         // list for prey; a guppy eaten here is gone for the next carnivore.
         let mut eaten = Vec::new();
@@ -2932,7 +2919,6 @@ impl Board {
                 carnivore_died += 1;
             }
         }
-        if self.tick == 1403 { eprintln!("T1404 after_carnivores({}): mti={}", self.carnivores.len(), world.rng.state().1); }
         let fed_carnivore = world.fed;
         // End the borrow on `self.guppies` before mutating them.
         #[allow(clippy::drop_non_drop)]
@@ -3182,14 +3168,11 @@ impl Board {
             i += 1;
         }
         // Pets (`+0xb0`) update after aliens and before coins (z-order).
-        if self.tick == 1403 { eprintln!("T1404 before_pets({}): mti={}", self.pets.len(), self.rng.state().1); }
         for i in 0..self.pets.len() {
             if self.pets[i].id != NIKO {
                 self.update_pet(i);
             }
-            if self.tick == 1403 { eprintln!("T1404 after_pet[{}] id={}: mti={}", i, self.pets[i].id, self.rng.state().1); }
         }
-        if self.tick == 1403 { eprintln!("T1404 before_fish_pets({}): mti={}", self.fish_pets.len(), self.rng.state().1); }
         // Fish-shaped pets (`+0xb4`) right after (pet-itchy.md#update-order).
         // Guppies born this tick: they join the end of the widget list and
         // update after the pets in the same pass (`tank1-5_full_01`: a
@@ -3253,9 +3236,7 @@ impl Board {
             };
             // The gate publishes the position from before his move.
             let (pre_wx, pre_wy) = (self.fish_pets[i].widget_x, self.fish_pets[i].widget_y);
-            if self.tick == 1403 { eprintln!("T1404 before_fish_pet[{}] kind={:?} reroll_timer={}: mti={}", i, self.fish_pets[i].kind, self.fish_pets[i].reroll_timer, self.rng.state().1); }
             let out = self.fish_pets[i].update_fish_pet(ctx, &mut self.rng);
-            if self.tick == 1403 { eprintln!("T1404 after_fish_pet[{}] mode={}: mti={}", i, self.fish_pets[i].mode, self.rng.state().1); }
             if out.revert {
                 // Slot 73 with 19: Presto is added at the end of `+0xb4`
                 // (he updates later in this pass) and this pet is removed.
@@ -3495,15 +3476,6 @@ impl Board {
         // is later in the widget list), so a message shown this tick counts
         // down once already (captures show 184 on the first tick).
         self.message.update();
-        // Breeder draw-phase reroll: in the original, the swim-mode reroll
-        // lives in `Breeder::Draw` (vtable slot 80, `0x004dce10`), which runs
-        // after all entity Updates. It fires every 21 ticks, synchronised
-        // with the pets' rerolls. `traced` (tank4-1_full_01).
-        if self.tick == 1403 { eprintln!("T1404 before_breeder_draw_reroll: mti={} reroll_timer={}", self.rng.state().1, self.breeders.first().map_or(-1, |b| b.reroll_timer)); }
-        for b in &mut self.breeders {
-            b.draw_reroll(&mut self.rng);
-        }
-        if self.tick == 1403 { eprintln!("T1404 after_breeder_draw_reroll: mti={}", self.rng.state().1); }
         self.tick += 1;
     }
 }

@@ -741,17 +741,15 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         hunger: rd_i32(b, 0x9c),
         fade: rd_i32(b, 0xa0),
         fade_to_hungry: b[0xa8] != 0,
-        // +0x178 is facing direction (draw-managed), not splash.
+        // +0x178: patrol direction (1 or -1) for modes 5–9.
+        patrol_dir: rd_i32(b, 0x178),
         splash: 0,
-        // +0x188 tracks vx (always equals vx), not a separate target.
-        target_vx: 0.0,
-        // +0x1b0: mode (draw-managed, 0–9 cycle). Not compared.
-        mode: 0,
-        chase_timer: 0,
+        // +0x1b0: swim mode (0–9). Now sim-managed (in Update, not Draw).
+        mode: rd_i32(b, 0x1b0),
         // +0x1b8: reroll timer (21-tick cycle, same as fish/pet reroll).
-        // Read from the capture so the sim fires at the right tick.
         reroll_timer: rd_i32(b, 0x1b8),
-        anim: 0,
+        // +0x1c0: animation frame (cosmetic, affects modes 3/4).
+        anim: rd_i32(b, 0x1c0),
         stage: rd_i32(b, 0x1a0),
         growth: rd_i32(b, 0x1a4),
         // +0x1a8 changes on stage advance (not guppies-spawned).
@@ -760,8 +758,8 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         spawn_counter: rd_i32(b, 0x1ac),
         spawn_interval: rd_i32(b, 0x1d4),
         damp_timer: rd_i32(b, 0x1d8),
-        // +0x1b4: mode timer (1→40 cycle, draw-managed). Not compared.
-        mode_timer: 0,
+        // +0x1b4: mode timer (0→40 cycle, now sim-managed in Update).
+        mode_timer: rd_i32(b, 0x1b4),
         anim_c: 0,
         cel: 0,
         widget_x: rd_i32(b, 0x30),
@@ -779,6 +777,10 @@ fn breeder_json(b: &insaniquarium_sim::breeder::Breeder) -> Value {
     json!({
         "hunger": b.hunger, "fade": [b.fade, b.fade_to_hungry],
         "stage": b.stage, "growth": b.growth, "damp": b.damp_timer,
+        "x": b.x, "y": b.y, "vx": b.vx, "vy": b.vy,
+        "widget": [b.widget_x, b.widget_y],
+        "mode": b.mode, "mode_t": b.mode_timer, "patrol_dir": b.patrol_dir,
+        "reroll_t": b.reroll_timer,
     })
 }
 
