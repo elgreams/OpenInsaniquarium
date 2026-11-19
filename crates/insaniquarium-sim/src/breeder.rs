@@ -467,7 +467,7 @@ impl Breeder {
                 return false;
             }
             let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
-            wx < cx && cx < wx + 40.0 && wy + 5.0 < cy && cy < wy + 40.0
+            wx < cx && cx < wx + 40.0 && wy + 5.0 < cy && cy < wy + 42.0
         });
         if let Some(i) = bite_idx {
             let was_hungry = self.hunger < 301 && self.fade == 0;
