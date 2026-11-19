@@ -12,6 +12,18 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `S
 
 `static` throughout. Recorded in `tank4-1_full_01` (2026-11-17): breeder spawned 4 guppies, eaten by Balrog; replay test pending.
 
+**Capture-confirmed fields** (from raw hex at known offsets in `tank4-1_full_01`):
+- `+0x1a0` (stage): 0 → 1 at tick 2299 on a stage advance. `confirmed`.
+- `+0x1a4` (growth): preset 2 at level start; +2 per level-1 eat; resets to 0 on stage advance. `confirmed`.
+- `+0x1a8` (growth_needed): 5 (initial ctor draw); redrawn to 8 on stage advance. `confirmed`.
+- `+0x1ac` (pulse_timer): 0 → 9 on stage advance, decrements 1/tick. `confirmed`.
+- `+0x1b0` (mode): 2 throughout the observed range. `confirmed`.
+- `+0x1b4` (mode_timer): increments 1/tick; the original's reroll_timer (at `+0x1b8`) fires at > 20, same cycle as guppies. `confirmed`.
+- `+0x1b8` (reroll_timer): 21-tick cycle, `confirmed`.
+- `+0x9c` (hunger): decrements 1/tick (no aliens); +700 on level-1 eat (cap 1000). `confirmed`.
+
+**Replay divergence at tick 2299:** the sim produces `growth_needed=7` (expected 8). Root cause is accumulated app-stream RNG drift — the breeder's ctor draw count (5, by analogy with Grubber) is `guess` and may be wrong; the replay does not use per-tick app resync. The growth_needed re-draw at tick 2299 follows exactly 2 preceding draws in the same tick: the ambient-bubble check (`0x0054815e`, 1 draw) and the slurp sound (`0x00538610`, 1 draw). The re-draw itself (`next_range(5) + 4`) at the correct position yields 8. See `/tmp/t4-step2-analyze.txt` for full RNG accounting.
+
 ## Slot overrides
 
 The vtable address is not yet identified. Known function addresses from cross-references:
