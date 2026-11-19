@@ -2858,14 +2858,6 @@ impl Board {
         self.warps.retain_mut(Warp::update);
         self.update_starcatchers();
         self.update_guppycrunchers();
-        // Snapshot food widget positions before the update loop.
-        // Breeder steer_to/find_food use prev_widget for targeting
-        // (they need the Draw-synced widget from the previous tick).
-        // eat_check uses the current widget (synced inline in update).
-        // `traced` (tank4-1_full_01, tick 4574 steer / tick 2297 eat).
-        for f in &mut self.foods {
-            f.save_prev_widget();
-        }
         let mut potion_money = 0;
         let mut i = 0;
         while i < self.foods.len() {
@@ -3005,8 +2997,7 @@ impl Board {
             self.on_stage_up(s);
         }
         // Breeders (`+0xc0`) after beetlemunchers/ultravores in z-order.
-        // steer_to/find_food use prev_widget (old Draw-synced positions);
-        // eat_check uses current widget (inline-synced in Food::update).
+        // Breeders use the current food widget for steer_to and eat_check.
         // `traced` (tank4-1_full_01, tick 4574 steer / tick 2297 eat).
         let n_pre_breeder = self.guppies.len();
         self.update_breeders();
@@ -3523,7 +3514,7 @@ impl Board {
         // Draw-phase widget sync: `Food::Draw` sets widget_x/widget_y
         // from the float position. Food::Update also syncs inline, but
         // this catch-all ensures newly created food (e.g. pet-dropped)
-        // has correct widgets for the next tick's prev_widget snapshot.
+        // has correct widgets for targeting by breeders/fish next tick.
         for f in &mut self.foods {
             f.sync_widget();
         }

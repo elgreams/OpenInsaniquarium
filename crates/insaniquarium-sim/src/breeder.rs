@@ -356,18 +356,14 @@ impl Breeder {
         if self.mode_timer >= 3 {
             self.mode_timer = 0;
             let f = &foods[target.unwrap()];
-            // prev_widget: steer_to needs the Draw-synced widget from
-            // the previous tick, not the inline-synced current one.
-            // `traced` (tank4-1_full_01, tick 4574).
-            let (tx, ty) = (f.prev_widget_x + 20, f.prev_widget_y + 20);
+            let (tx, ty) = (f.widget_x + 20, f.widget_y + 20);
             self.steer_to(fx, fy, tx, ty);
         }
         self.eat_check(foods, out);
         true
     }
 
-    /// Find the nearest edible food pellet. Uses prev_widget for
-    /// distance (same timing as steer_to). `traced` (tank4-1_full_01).
+    /// Find the nearest edible food pellet. `traced` (tank4-1_full_01).
     fn find_food(&self, foods: &[Food]) -> Option<usize> {
         let mut best = 100_000_000;
         let mut found = None;
@@ -375,8 +371,8 @@ impl Breeder {
             if f.delay > 0 || f.kind == 2 {
                 continue;
             }
-            let dx = (f64::from(f.prev_widget_x + 20) - (self.x + 40.0)) as i32;
-            let dy = (f64::from(f.prev_widget_y + 20) - (self.y + 40.0)) as i32;
+            let dx = (f64::from(f.widget_x + 20) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(f.widget_y + 20) - (self.y + 40.0)) as i32;
             let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
             if d < best {
                 best = d;

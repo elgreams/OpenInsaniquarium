@@ -190,8 +190,6 @@ pub fn food_from_raw(b: &[u8]) -> Food {
         risen: b[0x184] != 0,
         widget_x: wx,
         widget_y: wy,
-        prev_widget_x: wx,
-        prev_widget_y: wy,
     }
 }
 

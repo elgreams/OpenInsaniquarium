@@ -37,14 +37,6 @@ pub struct Food {
     /// `Food::Update` and again in `Food::Draw`.
     pub widget_x: i32,
     pub widget_y: i32,
-    /// Previous-tick widget position (saved before the food update loop).
-    /// Entities that call steer_to after food need old widgets because
-    /// their targeting in the original runs against the Draw-synced widget
-    /// from the previous tick (the inline sync in Update was not visible
-    /// to the steer_to call path in the original — it only affected
-    /// eat_check). `traced` (tank4-1_full_01, tick 4574).
-    pub prev_widget_x: i32,
-    pub prev_widget_y: i32,
 }
 
 /// What a food update asks the board to do.
@@ -81,8 +73,6 @@ impl Food {
             risen: false,
             widget_x: x,
             widget_y: y,
-            prev_widget_x: x,
-            prev_widget_y: y,
         }
     }
 
@@ -209,14 +199,6 @@ impl Food {
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
         FoodStep::Keep
-    }
-
-    /// Snapshot widget as "previous" before the food update loop.
-    /// Breeder steer_to/find_food use these for targeting (they need
-    /// the previous tick's widget positions). `traced` (tank4-1_full_01).
-    pub fn save_prev_widget(&mut self) {
-        self.prev_widget_x = self.widget_x;
-        self.prev_widget_y = self.widget_y;
     }
 
     /// Draw-phase widget sync (redundant with the inline sync in
