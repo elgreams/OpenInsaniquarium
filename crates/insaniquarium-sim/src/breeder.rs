@@ -60,6 +60,9 @@ pub struct Breeder {
     pub widget_y: i32,
     /// The shadow's floor y (cosmetic).
     pub shadow_y: i32,
+    /// Set during eat_check when a stage advance happens; consumed by
+    /// draw_reroll to draw the next growth_needed from app RNG.
+    pub needs_growth_draw: bool,
 }
 
 /// What a Breeder's update asks the board to do.
@@ -116,6 +119,7 @@ impl Breeder {
             widget_x: x,
             widget_y: 65,
             shadow_y: 410,
+            needs_growth_draw: false,
         }
     }
 
@@ -157,6 +161,7 @@ impl Breeder {
             widget_x: x,
             widget_y: y,
             shadow_y: 410,
+            needs_growth_draw: false,
         };
         // Shadow draw.
         b.shadow_y = rng.next_range(5) as i32 + 410;
@@ -180,7 +185,6 @@ impl Breeder {
         has_aliens: bool,
         gus_first: bool,
         foods: &[Food],
-        rng: &mut MtRand,
     ) -> BreederOut {
         let mut out = BreederOut::default();
 
@@ -226,7 +230,7 @@ impl Breeder {
         // With Gus first in the alien list, breeders leave food to him
         // (`0x004f13e5`, same gate as guppies). `traced` (tank4-1_full_01).
         let chasing = if self.hunger < 500 && !gus_first {
-            self.chase_food(foods, &mut out, rng)
+            self.chase_food(foods, &mut out)
         } else {
             false
         };
@@ -261,8 +265,10 @@ impl Breeder {
         self.drift_by_vx_bucket();
 
         // Y clamp: floor (`0x4f4dd8`, field `+0x190`).
-        if self.y > 359.0 {
-            self.y = 359.0;
+        // 370.0 — same as the fish floor (bounds[3]).
+        // `traced` (tank4-1_full_01, tick 2478: y settles at 371.75 = 370 + 3.5/2).
+        if self.y > 370.0 {
+            self.y = 370.0;
         }
         // Y clamp: ceiling (gated by splash and damp like the guppy).
         if self.damp_timer > 0 && self.vy > 0.0 {
@@ -272,8 +278,8 @@ impl Breeder {
         }
 
         // X clamp (`0x4f4df8`, fields `+0x194`/`+0x19c`).
-        if self.x > 550.0 {
-            self.x = 550.0;
+        if self.x > 540.0 {
+            self.x = 540.0;
         }
         if self.x < 10.0 {
             self.x = 10.0;
@@ -286,20 +292,21 @@ impl Breeder {
         self.widget_x = self.x as i32;
         self.widget_y = self.y as i32;
 
-        // Wall deceleration (Draw-side): after Update integrates, Draw
-        // checks the integer position `widget_x + (vx as i32)` against
-        // the x boundaries. When the projected integer position overshoots
-        // a wall and vx is heading toward it, ease vx by 0.1 and re-
-        // integrate from the pre-integration x with the new vx. Uses
-        // truncated integer vx (`vx as i32`), so |vx| < 1 gives ivx=0
-        // and naturally stops the deceleration.
-        // `confirmed` (tank4-1_full_01, ticks 1960–1985).
+        // Wall deceleration (Draw-side, `Breeder::Draw` @ `0x004dce10`):
+        // after Update integrates, Draw checks the integer projected
+        // position `widget_x + (vx as i32)` against the x boundaries and
+        // eases vx by 0.1, re-integrating from x_pre. The `vx > 0.1`
+        // guard matches the pattern in Fish::edge_steer, Starcatcher, and
+        // Guppycruncher — it prevents perpetual decel when vx is tiny
+        // (the x-clamp at 540 would otherwise keep widget_x at 540 and
+        // the check would fire every tick).
+        // `traced` (tank4-1_full_01, ticks 1960–1985 left, 2760+ right).
         let ivx = self.vx as i32;
-        if self.widget_x + ivx < 10 && self.vx < 0.0 {
+        if self.widget_x + ivx < 10 && self.vx < -0.1 {
             self.vx += 0.1;
             self.x = x_pre + self.vx / self.divisor;
             self.widget_x = self.x as i32;
-        } else if self.widget_x + ivx > 550 && self.vx > 0.0 {
+        } else if self.widget_x + ivx >= 540 && self.vx > 0.1 {
             self.vx -= 0.1;
             self.x = x_pre + self.vx / self.divisor;
             self.widget_x = self.x as i32;
@@ -321,6 +328,15 @@ impl Breeder {
                 self.mode = rng.next_range(9) as i32 + 1;
             }
         }
+        // Growth-needed re-draw: in the original, this happens inside
+        // Breeder::Draw after the reroll, following the slurp sound draw
+        // in Update. The draws between eat (Update) and here shift the
+        // RNG to the correct position.
+        // `traced` (tank4-1_full_01, tick 2298: growth_needed=8).
+        if self.needs_growth_draw {
+            self.growth_needed = rng.next_range(5) as i32 + 4;
+            self.needs_growth_draw = false;
+        }
     }
 
     /// Food chase (same structure as `Fish::chase_food`): steer toward the
@@ -330,7 +346,6 @@ impl Breeder {
         &mut self,
         foods: &[Food],
         out: &mut BreederOut,
-        rng: &mut MtRand,
     ) -> bool {
         let target = self.find_food(foods);
         if target.is_none() {
@@ -341,14 +356,18 @@ impl Breeder {
         if self.mode_timer >= 3 {
             self.mode_timer = 0;
             let f = &foods[target.unwrap()];
-            let (tx, ty) = (f.widget_x + 20, f.widget_y + 20);
+            // prev_widget: steer_to needs the Draw-synced widget from
+            // the previous tick, not the inline-synced current one.
+            // `traced` (tank4-1_full_01, tick 4574).
+            let (tx, ty) = (f.prev_widget_x + 20, f.prev_widget_y + 20);
             self.steer_to(fx, fy, tx, ty);
         }
-        self.eat_check(foods, out, rng);
+        self.eat_check(foods, out);
         true
     }
 
-    /// Find the nearest edible food pellet. `static`.
+    /// Find the nearest edible food pellet. Uses prev_widget for
+    /// distance (same timing as steer_to). `traced` (tank4-1_full_01).
     fn find_food(&self, foods: &[Food]) -> Option<usize> {
         let mut best = 100_000_000;
         let mut found = None;
@@ -356,8 +375,8 @@ impl Breeder {
             if f.delay > 0 || f.kind == 2 {
                 continue;
             }
-            let dx = (f64::from(f.widget_x + 20) - (self.x + 40.0)) as i32;
-            let dy = (f64::from(f.widget_y + 20) - (self.y + 40.0)) as i32;
+            let dx = (f64::from(f.prev_widget_x + 20) - (self.x + 40.0)) as i32;
+            let dy = (f64::from(f.prev_widget_y + 20) - (self.y + 40.0)) as i32;
             let d = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
             if d < best {
                 best = d;
@@ -407,12 +426,15 @@ impl Breeder {
                 self.vx += i;
             }
         }
-        // Y threshold 1 (guppy uses 6). `traced` (tank4-1_full_01).
+        // Y thresholds: 1 for going down, 6 for going up. The guppy
+        // uses 6 for both; the breeder has an asymmetric threshold.
+        // `traced` (tank4-1_full_01: tick 1526 gap=+2 far-down;
+        // tick 4574 gap=+1 near-down; tick 4577 gap=-6 near-up).
         if fy > ty + 1 {
             if dcap < self.vy {
                 self.vy -= fd;
             }
-        } else if fy < ty - 1 {
+        } else if fy < ty - 6 {
             if ucap > self.vy {
                 self.vy += fu;
             }
@@ -433,7 +455,7 @@ impl Breeder {
     /// centre y (318.2) passes the food's adjusted top edge (318+5=323)
     /// but the integer centre (318) does not.
     /// `traced` (tank4-1_full_01).
-    fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut, rng: &mut MtRand) {
+    fn eat_check(&mut self, foods: &[Food], out: &mut BreederOut) {
         // Float centre (same as the guppy's eat_check): sub-pixel
         // precision matters when food has just fallen past the
         // boundary (tick 2298: wy+5 == cy as ints, but cy_float =
@@ -445,7 +467,7 @@ impl Breeder {
                 return false;
             }
             let (wx, wy) = (f64::from(f.widget_x), f64::from(f.widget_y));
-            wx < cx && cx < wx + 40.0 && wy + 5.0 < cy && cy < wy + 42.0
+            wx < cx && cx < wx + 40.0 && wy + 5.0 < cy && cy < wy + 40.0
         });
         if let Some(i) = bite_idx {
             let was_hungry = self.hunger < 301 && self.fade == 0;
@@ -459,15 +481,17 @@ impl Breeder {
             };
             self.hunger = (self.hunger + gain).min(cap);
             self.growth += growth;
-            // Stage advance: when growth meets the threshold and stage
-            // is below max (2), the breeder grows to the next stage.
-            // The threshold (`+0x1a8`) is re-drawn from app RNG.
-            // `traced` (tank4-1_full_01, ticks 2299 and 5409).
-            if self.growth >= self.growth_needed && self.stage < 2 {
+            // Stage advance: when growth exceeds the threshold (strict >)
+            // and stage is below max (2), the breeder grows to the next
+            // stage. The growth_needed re-draw is done by the board
+            // AFTER the slurp sound draw (the slurp consumes 1 app RNG
+            // before the growth_needed draw).
+            // `traced` (tank4-1_full_01, tick 936→2298: growth=6 > 5).
+            if self.growth > self.growth_needed && self.stage < 2 {
                 self.stage += 1;
                 self.growth = 0;
                 self.pulse_timer = 9;
-                self.growth_needed = rng.next_range(5) as i32 + 4;
+                self.needs_growth_draw = true;
                 // At stage 2, spawn interval changes deterministically
                 // (no RNG draw). `static` — only one data point: 1320→563.
                 if self.stage == 2 {

@@ -171,6 +171,8 @@ pub fn fish_from_raw(b: &[u8]) -> Fish {
 
 /// A food object from its raw bytes (offsets: docs/re/objects/food.md).
 pub fn food_from_raw(b: &[u8]) -> Food {
+    let wx = rd_i32(b, 0x30);
+    let wy = rd_i32(b, 0x34);
     Food {
         x: rd_f64(b, 0x158),
         y: rd_f64(b, 0x160),
@@ -186,8 +188,10 @@ pub fn food_from_raw(b: &[u8]) -> Food {
         delay: rd_i32(b, 0x198),
         tossed: b[0x190] != 0,
         risen: b[0x184] != 0,
-        widget_x: rd_i32(b, 0x30),
-        widget_y: rd_i32(b, 0x34),
+        widget_x: wx,
+        widget_y: wy,
+        prev_widget_x: wx,
+        prev_widget_y: wy,
     }
 }
 
@@ -766,6 +770,7 @@ pub fn breeder_from_raw(b: &[u8]) -> insaniquarium_sim::breeder::Breeder {
         widget_x: rd_i32(b, 0x30),
         widget_y: rd_i32(b, 0x34),
         shadow_y: 410,
+        needs_growth_draw: false,
     }
 }
 
@@ -777,7 +782,8 @@ fn breeder_json(b: &insaniquarium_sim::breeder::Breeder) -> Value {
     // Spawn fields have uncertain offsets and are masked for now.
     json!({
         "hunger": b.hunger, "fade": [b.fade, b.fade_to_hungry],
-        "stage": b.stage, "growth": b.growth, "damp": b.damp_timer,
+        "stage": b.stage, "growth": [b.growth, b.growth_needed],
+        "damp": b.damp_timer,
         "x": b.x, "y": b.y, "vx": b.vx, "vy": b.vy,
         "widget": [b.widget_x, b.widget_y],
         "mode": b.mode, "mode_t": b.mode_timer, "patrol_dir": b.patrol_dir,

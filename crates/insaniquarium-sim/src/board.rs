@@ -1164,7 +1164,7 @@ impl Board {
         while i < self.breeders.len() {
             let has_aliens = !self.aliens.is_empty();
             let gus_first = self.aliens.first().is_some_and(|a| a.kind == 4);
-            let out = self.breeders[i].update(has_aliens, gus_first, &self.foods, &mut self.rng);
+            let out = self.breeders[i].update(has_aliens, gus_first, &self.foods);
             if let Some(fi) = out.ate_food {
                 if self.sample_ready(0x138, 3) {
                     let s = Sound::slurp(self.rng.next_range(5));
@@ -2858,6 +2858,14 @@ impl Board {
         self.warps.retain_mut(Warp::update);
         self.update_starcatchers();
         self.update_guppycrunchers();
+        // Snapshot food widget positions before the update loop.
+        // Breeder steer_to/find_food use prev_widget for targeting
+        // (they need the Draw-synced widget from the previous tick).
+        // eat_check uses the current widget (synced inline in update).
+        // `traced` (tank4-1_full_01, tick 4574 steer / tick 2297 eat).
+        for f in &mut self.foods {
+            f.save_prev_widget();
+        }
         let mut potion_money = 0;
         let mut i = 0;
         while i < self.foods.len() {
@@ -2997,11 +3005,9 @@ impl Board {
             self.on_stage_up(s);
         }
         // Breeders (`+0xc0`) after beetlemunchers/ultravores in z-order.
-        // The breeder's eat_check uses float position (like guppy), so it
-        // must run after food.update() has moved food to its current-tick
-        // position.  Z-order confirmed: tick 2298's eat (wy+5 == cy as
-        // ints) only passes with the sub-pixel centre, and the guppy
-        // approach at tick 2732 also needs post-update food.
+        // steer_to/find_food use prev_widget (old Draw-synced positions);
+        // eat_check uses current widget (inline-synced in Food::update).
+        // `traced` (tank4-1_full_01, tick 4574 steer / tick 2297 eat).
         let n_pre_breeder = self.guppies.len();
         self.update_breeders();
         // Guppies born from the breeder this tick: they join the end of the
@@ -3514,6 +3520,13 @@ impl Board {
         });
         // `0x0053c1e0`: add money, capped at 9,999,999.
         self.money = (self.money + banked).min(9_999_999);
+        // Draw-phase widget sync: `Food::Draw` sets widget_x/widget_y
+        // from the float position. Food::Update also syncs inline, but
+        // this catch-all ensures newly created food (e.g. pet-dropped)
+        // has correct widgets for the next tick's prev_widget snapshot.
+        for f in &mut self.foods {
+            f.sync_widget();
+        }
         // The message widget updates after the board and its objects (it
         // is later in the widget list), so a message shown this tick counts
         // down once already (captures show 184 on the first tick).
