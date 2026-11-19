@@ -22,7 +22,7 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `S
 - `+0x1b8` (reroll_timer): 21-tick cycle, `confirmed`.
 - `+0x9c` (hunger): decrements 1/tick (no aliens); +700 on level-1 eat (cap 1000). `confirmed`.
 
-**Replay divergence at tick 2299:** the sim produces `growth_needed=7` (expected 8). Root cause is accumulated app-stream RNG drift — the breeder's ctor draw count (5, by analogy with Grubber) is `guess` and may be wrong; the replay does not use per-tick app resync. The growth_needed re-draw at tick 2299 follows exactly 2 preceding draws in the same tick: the ambient-bubble check (`0x0054815e`, 1 draw) and the slurp sound (`0x00538610`, 1 draw). The re-draw itself (`next_range(5) + 4`) at the correct position yields 8. See `/tmp/t4-step2-analyze.txt` for full RNG accounting.
+**Replay divergence at tick 2299:** the sim produces `growth_needed=7` (expected 8). Root cause: the breeder ctor has **10** app-RNG draws, not the 5 assumed by Grubber analogy. This 5-draw deficit from level start shifts the sim's MT index, so the growth_needed re-draw at tick 2299 (`next_range(5) + 4`) lands on the wrong element. At the correct mti (558), the draw yields 4+4=8. Fix: either enable per-tick app resync for the replay, or implement the correct 10 ctor draws. Full accounting in `sim/tank4-rng-trace.md`.
 
 ## Slot overrides
 
@@ -77,9 +77,9 @@ The re-creation function at `0x00547270` (Angie revival, `pet-angie.md`) shows:
 4. Shadow `0x00544800`: type `0x0a` → shadow kind **0** (`board.md#shadows`). `Shadow::Shadow` draws **once** (`shadow y = 410 + r % 5`).
 5. `RebuildZOrder`.
 
-The constructor's internal RNG draws are unknown (Grubber has 5; the Breeder likely has a similar count). The 5th parameter (facing) distinguishes the Breeder from the 4-param Ultra and Oscar ctors and the 1-param Grubber ctor.
+The constructor consumes **10 app-RNG draws** internally (confirmed by draw accounting from `tank4-1_full_01`: PopulateLevel total 43 − 7 bubbles − 5 Stinky − 9 Itchy − 9 Zorf − 2 position − 1 shadow = 10). This is 5 more than the Grubber's 5 ctor draws; the extra draws likely initialise the Breeder's additional fields (spawn timer/interval, growth_needed, and stage-related state; `0x1e0` bytes vs the Grubber's `0x1b0`). The 5th parameter (facing) distinguishes the Breeder from the 4-param Ultra and Oscar ctors and the 1-param Grubber ctor.
 
-`static` (re-creation function decoded from decomp `00547270.c`; shadow type from `board.md`; constructor internals are `guess`).
+`confirmed` (ctor draw count derived from `tank4-rng-trace.md`; re-creation function from decomp `00547270.c`; shadow type from `board.md`; individual draw assignments within the ctor are `static`).
 
 ## Spawn
 
@@ -203,8 +203,8 @@ The sprite sheet is expected to be **`IMAGE_BREEDER`** (80×80 cels). The draw f
 
 | When | Stream | Draws |
 |---|---|---|
-| Shop purchase tick | app | position, ctor draws (unknown count), shadow, splash |
-| Level start | app | 2 (position) + ctor draws + shadow |
+| Shop purchase tick | app | position, 10 ctor, shadow, splash (expected 13 total) |
+| Level start | app | 2 (position) + 10 (ctor) + 1 (shadow) = 13 |
 | Rhubarb fling | app | 1 per flung Breeder |
 | Per-tick (swim reroll) | app | expected same as Grubber |
 | Guppy spawn | app | unknown (expected similar to Prego or Grubber Larva drop) |
@@ -214,7 +214,7 @@ The sprite sheet is expected to be **`IMAGE_BREEDER`** (80×80 cels). The draw f
 
 ## Open questions
 
-- **Constructor internals**: how many RNG draws, what fields are initialised (hunger range, divisor, swim mode, spawn timer). Requires the ctor or Init function in Ghidra.
+- **Constructor internals**: 10 RNG draws confirmed (`tank4-rng-trace.md`), but which draw initialises which field (hunger range, divisor, swim mode, spawn timer, growth_needed) requires the ctor body in Ghidra.
 - **BuyBreeder** (`0x005470a0`): full draw count, y override, any extra setup.
 - **Update function**: address, full step order, food chase mechanics (bite box, eat effect, hunger gain/cap).
 - **Guppy spawn mechanism**: timer fields, interval, whether it freezes during waves, RNG draws per spawn, spawn position relative to the Breeder.

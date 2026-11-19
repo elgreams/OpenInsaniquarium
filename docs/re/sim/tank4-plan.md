@@ -52,7 +52,7 @@ SetupShop tank-4 branch: shop slots, egg prices, wave kinds, re-roll formulas al
 
 **Record:** ~~a 4-1 session (Stinky + 2 others) that buys a breeder and exercises the full reveal chain, plus a Balrog wave.~~ **Done.** `tank4-1_full_01` (Stinky, Itchy, Zorf; CD=5000, 8000 ticks). Exercises: breeder spawning 4 guppies, guppy growth to stage 2, reveal chain (food quality/quantity/carnivore → carnivore buy at tick 4778 → egg reveal), Balrog wave at tick 5268 (killed by Itchy). Breeder eaten by Balrog. Egg counter confirmed: InitLevel sets `+0x43c = 1`, completes at 4 (3 purchases at $3000 each on 4-1).
 
-**Test:** `tank_4_1` replays the recording. Currently diverges at tick 2299: `growth_needed=7` (expected 8). Root cause is accumulated app-RNG drift from `static`/`guess` breeder ctor draws (5 draws by Grubber analogy). Fix: either enable app-stream resync for the test, or verify the breeder ctor draw count via Ghidra (`0x00547270`). See `/tmp/t4-step2-analyze.txt` for full RNG accounting.
+**Test:** `tank_4_1` replays the recording. The sim diverges at tick 2299 (`growth_needed=7` vs expected 8) because the breeder ctor consumes **10 app-RNG draws**, not the 5 previously guessed by Grubber analogy. This 5-draw deficit from level start shifts the app-RNG stream. Fix: enable per-tick app resync for the replay (short-term) and implement the correct 10 ctor draws (long-term). Full accounting in `sim/tank4-rng-trace.md`.
 
 ### 3. Ultravore and the full feeding chain
 
