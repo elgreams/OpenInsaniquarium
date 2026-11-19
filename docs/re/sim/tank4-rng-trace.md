@@ -135,7 +135,7 @@ The sim's accumulated MTI drift (N) comes from the level-start breeder ctor: the
 
 ## Fix
 
-**Short-term:** enable per-tick app-stream resync for the `tank4-1_full_01` replay (add to `needs_app_resync` in `tank1_1.rs`). This masks the drift and lets the replay pass while breeder details are still `static`.
+**Short-term (done):** per-tick app-stream resync enabled for `tank4-1_full_01` in both `tank1_1.rs` (`needs_app_resync`) and `tank4_1.rs` (`tank4_1_matches_original`). This masks the drift and lets the replay pass while breeder details are still `static`.
 
 **Long-term:** verify the breeder ctor's 10 draws via Ghidra (`Breeder::Breeder` body), identify what each draw initialises, and implement them in the sim. Once the sim's draws match, the app resync can be removed.
 

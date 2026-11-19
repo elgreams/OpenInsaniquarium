@@ -10,7 +10,7 @@ In short: the Breeder is a tank-4 bought fish ($200, slot 1) that **eats food** 
 
 RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `Sexy::Rand` @ `0x0040f9e0`.
 
-`static` throughout. Recorded in `tank4-1_full_01` (2026-11-17): breeder spawned 4 guppies, eaten by Balrog; replay test pending.
+`static` throughout except where noted. Recorded in `tank4-1_full_01` (2026-11-17): breeder spawned 4 guppies, eaten by Balrog. Replay test: `tank4_1_matches_original` (per-tick app-stream resync, `tank4-rng-trace.md`).
 
 **Capture-confirmed fields** (from raw hex at known offsets in `tank4-1_full_01`):
 - `+0x1a0` (stage): 0 → 1 at tick 2299 on a stage advance. `confirmed`.

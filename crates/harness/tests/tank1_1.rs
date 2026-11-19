@@ -1339,6 +1339,7 @@ fn needs_app_resync(name: &str) -> bool {
         || name.starts_with("tank3-1_shrapnel_grubber")
         || name.starts_with("tank3-1_angie_grubber")
         || name.starts_with("tank3-2_gumbo_gekko")
+        || name.starts_with("tank4-1")
 }
 
 fn captured(name: &str) -> bool {
