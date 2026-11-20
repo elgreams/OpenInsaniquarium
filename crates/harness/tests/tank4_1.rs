@@ -453,16 +453,16 @@ fn tank4_1_clean_header() {
         s.state.remove("board");
         // With the clean MT state array (tank4-1_full_02), the per-tick
         // app-stream resync gives correct RNG values at tick boundaries.
-        // However, within-tick RNG drift from unmodelled consumers
-        // (bubbles, ambient fish draws) means mode — set by draw_reroll's
-        // `next_range(10)` mid-tick — still diverges.
+        // The breeder's Update consumes zero app-RNG draws, and all other
+        // entities (guppies, pets, fish-pets) are state-synced from the
+        // capture, so the RNG position at draw_reroll is exactly correct.
+        // This means mode (set by draw_reroll's `next_range(10)`) matches.
         //
-        // Position diverges because the breeder's Draw function
-        // (`0x004dce10`) contains swim-mode velocity adjustments not yet
-        // in the sim, cascading to eat -> hunger -> fade -> growth -> stage.
+        // Position-dependent fields (hunger, stage, growth, x/y) may still
+        // diverge if the initial vx guess or Draw-side velocity adjustments
+        // cause position drift. Those are masked for now.
         //
-        // Verified here: reroll_t (pure 21-tick timer, no RNG dependency),
-        // damp (always 0, no Rhubarb in this capture).
+        // Verified here: reroll_t, damp, mode, mode_timer, growth_needed.
         if let Some(serde_json::Value::Array(brs)) = s.state.get_mut("breeders") {
             if brs.is_empty() {
                 // Breeder was collected/hatched in the original; sim doesn't
@@ -473,9 +473,15 @@ fn tank4_1_clean_header() {
                     if let Some(obj) = br.as_object_mut() {
                         let reroll_t = obj.remove("reroll_t");
                         let damp = obj.remove("damp");
+                        let mode = obj.remove("mode");
+                        let mode_timer = obj.remove("mode_timer");
+                        let growth_needed = obj.remove("growth_needed");
                         obj.clear();
                         if let Some(v) = reroll_t { obj.insert("reroll_t".into(), v); }
                         if let Some(v) = damp { obj.insert("damp".into(), v); }
+                        if let Some(v) = mode { obj.insert("mode".into(), v); }
+                        if let Some(v) = mode_timer { obj.insert("mode_timer".into(), v); }
+                        if let Some(v) = growth_needed { obj.insert("growth_needed".into(), v); }
                     }
                 }
             }

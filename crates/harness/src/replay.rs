@@ -2561,12 +2561,26 @@ fn replay_resync_impl(
             }
             // Also resync guppy state: the shifted intra-tick draws
             // change swim mode rerolls, velocities and animation.
+            // Match the guppy count too: if the breeder spawns guppies
+            // at a different tick (position-dependent), extra or missing
+            // guppy reroll draws shift the app RNG within the tick,
+            // causing mode divergence at the breeder's draw_reroll.
             if let Some(Value::Array(fish)) = t
                 .snapshots
                 .iter()
                 .find(|s| s.tick == board.tick)
                 .and_then(|s| s.state.get("fish"))
             {
+                // Match guppy count to the capture before syncing state.
+                board.guppies.truncate(fish.len());
+                while board.guppies.len() < fish.len() {
+                    // Placeholder guppy; state is overwritten below.
+                    // Uses a throwaway RNG so Fish::new's 6 draws don't
+                    // touch the board's stream.
+                    board
+                        .guppies
+                        .push(Fish::new(0, 0, &mut MtRand::new(0)));
+                }
                 for (g, cap) in board.guppies.iter_mut().zip(fish) {
                     let i = |k: &str| cap.get(k).and_then(Value::as_i64).map(|v| v as i32);
                     let f = |k: &str| cap.get(k).and_then(Value::as_f64);
