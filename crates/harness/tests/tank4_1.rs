@@ -204,7 +204,28 @@ fn tank4_1_matches_original() {
         s.state.remove("carnivores");
         s.state.remove("fish_pets");
         s.state.remove("board");
-        s.state.remove("breeders");
+        // Breeder: the CE header MT array race condition means app-resync
+        // gives correct mti but wrong RNG values, so mode/growth_needed
+        // diverge; position cascades from mode changes via swim_modes, and
+        // eat timing from position, shifting hunger/fade/growth/stage.
+        // Only reroll_timer (pure 0→20→reset, no RNG) and damp_timer
+        // (0 in this capture, no Rhubarb) are verifiable without a clean
+        // header. See tank4-rng-trace.md.
+        if let Some(serde_json::Value::Array(brs)) = s.state.get_mut("breeders") {
+            for br in brs {
+                if let Some(obj) = br.as_object_mut() {
+                    let reroll_t = obj.remove("reroll_t");
+                    let damp = obj.remove("damp");
+                    obj.clear();
+                    if let Some(v) = reroll_t {
+                        obj.insert("reroll_t".into(), v);
+                    }
+                    if let Some(v) = damp {
+                        obj.insert("damp".into(), v);
+                    }
+                }
+            }
+        }
         if let Some(raw) = s.state.get_mut("raw").and_then(|v| v.as_object_mut()) {
             raw.remove("grubber");
             raw.remove("breeder");

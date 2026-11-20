@@ -131,13 +131,13 @@ The sim's accumulated MTI drift (N) comes from the level-start breeder ctor: the
 
 ## Fix
 
-**Short-term (done):** per-tick app-stream resync enabled for `tank4-1_full_01` in both `tank1_1.rs` (`needs_app_resync`) and `tank4_1.rs` (`tank4_1_matches_original`). This masks the drift and lets the replay pass while breeder details are still `static`.
+**Ctor draws (done):** the breeder constructor has **6** app-RNG draws (5 in `Breeder::Init` + 1 in the 5-param ctor body), confirmed by PE analysis. All 6 draws are now implemented in the sim (`breeder.rs::init`). See `breeder.md#constructor-rng-draws`.
 
-**Long-term:** verify the breeder ctor's 10 draws via Ghidra (`Breeder::Breeder` body), identify what each draw initialises, and implement them in the sim. Once the sim's draws match, the app resync can be removed.
+**Per-tick app-stream resync (done):** the CE header MT array race condition means the header's mt[] values are corrupted (the array was read non-atomically while the game thread ran). The mti tracking is correct but the tempered values diverge. The `tank4_1_matches_original` test resyncs the app RNG each tick and verifies breeder state at the field level: `reroll_timer` (pure 21-tick cycle) and `damp_timer` (0 throughout, no Rhubarb). RNG-value-dependent fields (mode, growth_needed, position) are masked.
+
+**Long-term:** re-capture tank4-1 with the game paused during the header read (stop process, read state, resume). With a clean MT array, the app resync becomes unnecessary and all breeder fields can be verified.
 
 ## Open questions
 
-- **Which of the 10 ctor draws is growth_needed?** Draws #4, #5, and #8 all yield the observed value (5) for this capture; disambiguation requires Ghidra analysis of the constructor or a second capture with a different MT state.
-- **What do the other 9 ctor draws initialise?** Expected: hunger, swim mode, mode timer, spawn interval, spawn timer, divisor-related, and growth-related fields.
-- **BuyBreeder draw count** (`0x005470a0`): expected 1 (position) + 10 (ctor) + 1 (shadow) + 1 (splash) = 13, but unverified.
+- **BuyBreeder draw count** (`0x005470a0`): expected 1 (position) + 6 (ctor) + 1 (shadow) + 1 (splash) = 9, but unverified.
 - **Tick 2238 pause:** the board skipped 1 ambient draw. If this is a focus-loss pause during recording, it's a one-off artifact. The replay harness already handles pauses by re-syncing.

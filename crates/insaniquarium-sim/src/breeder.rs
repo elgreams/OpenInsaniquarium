@@ -81,65 +81,49 @@ pub struct BreederOut {
 }
 
 impl Breeder {
-    /// `Board::BuyBreeder` (`0x005470a0`): the x draw, then the ctor draws,
-    /// y overwritten to 65 (drop from top). `static`.
+    /// `Board::BuyBreeder` (`0x005470a0`): the x draw, then 6 ctor draws,
+    /// y overwritten to 65 (drop from top). `confirmed` (breeder.md, PE analysis).
     pub fn bought(rng: &mut MtRand) -> Self {
         let x = rng.next_range(520) as i32 + 20;
-        // Ctor draws (5): growth_needed, divisor (unused), hunger, mode,
-        // interval — by analogy with the Grubber. `static`.
-        let growth_needed = rng.next_range(5) as i32 + 4; // R1: [4..8]
-        let _divisor = rng.next_range(3); // R2
-        let hunger = rng.next_range(200) as i32 + 300;
-        let mode = rng.next_range(10) as i32;
-        let spawn_interval = rng.next_range(200) as i32 + 1200;
+        let b = Self::init(rng);
         Breeder {
             x: f64::from(x),
             y: 65.0,
-            vx: 0.0,
-            vy: 0.0,
-            divisor: 2.0,
-            hunger,
-            fade: 0,
-            fade_to_hungry: false,
-            patrol_dir: 1,
-            splash: 45,
-            mode,
-            reroll_timer: 0,
-            anim: 0,
-            stage: 0,
-            growth: 0,
-            growth_needed,
-            pulse_timer: 0,
-            spawn_interval,
-            spawn_counter: 0,
-            damp_timer: 0,
-            mode_timer: 0,
-            anim_c: 0,
-            cel: 0,
             widget_x: x,
             widget_y: 65,
-            shadow_y: 410,
-            needs_growth_draw: false,
+            splash: 45,
+            growth: 0,
+            ..b
         }
     }
 
-    /// Level start (`0x005471e0`): one breeder at a random position (2 draws),
-    /// then ctor draws. `static`.
-    pub fn level_start(rng: &mut MtRand) -> Self {
-        let x = rng.next_range(520) as i32 + 20;
-        let y = rng.next_range(265) as i32 + 105;
-        // Ctor draws: same as `bought`.
-        let growth_needed = rng.next_range(5) as i32 + 4; // R1: [4..8]
-        let _divisor = rng.next_range(3);
-        let hunger = rng.next_range(200) as i32 + 300;
-        let mode = rng.next_range(10) as i32;
-        let spawn_interval = rng.next_range(200) as i32 + 1200;
-        let mut b = Breeder {
-            x: f64::from(x),
-            y: f64::from(y),
-            vx: 0.0,
+    /// The 6 ctor draws shared by level_start and bought.
+    ///
+    /// `Breeder::Init` (`0x004dcbf0`): 5 app-RNG draws, then
+    /// `Breeder::Breeder` (`0x004ee530`): 1 app-RNG draw.
+    /// See `breeder.md#constructor-rng-draws`.  `confirmed`.
+    fn init(rng: &mut MtRand) -> Self {
+        // Breeder::Init — 5 draws:
+        let facing = rng.next_u31() & 1;              // #1: r & 1 → vx dir
+        let div_idx = rng.next_range(3) as usize;     // #2: r % 3 → divisor
+        let hunger = rng.next_range(200) as i32 + 400; // #3: r % 200 + 400
+        let growth_needed = (rng.next_u31() & 1) as i32 + 4; // #4: (r&1)+4
+        let mode = rng.next_range(10) as i32;          // #5: r % 10
+        // Breeder::Breeder (5-param) — 1 draw:
+        let spawn_timer = rng.next_range(400) as i32 + 1000; // #6: r%400+1000
+
+        let divisor = [2.0, 1.8, 1.6][div_idx];
+        // Draw #1 sets vx direction: 0 → left (by analogy with
+        // Fish::Init). `static` (the facing convention is from Die decomp,
+        // but the initial vx magnitude is a guess).
+        let vx = if facing == 0 { -0.1 } else { 0.0 };
+
+        Breeder {
+            x: 0.0,
+            y: 0.0,
+            vx,
             vy: 0.0,
-            divisor: 2.0,
+            divisor,
             hunger,
             fade: 0,
             fade_to_hungry: false,
@@ -149,19 +133,36 @@ impl Breeder {
             reroll_timer: 0,
             anim: 0,
             stage: 0,
-            growth: 2,
+            growth: 0,
             growth_needed,
             pulse_timer: 0,
-            spawn_interval,
+            spawn_interval: spawn_timer,
             spawn_counter: 0,
             damp_timer: 0,
             mode_timer: 0,
             anim_c: 0,
             cel: 0,
-            widget_x: x,
-            widget_y: y,
+            widget_x: 0,
+            widget_y: 0,
             shadow_y: 410,
             needs_growth_draw: false,
+        }
+    }
+
+    /// Level start (`0x005471e0`): one breeder at a random position (2 draws),
+    /// then 6 ctor draws, then shadow. `confirmed` (breeder.md, PE analysis).
+    pub fn level_start(rng: &mut MtRand) -> Self {
+        let x = rng.next_range(520) as i32 + 20;
+        let y = rng.next_range(265) as i32 + 105;
+        let b = Self::init(rng);
+        let mut b = Breeder {
+            x: f64::from(x),
+            y: f64::from(y),
+            widget_x: x,
+            widget_y: y,
+            splash: 0,
+            growth: 2,
+            ..b
         };
         // Shadow draw.
         b.shadow_y = rng.next_range(5) as i32 + 410;
