@@ -36,37 +36,33 @@ PopulateLevel runs during this tick. No Board::Update runs until tick 1364.
 
 | Step | Draws | MTI range | Detail |
 |---|---|---|---|
-| Start bubbles | 7 | 10–16 | `Next() & 3` = 0 at mti 10, so n=2, n+1=3 bubbles; each bubble 2 draws. |
-| AddPet Stinky (id 0) | 5 | 17–21 | 2 position + 2 ctor + 1 shadow (`pet-stinky.md`). |
-| AddPet Itchy (id 2) | 9 | 22–30 | 2 position + 6 Fish::Init + 1 shadow (`pet-itchy.md`). |
-| AddPet Zorf (id 4) | 9 | 31–39 | 2 position + 6 Fish::Init + 1 shadow (`pet-zorf.md`). |
-| Breeder position | 2 | 40–41 | `0x005471e0`: x, y draws. |
-| Breeder ctor | **10** | 42–51 | `Breeder::Breeder` internal draws. See below. |
+| Start bubbles | 11 | 10–20 | `Next() & 3` = 2 at mti 10, so n=4, n+1=5 bubbles; each bubble 2 draws. |
+| AddPet Stinky (id 0) | 5 | 21–25 | 2 position + 2 ctor + 1 shadow (`pet-stinky.md`). |
+| AddPet Itchy (id 2) | 9 | 26–34 | 2 position + 6 Fish::Init + 1 shadow (`pet-itchy.md`). |
+| AddPet Zorf (id 4) | 9 | 35–43 | 2 position + 6 Fish::Init + 1 shadow (`pet-zorf.md`). |
+| Breeder position | 2 | 44–45 | `0x005471e0`: x, y draws. |
+| Breeder ctor | **6** | 46–51 | `Breeder::Breeder` internal draws. See below. |
 | Breeder shadow | 1 | 52 | Shadow ctor: `410 + r % 5`. |
 | **Total** | **43** | 10–52 | Final mti = 53. |
 
-`confirmed` (total 43 from capture delta; bubble count computed from MT state; pet draws from traced specs; breeder ctor count = 43 − 7 − 5 − 9 − 9 − 2 − 1 = 10).
+`confirmed` (total 43 from capture delta; bubble count corrected to `r & 3 = 2` after PE analysis of `Breeder::Init` revealed 6 ctor draws: 43 − 11 − 5 − 9 − 9 − 2 − 6 − 1 = 0 residual; pet draws from traced specs).
 
-### Breeder ctor: 10 draws (mti 42–51)
+**Correction (2026-11-20):** the original table assumed `Next() & 3 = 0` (3 bubbles, 7 draws) and derived 10 ctor draws by subtraction. PE analysis of `Breeder::Init` (`0x004dcbf0`) and `Breeder::Breeder` (`0x004ee530`) shows the ctor has exactly 6 app-RNG draws. The bubble count must therefore be `Next() & 3 = 2` (5 bubbles, 11 draws) for the total to be 43. Verification: Draw #4 at MTI 49 yields `(1682580351 & 1) + 4 = 5`, matching the captured `growth_needed = 5`. See `breeder.md#constructor-rng-draws` for the full draw table.
 
-The breeder's 5-param constructor (`Breeder::Breeder` via `0x00547270`) consumes 10 app-RNG draws. The previous estimate (5, by analogy with Grubber) was wrong. The Grubber ctor has 5 draws; the Breeder's extra 5 are likely for its additional fields (spawn timer/interval, growth_needed, and stage-related state; the Breeder is `0x1e0` bytes vs the Grubber's `0x1b0`).
+### Breeder ctor: 6 draws (mti 46–51)
 
-One of these 10 draws produces `growth_needed`: at the MT state in this capture, draws #4, #5 and #8 each yield `r % 5 + 4 = 5` (the observed initial growth_needed). The exact position within the ctor requires Ghidra analysis of the constructor body.
+The breeder's 5-param constructor (`Breeder::Breeder` via `0x00547270`) consumes 6 app-RNG draws: 5 in `Breeder::Init` (`0x004dcbf0`) and 1 in the ctor body (`0x004ee530`). See `breeder.md#constructor-rng-draws` for the full draw-by-draw table with addresses and formulas.
 
 Values at each ctor draw position:
 
-| Draw # | MTI | Next() | `%5+4` | `%200+600` | `%10` |
-|---|---|---|---|---|---|
-| 1 | 42 | 1619200740 | 4 | 740 | 0 |
-| 2 | 43 | 1154777098 | 7 | 698 | 8 |
-| 3 | 44 | 1583504209 | 8 | 609 | 9 |
-| 4 | 45 | 1915978076 | **5** | 676 | 6 |
-| 5 | 46 | 1047350886 | **5** | 686 | 6 |
-| 6 | 47 | 588046029 | 8 | 629 | 9 |
-| 7 | 48 | 925044494 | 8 | 694 | 4 |
-| 8 | 49 | 1682580351 | **5** | 751 | 1 |
-| 9 | 50 | 524147560 | 4 | 760 | 0 |
-| 10 | 51 | 1842117930 | 4 | 730 | 0 |
+| Draw # | MTI | Next() | Purpose | Value |
+|---|---|---|---|---|
+| 1 | 46 | 1047350886 | facing (`r & 1`) | 0 (left) |
+| 2 | 47 | 588046029 | divisor (`r % 3`) | 0 → 2.0 |
+| 3 | 48 | 925044494 | hunger (`r % 200 + 400`) | 494 |
+| 4 | 49 | 1682580351 | growth_needed (`(r & 1) + 4`) | **5** ✓ |
+| 5 | 50 | 524147560 | swim mode (`r % 10`) | 0 |
+| 6 | 51 | 1842117930 | spawn timer (`r % 400 + 1000`) | 1130 |
 
 `confirmed` (computed from the capture's MT state array).
 

@@ -22,7 +22,7 @@ RNG: `r` = app stream `MTRand::NextNoAssert` @ `0x0040aeb0`; `grand` = global `S
 - `+0x1b8` (reroll_timer): 21-tick cycle, `confirmed`.
 - `+0x9c` (hunger): decrements 1/tick (no aliens); +700 on level-1 eat (cap 1000). `confirmed`.
 
-**Replay divergence at tick 2299:** the sim produces `growth_needed=7` (expected 8). Root cause: the breeder ctor has **10** app-RNG draws, not the 5 assumed by Grubber analogy. This 5-draw deficit from level start shifts the sim's MT index, so the growth_needed re-draw at tick 2299 (`next_range(5) + 4`) lands on the wrong element. At the correct mti (558), the draw yields 4+4=8. Fix: either enable per-tick app resync for the replay, or implement the correct 10 ctor draws. Full accounting in `sim/tank4-rng-trace.md`.
+**Replay divergence at tick 2299:** the sim produces `growth_needed=7` (expected 8). Root cause: the breeder ctor has **6** app-RNG draws (5 in `Breeder::Init` + 1 in the 5-param ctor body), not the 5 assumed by Grubber analogy. The earlier claim of 10 ctor draws (`tank4-rng-trace.md`) was derived by subtraction assuming 3 bubbles (`r & 3 = 0`); the actual bubble count is 5 (`r & 3 = 2`, giving 11 bubble draws), and 43 − 11 − 5 − 9 − 9 − 2 − 1 = 6. Fix: implement the correct 6 ctor draws. Full accounting in `sim/tank4-rng-trace.md`.
 
 ## Slot overrides
 
@@ -56,16 +56,22 @@ Inferred from the Grubber's field layout (both are direct `GameObject` subclasse
 | `+0xa0` | int | colour fade | by analogy with Grubber |
 | `+0xa4` | int | hunger-warning threshold | by analogy with Grubber (300) |
 | `+0xac` | int | Virtual Tank state | by analogy with Grubber |
-| `+0x168` | double | **vx** | read by Die for facing |
+| `+0x168` | double | **vx** (facing direction) | Die decomp reads sign; ctor Draw #1 sets via `r & 1` |
 | `+0x170` | double | **vy** | read by Die; set by Rhubarb fling (`pet-rhubarb.md`) |
-| `+0x180` | double | divisor or vy (used by AddDeadFish) | read by Die |
+| `+0x180` | double | **divisor** {2.0, 1.8, 1.6} | Die decomp reads; ctor Draw #2 sets via `r % 3` |
 | `+0x1a0` | int | **stage / sub-kind** | dead fish kind = `+0x1a0 + 10`; Angie revival passes `kind − 10` as stage |
 | `+0x1a4` | int | **growth counter** | set to 2 at level start (`level-start.md`) |
+| `+0x1a8` | int | **growth_needed** | ctor Draw #4: `(r & 1) + 4` (4–5); redrawn `r % 5 + 4` (4–8) on stage advance. `confirmed` |
+| `+0x1ac` | int | **pulse_timer** | 0 → 9 on stage advance, decrements 1/tick. `confirmed` |
+| `+0x1b0` | int | **swim mode** | ctor Draw #5: `r % 10` (0–9); rerolled every 21 ticks. `confirmed` |
+| `+0x1b4` | int | **mode_timer** | increments 1/tick. `confirmed` |
+| `+0x1b8` | int | **reroll_timer** | 21-tick cycle. `confirmed` |
+| `+0x1d4` | int | **spawn timer** | ctor Draw #6: `r % 400 + 1000` (1000–1399) |
 | `+0x1d8` | int | **vy-damp timer** | Rhubarb sets this to 50 (`pet-rhubarb.md`) |
 
-Fields from `+0x1b0` to `+0x1dc` are unidentified; they likely include a guppy-spawn timer and interval (by analogy with the Grubber's Larva drop fields at `+0x1a8`/`+0x1ac`).
+Fields `+0x1bc`..`+0x1d0` are unidentified; they may include spawn interval and other breeding-related state.
 
-`static` (field offsets verified from cross-references in decomp and existing specs; initial values and unidentified fields are `guess`).
+`confirmed` (offsets `+0x9c`, `+0x1a0`–`+0x1b8` verified from capture `tank4-1_full_01`; `+0x168`, `+0x180` from Die decomp and ctor PE analysis; `+0x1d4` from ctor PE analysis, `static`).
 
 ## Construction (`Sexy::Breeder::Breeder` via `0x00547270`)
 
@@ -77,9 +83,35 @@ The re-creation function at `0x00547270` (Angie revival, `pet-angie.md`) shows:
 4. Shadow `0x00544800`: type `0x0a` → shadow kind **0** (`board.md#shadows`). `Shadow::Shadow` draws **once** (`shadow y = 410 + r % 5`).
 5. `RebuildZOrder`.
 
-The constructor consumes **10 app-RNG draws** internally (confirmed by draw accounting from `tank4-1_full_01`: PopulateLevel total 43 − 7 bubbles − 5 Stinky − 9 Itchy − 9 Zorf − 2 position − 1 shadow = 10). This is 5 more than the Grubber's 5 ctor draws; the extra draws likely initialise the Breeder's additional fields (spawn timer/interval, growth_needed, and stage-related state; `0x1e0` bytes vs the Grubber's `0x1b0`). The 5th parameter (facing) distinguishes the Breeder from the 4-param Ultra and Oscar ctors and the 1-param Grubber ctor.
+The constructor chain consumes **6 app-RNG draws**: 5 in `Breeder::Init` (`0x004dcbf0`) and 1 in the 5-param ctor body (`0x004ee530`). The earlier estimate of 10 draws (`tank4-rng-trace.md`) was derived by subtraction assuming 3 bubbles at level start; the actual bubble count is 5 (`r & 3 = 2`, giving 11 bubble draws), and 43 − 11 − 5 − 9 − 9 − 2 − 1 = 6.
 
-`confirmed` (ctor draw count derived from `tank4-rng-trace.md`; re-creation function from decomp `00547270.c`; shadow type from `board.md`; individual draw assignments within the ctor are `static`).
+`confirmed` (re-creation function from decomp `00547270.c`; shadow type from `board.md`; draw count from PE analysis, verified against capture).
+
+### Constructor RNG draws
+
+`Breeder::Init` @ `0x004dcbf0` — 5 app-RNG calls:
+
+| Draw # | Address | Formula | Range | Field | Offset |
+|---|---|---|---|---|---|
+| Draw #1 | `004dcc65` | `r & 1` | 0 or 1 | facing / vx direction | `+0x168` |
+| Draw #2 | `004dccc6` | `r % 3` | 0–2 | divisor → {2.0, 1.8, 1.6} | `+0x180` |
+| Draw #3 | `004dcd05` | `r % 200 + 400` | 400–599 | hunger | `+0x9c` |
+| Draw #4 | `004dcd52` | `(r & 1) + 4` | 4 or 5 | growth_needed (mLevel ≠ 5 only) | `+0x1a8` |
+| Draw #5 | `004dcd6f` | `r % 10` | 0–9 | swim mode | `+0x1b0` |
+
+When `board->mLevel == 5` (tank 5), Draw #4 uses `grand % 5 + 4` (global `Sexy::Rand` at `004dcd34`) instead of the app stream, producing range 4–8.
+
+`Breeder::Breeder` (5-param) @ `0x004ee530` — 1 app-RNG call:
+
+| Draw # | Address | Formula | Range | Field | Offset |
+|---|---|---|---|---|---|
+| Draw #6 | `004ee590` | `r % 400 + 1000` | 1000–1399 | spawn timer | `+0x1d4` |
+
+Call chain: `Breeder::Breeder` → `GameObject::GameObject` (0 draws) → `Breeder::Init` (5 draws) → 1 draw = **6 total**.
+
+Verification against `tank4-1_full_01` capture: Draw #4 at MTI 49 yields `Next() = 1682580351`, `(r & 1) + 4 = 5`, matching the observed initial `growth_needed = 5`. `confirmed`.
+
+`confirmed` (draw count reconciled with `tank4-1_full_01`: 43 PopulateLevel draws = 11 bubbles + 5 Stinky + 9 Itchy + 9 Zorf + 2 position + 6 ctor + 1 shadow; addresses and formulas from PE analysis of `Breeder::Init` and `Breeder::Breeder`; re-creation function from decomp `00547270.c`; shadow type from `board.md`).
 
 ## Spawn
 
@@ -203,19 +235,18 @@ The sprite sheet is expected to be **`IMAGE_BREEDER`** (80×80 cels). The draw f
 
 | When | Stream | Draws |
 |---|---|---|
-| Shop purchase tick | app | position, 10 ctor, shadow, splash (expected 13 total) |
-| Level start | app | 2 (position) + 10 (ctor) + 1 (shadow) = 13 |
+| Shop purchase tick | app | position, 6 ctor, shadow, splash (expected 9 total) |
+| Level start | app | 2 (position) + 6 (ctor) + 1 (shadow) = 9 |
 | Rhubarb fling | app | 1 per flung Breeder |
 | Per-tick (swim reroll) | app | expected same as Grubber |
 | Guppy spawn | app | unknown (expected similar to Prego or Grubber Larva drop) |
 | Die, remove, hunger | — | none |
 
-`static` (purchase and level-start draws from `shop-bar.md` / `level-start.md`; Rhubarb from `pet-rhubarb.md`; swim and spawn draws are `guess`).
+`confirmed` (ctor draw count from PE analysis, verified against `tank4-1_full_01` capture; purchase and level-start from `shop-bar.md` / `level-start.md`; Rhubarb from `pet-rhubarb.md`; swim and spawn draws are `guess`).
 
 ## Open questions
 
-- **Constructor internals**: 10 RNG draws confirmed (`tank4-rng-trace.md`), but which draw initialises which field (hunger range, divisor, swim mode, spawn timer, growth_needed) requires the ctor body in Ghidra.
-- **BuyBreeder** (`0x005470a0`): full draw count, y override, any extra setup.
+- **BuyBreeder** (`0x005470a0`): full draw count (expected 9: 1 position + 6 ctor + 1 shadow + 1 splash), y override, any extra setup.
 - **Update function**: address, full step order, food chase mechanics (bite box, eat effect, hunger gain/cap).
 - **Guppy spawn mechanism**: timer fields, interval, whether it freezes during waves, RNG draws per spawn, spawn position relative to the Breeder.
 - **Growth**: the Breeder has stages (0, 1, 2 from `+0x1a0`); whether it grows by eating food (like a guppy) or stays at one stage.
