@@ -176,6 +176,10 @@ emit(string.format(
   '{"format":"insaniquarium-trace","version":1,"source":"original","build":"f54c2c6ee54b00ae6da7f4bde15feb90d0a867aba6b4151b0277c1f81da3ff66","start_tick":%d,"rng":{"app":%s,"global":%s},"fields":["board.money","counts","guppies","rng_mti"]}',
   start_tick, rand_json(amt, ami), rand_json(gmt, gmi)))
 
+-- When CAPTURE_PAUSE is set, the caller froze the process before the header
+-- read (clean MT state array).  Unfreeze now so the polling loop sees ticks.
+if CAPTURE_PAUSE then unpause() end
+
 local last = start_tick - 1
 local captured, polls = 0, 0
 while captured < max_ticks and polls < max_ticks * 40 do
